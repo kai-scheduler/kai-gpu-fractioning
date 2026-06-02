@@ -43,6 +43,7 @@ type GpuSharingConfigStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
 // GpuSharingConfig is the Schema for the gpusharingconfigs API
 type GpuSharingConfig struct {

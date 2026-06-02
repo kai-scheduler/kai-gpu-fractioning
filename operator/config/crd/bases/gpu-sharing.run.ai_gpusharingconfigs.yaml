@@ -12,7 +12,7 @@ spec:
     listKind: GpuSharingConfigList
     plural: gpusharingconfigs
     singular: gpusharingconfig
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:

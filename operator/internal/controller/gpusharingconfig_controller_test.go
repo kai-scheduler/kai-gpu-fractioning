@@ -37,8 +37,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Name: resourceName,
 		}
 		gpusharingconfig := &gpusharingv1alpha1.GpuSharingConfig{}
 
@@ -48,17 +47,14 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			if err != nil && errors.IsNotFound(err) {
 				resource := &gpusharingv1alpha1.GpuSharingConfig{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
+						Name: resourceName,
 					},
-					// TODO(user): Specify other spec details if needed.
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &gpusharingv1alpha1.GpuSharingConfig{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
@@ -66,6 +62,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			By("Cleanup the specific resource instance GpuSharingConfig")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &GpuSharingConfigReconciler{
@@ -77,8 +74,37 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+		})
+
+		It("should update observedGeneration on reconcile", func() {
+			controllerReconciler := &GpuSharingConfigReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated gpusharingv1alpha1.GpuSharingConfig
+			Expect(k8sClient.Get(ctx, typeNamespacedName, &updated)).To(Succeed())
+			Expect(updated.Status.ObservedGeneration).To(Equal(updated.Generation))
+		})
+
+		It("should handle not-found resources gracefully", func() {
+			controllerReconciler := &GpuSharingConfigReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "nonexistent",
+					Namespace: "default",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
