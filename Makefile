@@ -1,16 +1,7 @@
 # gpu-sharing-operator
 # -----------------------------------------------------------
-MODULE   := github.com/run-ai/gpu-sharing-operator
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 REGISTRY ?= gcr.io/run-ai-prod
-
-BIN_DIR  := bin
-LDFLAGS  := -ldflags "-X $(MODULE)/internal/version.Version=$(VERSION)"
-
-# Components
-OPERATOR_CMD  := ./operator/cmd
-MPSD_CMD      := ./sharing-manager/mpsd/cmd
-SHARINGD_CMD  := ./sharing-manager/sharingd/cmd
 
 # -----------------------------------------------------------
 # Build
@@ -21,28 +12,27 @@ SHARINGD_CMD  := ./sharing-manager/sharingd/cmd
 build: build-operator build-mpsd build-sharingd
 
 build-operator:
-	go build $(LDFLAGS) -o $(BIN_DIR)/operator $(OPERATOR_CMD)
+	$(MAKE) -C operator build
 
 build-mpsd:
-	go build $(LDFLAGS) -o $(BIN_DIR)/mpsd $(MPSD_CMD)
+	go build -o bin/mpsd ./sharing-manager/mpsd/cmd
 
 build-sharingd:
-	go build $(LDFLAGS) -o $(BIN_DIR)/sharingd $(SHARINGD_CMD)
+	go build -o bin/sharingd ./sharing-manager/sharingd/cmd
 
 # -----------------------------------------------------------
 # Test
 # -----------------------------------------------------------
 
-.PHONY: test test-unit test-cover
+.PHONY: test test-operator test-sharing-manager
 
-test: test-unit
+test: test-operator test-sharing-manager
 
-test-unit:
-	go test ./... -race -count=1
+test-operator:
+	$(MAKE) -C operator test
 
-test-cover:
-	go test ./... -race -count=1 -coverprofile=coverage.out
-	go tool cover -func=coverage.out
+test-sharing-manager:
+	go test ./sharing-manager/... -race -count=1
 
 # -----------------------------------------------------------
 # Code quality
@@ -51,30 +41,33 @@ test-cover:
 .PHONY: fmt vet lint validate
 
 fmt:
-	go fmt ./...
+	$(MAKE) -C operator fmt
+	go fmt ./sharing-manager/...
 
 vet:
-	go vet ./...
+	$(MAKE) -C operator vet
+	go vet ./sharing-manager/...
 
 lint:
-	golangci-lint run ./...
+	$(MAKE) -C operator lint
+	golangci-lint run ./sharing-manager/...
 
 validate: fmt vet lint
 
 # -----------------------------------------------------------
-# Generate (CRDs, deepcopy, manifests)
+# Generate (CRDs, deepcopy, manifests) — delegated to operator
 # -----------------------------------------------------------
 
 .PHONY: generate manifests
 
 generate:
-	controller-gen object paths="./..."
+	$(MAKE) -C operator generate
 
 manifests:
-	controller-gen crd rbac:roleName=gpu-sharing-operator paths="./..." output:crd:dir=config/crd
+	$(MAKE) -C operator manifests
 
 # -----------------------------------------------------------
-# Docker (skeletons — Dockerfiles added in later phases)
+# Docker
 # -----------------------------------------------------------
 
 .PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-sharingd
@@ -83,7 +76,7 @@ manifests:
 docker-build: docker-build-operator docker-build-mpsd docker-build-sharingd
 
 docker-build-operator:
-	docker build -f operator/build/Dockerfile -t $(REGISTRY)/gpu-sharing-operator:$(VERSION) .
+	$(MAKE) -C operator docker-build IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION)
 
 docker-build-mpsd:
 	docker build -f sharing-manager/mpsd/build/Dockerfile -t $(REGISTRY)/mpsd:$(VERSION) .
@@ -94,7 +87,7 @@ docker-build-sharingd:
 docker-push: docker-push-operator docker-push-mpsd docker-push-sharingd
 
 docker-push-operator:
-	docker push $(REGISTRY)/gpu-sharing-operator:$(VERSION)
+	$(MAKE) -C operator docker-push IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION)
 
 docker-push-mpsd:
 	docker push $(REGISTRY)/mpsd:$(VERSION)
@@ -109,4 +102,5 @@ docker-push-sharingd:
 .PHONY: clean
 
 clean:
-	rm -rf $(BIN_DIR) coverage.out
+	rm -rf bin/ coverage.out
+	$(MAKE) -C operator clean
