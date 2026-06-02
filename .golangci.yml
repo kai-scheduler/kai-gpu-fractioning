@@ -1,0 +1,29 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+formatters:
+  enable:
+    - gofmt
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
