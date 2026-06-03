@@ -24,7 +24,6 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // GpuSharingConfigSpec defines the desired state of GpuSharingConfig.
-// Fields will be added incrementally as each phase is implemented.
 type GpuSharingConfigSpec struct {
 }
 

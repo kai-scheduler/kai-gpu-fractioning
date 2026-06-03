@@ -1,0 +1,7 @@
+apiVersion: gpu-sharing.run.ai/v1alpha1
+kind: GpuSharingConfig
+metadata:
+  name: default
+  labels:
+    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+spec: {}

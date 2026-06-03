@@ -1,0 +1,62 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gpu-sharing-operator.fullname" . }}
+  labels:
+    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+rules:
+  # Manage the GpuSharingConfig CRD — the reconciler needs full access
+  # to watch for changes and update the resource.
+  - apiGroups:
+      - gpu-sharing.run.ai
+    resources:
+      - gpusharingconfigs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Update finalizers on the CR so the controller can register cleanup
+  # logic that runs before the resource is deleted.
+  - apiGroups:
+      - gpu-sharing.run.ai
+    resources:
+      - gpusharingconfigs/finalizers
+    verbs:
+      - update
+  # Write to the status subresource to report observedGeneration
+  # and conditions back to the user.
+  - apiGroups:
+      - gpu-sharing.run.ai
+    resources:
+      - gpusharingconfigs/status
+    verbs:
+      - get
+      - patch
+      - update
+  # Leader election uses Lease objects to ensure only one controller
+  # instance is active at a time.
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Emit Kubernetes Events to surface reconciliation activity
+  # (e.g. "GpuSharingConfig reconciled successfully").
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
