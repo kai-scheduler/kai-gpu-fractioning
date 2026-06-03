@@ -37,6 +37,7 @@ import (
 
 	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/operator/api/v1alpha1"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
+	webhookv1alpha1 "github.com/run-ai/gpu-sharing-operator/operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -183,6 +184,10 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")
+		os.Exit(1)
+	}
+	if err := webhookv1alpha1.SetupGpuSharingConfigWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create webhook", "webhook", "GpuSharingConfig")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
