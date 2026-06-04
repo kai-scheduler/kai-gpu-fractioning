@@ -49,6 +49,20 @@ Chart name and version.
 {{- end }}
 
 {{/*
+Webhook service name.
+*/}}
+{{- define "gpu-sharing-operator.webhookServiceName" -}}
+{{- printf "%s-webhook" (include "gpu-sharing-operator.fullname" .) }}
+{{- end }}
+
+{{/*
+Webhook cert secret name.
+*/}}
+{{- define "gpu-sharing-operator.webhookCertSecretName" -}}
+{{- printf "%s-webhook-cert" (include "gpu-sharing-operator.fullname" .) }}
+{{- end }}
+
+{{/*
 Service account name.
 */}}
 {{- define "gpu-sharing-operator.serviceAccountName" -}}
