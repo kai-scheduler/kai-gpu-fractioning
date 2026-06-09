@@ -1,9 +1,5 @@
 apiVersion: gpu-sharing.run.ai/v1alpha1
 kind: GpuSharingConfig
 metadata:
-  labels:
-    app.kubernetes.io/name: operator
-    app.kubernetes.io/managed-by: kustomize
-  name: gpusharingconfig-sample
-spec:
-  # TODO(user): Add fields here
+  name: default
+spec: {}
