@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gpu-sharing-plugin
+  namespace: runai
+  labels:
+    app: gpu-sharing-plugin
+spec:
+  namespaceSelector:
+    matchNames:
+      - gpu-sharing
+  selector:
+    matchLabels:
+      app: gpu-sharing-plugin
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      # The plugin exports metrics labelled with pod/namespace of the GPU workload,
+      # not of the plugin itself. honorLabels keeps those metric labels as-is instead
+      # of renaming them to exported_pod/exported_namespace.
+      honorLabels: true

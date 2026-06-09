@@ -1,0 +1,80 @@
+# Test workload: two pods sharing one physical GPU at 0.8 fraction each.
+#
+# Purpose: validate that the gpu-sharing-plugin reports per-pod GPU metrics
+# (memory bytes, SM utilization) for co-resident pods on the same device.
+#
+# The plugin only tracks FRACTIONAL GPU containers — those whose pod carries a
+# nvidia.com/container.<name>.gpu-memory.{limit,request} annotation. Pods with
+# only nvidia.com/gpu resource limits are treated as full-GPU and skipped.
+# Each test pod below carries the annotation so the NRI plugin records it.
+#
+# NVIDIA_VISIBLE_DEVICES must NOT be set manually in runai-proj-* namespaces —
+# the Run.ai admission webhook rejects it. The fake-gpu-operator injects
+# MOCK_NVIDIA_VISIBLE_DEVICES automatically via the nvidia.com/gpu resource
+# request, and the NRI plugin reads that variable to learn which GPU the
+# container was allocated.
+#
+# On fake-GPU clusters (no real NVML): memory and SM utilization will be zero.
+# Pod labels (namespace, pod, pod_uid, gpu_uuid, gpu_index) are reported,
+# confirming the NRI container→pod mapping pipeline works end-to-end.
+#
+# Prerequisites:
+#   - gpu-sharing-plugin DaemonSet running with metrics.enabled: true
+#
+# Usage:
+#   kubectl apply -f deploy/test-fractional-gpu-pods.yaml
+#   kubectl get pods -n runai-proj-1 gpu-frac-a gpu-frac-b -w
+#
+# Scrape metrics from the plugin pod on the GPU worker:
+#   PLUGIN_POD=$(kubectl get pods -n gpu-sharing -o wide | grep worker | awk '{print $1}')
+#   kubectl port-forward -n gpu-sharing pod/$PLUGIN_POD 2112:2112 &
+#   curl -s http://localhost:2112/metrics | grep gpu_sharing
+#
+# Cleanup:
+#   kubectl delete -f deploy/test-fractional-gpu-pods.yaml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-frac-a
+  namespace: runai-proj-1
+  labels:
+    app: gpu-frac-test
+  annotations:
+    # Fractional GPU annotation: the plugin records this container only when this
+    # annotation is present. 9830 MiB ≈ 0.8 × 12000 MiB (V100 12 GB).
+    nvidia.com/container.trainer.gpu-memory.limit: "9830"
+    nvidia.com/container.trainer.gpu-memory.request: "9830"
+spec:
+  nodeSelector:
+    run.ai/fake.gpu: "true"
+  restartPolicy: Never
+  containers:
+    - name: trainer
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'gpu-frac-a: running'; sleep 86400"]
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-frac-b
+  namespace: runai-proj-1
+  labels:
+    app: gpu-frac-test
+  annotations:
+    nvidia.com/container.worker.gpu-memory.limit: "9830"
+    nvidia.com/container.worker.gpu-memory.request: "9830"
+spec:
+  nodeSelector:
+    run.ai/fake.gpu: "true"
+  restartPolicy: Never
+  containers:
+    - name: worker
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'gpu-frac-b: running'; sleep 86400"]
+      resources:
+        limits:
+          nvidia.com/gpu: "1"

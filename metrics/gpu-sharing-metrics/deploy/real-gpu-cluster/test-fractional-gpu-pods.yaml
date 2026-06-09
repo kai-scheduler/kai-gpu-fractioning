@@ -1,0 +1,166 @@
+# Test workload: two pods using Run.ai's native fractional GPU scheduling,
+# each requesting 0.5 GPU — matching how real RunaiJob workloads are structured.
+#
+# Key differences from test-fractional-gpu-pods.yaml (which uses nvidia.com/gpu: "1"):
+#   - schedulerName: runai-scheduler  (Run.ai assigns and packs GPU slots)
+#   - runtimeClassName: nvidia        (GPU injected via NVIDIA runtime, not device plugin)
+#   - gpu-fraction: "0.5" annotation  (Run.ai fractional GPU contract)
+#   - No nvidia.com/gpu resource      (Run.ai does not use the integer device-plugin resource)
+#   - NVIDIA_VISIBLE_DEVICES comes from a ConfigMap Run.ai creates per-pod;
+#     once scheduled, Run.ai's mutating webhook also adds:
+#       nvidia.com/container.<name>.gpu-memory.limit/request
+#     which is what the gpu-sharing-plugin uses to track fractional containers.
+#
+# Prerequisites:
+#   - Run.ai scheduler installed and configured in the cluster
+#   - GPU node with capacity for fractional GPU scheduling
+#   - gpu-sharing-plugin DaemonSet running (deploy/real-gpu-cluster/daemonset.yaml)
+#   - NRI enabled in containerd on the GPU node
+#
+# Submit via kubectl (Run.ai scheduler will handle GPU slot packing):
+#   kubectl apply -f deploy/real-gpu-cluster/test-fractional-gpu-pods.yaml
+#
+# Alternatively, use the Run.ai CLI which creates a RunaiJob (preferred):
+#   runai submit gpu-frac-2a --gpu 0.5 -p proj-1 \
+#     --image nvidia/cuda:12.4.0-runtime-ubuntu22.04 \
+#     -- bash -c "apt-get update -qq && apt-get install -y -qq python3 && ..."
+#
+# Cleanup:
+#   kubectl delete -f deploy/real-gpu-cluster/test-fractional-gpu-pods.yaml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-frac-2a
+  namespace: runai-proj-1
+  labels:
+    app: gpu-frac-test-2
+  annotations:
+    # Run.ai fractional GPU contract — matched by Run.ai's scheduler and webhook.
+    gpu-fraction: "0.5"
+    gpu-fraction-num-devices: "1"
+    # Per-container memory limit for the gpu-sharing-plugin (0.5 × 15360 MiB T4).
+    nvidia.com/container.trainer.gpu-memory.limit: "7680"
+    nvidia.com/container.trainer.gpu-memory.request: "7680"
+spec:
+  schedulerName: runai-scheduler
+  runtimeClassName: nvidia
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  restartPolicy: Never
+  containers:
+    - name: trainer
+      image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+      # No nvidia.com/gpu resource — Run.ai scheduler allocates the GPU slot.
+      # NVIDIA_VISIBLE_DEVICES is injected by Run.ai's controller via a ConfigMap
+      # once the pod is scheduled.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      command:
+        - bash
+        - -c
+        - |
+          apt-get update -qq && apt-get install -y -qq python3 && \
+          python3 - <<'EOF'
+          import ctypes, ctypes.util
+          rt = ctypes.CDLL(ctypes.util.find_library("cudart") or "libcudart.so")
+          rt.cudaSetDevice(0)
+          src = ctypes.c_void_p()
+          dst = ctypes.c_void_p()
+          sz = ctypes.c_size_t(256 * 1024 * 1024)
+          rt.cudaMalloc(ctypes.byref(src), sz)
+          rt.cudaMalloc(ctypes.byref(dst), sz)
+          print("gpu-frac-2a: running GPU compute loop", flush=True)
+          while True:
+              rt.cudaMemcpy(dst, src, sz, ctypes.c_int(3))
+          EOF
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-frac-2b
+  namespace: runai-proj-1
+  labels:
+    app: gpu-frac-test-2
+  annotations:
+    gpu-fraction: "0.5"
+    gpu-fraction-num-devices: "1"
+    nvidia.com/container.worker.gpu-memory.limit: "7680"
+    nvidia.com/container.worker.gpu-memory.request: "7680"
+spec:
+  schedulerName: runai-scheduler
+  runtimeClassName: nvidia
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  restartPolicy: Never
+  containers:
+    - name: worker
+      image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      command:
+        - bash
+        - -c
+        - |
+          apt-get update -qq && apt-get install -y -qq python3 && \
+          python3 - <<'EOF'
+          import ctypes, ctypes.util
+          rt = ctypes.CDLL(ctypes.util.find_library("cudart") or "libcudart.so")
+          rt.cudaSetDevice(0)
+          src = ctypes.c_void_p()
+          dst = ctypes.c_void_p()
+          sz = ctypes.c_size_t(256 * 1024 * 1024)
+          rt.cudaMalloc(ctypes.byref(src), sz)
+          rt.cudaMalloc(ctypes.byref(dst), sz)
+          print("gpu-frac-2b: running GPU compute loop", flush=True)
+          while True:
+              rt.cudaMemcpy(dst, src, sz, ctypes.c_int(3))
+          EOF
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-frac-2c
+  namespace: runai-proj-1
+  labels:
+    app: gpu-frac-test-2
+  annotations:
+    gpu-fraction: "0.5"
+    gpu-fraction-num-devices: "1"
+    nvidia.com/container.runner.gpu-memory.limit: "7680"
+    nvidia.com/container.runner.gpu-memory.request: "7680"
+spec:
+  schedulerName: runai-scheduler
+  runtimeClassName: nvidia
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  restartPolicy: Never
+  containers:
+    - name: runner
+      image: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      command:
+        - bash
+        - -c
+        - |
+          apt-get update -qq && apt-get install -y -qq python3 && \
+          python3 - <<'EOF'
+          import ctypes, ctypes.util
+          rt = ctypes.CDLL(ctypes.util.find_library("cudart") or "libcudart.so")
+          rt.cudaSetDevice(0)
+          src = ctypes.c_void_p()
+          dst = ctypes.c_void_p()
+          sz = ctypes.c_size_t(256 * 1024 * 1024)
+          rt.cudaMalloc(ctypes.byref(src), sz)
+          rt.cudaMalloc(ctypes.byref(dst), sz)
+          print("gpu-frac-2c: running GPU compute loop", flush=True)
+          while True:
+              rt.cudaMemcpy(dst, src, sz, ctypes.c_int(3))
+          EOF

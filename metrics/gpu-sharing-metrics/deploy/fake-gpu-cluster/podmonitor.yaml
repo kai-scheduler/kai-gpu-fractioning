@@ -1,0 +1,28 @@
+# PodMonitor: wires the runai Prometheus to scrape gpu-sharing-plugin pods.
+#
+# Why runai namespace: the runai Prometheus has podMonitorSelector: {} (matches
+# all PodMonitors) but its serviceMonitorNamespaceSelector restricts which
+# namespaces it watches for ServiceMonitor objects. Placing the PodMonitor in
+# the runai namespace ensures it is picked up regardless of that filter.
+#
+# The namespaceSelector below tells the PodMonitor to find pods in the
+# gpu-sharing namespace, so the Prometheus server reaches across namespaces
+# to scrape each DaemonSet pod directly.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gpu-sharing-plugin
+  namespace: runai
+  labels:
+    app: gpu-sharing-plugin
+spec:
+  namespaceSelector:
+    matchNames:
+      - gpu-sharing
+  selector:
+    matchLabels:
+      app: gpu-sharing-plugin
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
