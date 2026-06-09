@@ -1,4 +1,0 @@
-## Append samples of your project ##
-resources:
-- gpu-sharing_v1alpha1_gpusharingconfig.yaml
-# +kubebuilder:scaffold:manifestskustomizesamples
