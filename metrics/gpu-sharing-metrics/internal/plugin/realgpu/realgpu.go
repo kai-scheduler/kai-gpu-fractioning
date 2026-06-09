@@ -1,0 +1,54 @@
+// Package realgpu is the production GPU detector. It identifies a container's
+// GPUs from its Linux device nodes (NVIDIA char major 195), which are
+// authoritative for device identity — unlike annotations or environment
+// variables. It is selected by the plugin package's !e2e build (see
+// gpudevices_real.go); the fake-GPU detector used for testing lives in the
+// sibling fakegpu package.
+package realgpu
+
+import (
+	"gpu-sharing-operator/metrics/gpu-sharing-metrics/internal/store"
+
+	"github.com/containerd/nri/pkg/api"
+)
+
+const (
+	nvidiaDeviceMajor = 195
+	maxNVIDIAGPUMinor = 32
+)
+
+// GPUDevices returns the GPU devices assigned to the container, derived from its
+// Linux device nodes. Each distinct NVIDIA device-node minor becomes one
+// GPUDevice{Index: minor}. Returns nil when the container has no GPU device node.
+func GPUDevices(container *api.Container) []store.GPUDevice {
+	linux := container.GetLinux()
+	if linux == nil {
+		return nil
+	}
+
+	devices := []store.GPUDevice{}
+	seen := map[int]struct{}{}
+	for _, device := range linux.GetDevices() {
+		index, ok := gpuIndexFromLinuxDevice(device)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[index]; exists {
+			continue
+		}
+		seen[index] = struct{}{}
+		devices = append(devices, store.GPUDevice{Index: index})
+	}
+	return devices
+}
+
+func gpuIndexFromLinuxDevice(device *api.LinuxDevice) (int, bool) {
+	if device.GetMajor() != nvidiaDeviceMajor {
+		return 0, false
+	}
+	minor := device.GetMinor()
+	if minor < 0 || minor > maxNVIDIAGPUMinor {
+		return 0, false
+	}
+	return int(minor), true
+}
