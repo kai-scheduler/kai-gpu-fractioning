@@ -31,11 +31,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/operator/api/v1alpha1"
+	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
-	webhookv1alpha1 "github.com/run-ai/gpu-sharing-operator/operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -50,77 +48,76 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-func main() {
-	// ── CLI flags ────────────────────────────────────────────────────────
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var webhookCertPath, webhookCertName, webhookCertKey string
-	var enableLeaderElection bool
-	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var tlsOpts []func(*tls.Config)
+// config holds all CLI-configurable settings for the operator.
+// We use CLI flags rather than a ConfigMap because these values are
+// deployment-time constants (addresses, TLS paths, leader election) that
+// are set once at pod creation and never change at runtime.
+type config struct {
+	MetricsAddr       string // address the metrics endpoint binds to ("0" disables)
+	ProbeAddr         string // address the health/readiness probe binds to
+	EnableLeaderElect bool   // enable leader election for HA deployments
+	SecureMetrics     bool   // serve metrics over HTTPS
+	EnableHTTP2       bool   // allow HTTP/2 (disabled by default for Rapid Reset CVE)
+	MetricsCertPath   string // directory containing the metrics TLS certificate
+	MetricsCertName   string // filename of the metrics TLS certificate
+	MetricsCertKey    string // filename of the metrics TLS private key
+	Development       bool   // enable development-mode logging (debug, human-readable)
+}
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
+func parseFlags() config {
+	var cfg config
+	flag.StringVar(&cfg.MetricsAddr, "metrics-bind-address", "0",
 		"The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
+	flag.StringVar(&cfg.ProbeAddr, "health-probe-bind-address", ":8081",
 		"The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flag.BoolVar(&cfg.EnableLeaderElect, "leader-elect", false,
 		"Enable leader election for controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+	flag.BoolVar(&cfg.SecureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS.")
-	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
-	flag.StringVar(&metricsCertPath, "metrics-cert-path", "", "The directory that contains the metrics server certificate.")
-	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers.")
-
-	opts := zap.Options{Development: true}
-	opts.BindFlags(flag.CommandLine)
+	flag.StringVar(&cfg.MetricsCertPath, "metrics-cert-path", "", "The directory that contains the metrics server certificate.")
+	flag.StringVar(&cfg.MetricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&cfg.MetricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.BoolVar(&cfg.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics server.")
+	flag.BoolVar(&cfg.Development, "development", false, "Enable development-mode logging (debug level, human-readable).")
 	flag.Parse()
+	return cfg
+}
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+func main() {
+	cfg := parseFlags()
+
+	ctrl.SetLogger(zap.New(zap.UseDevMode(cfg.Development)))
 
 	// ── TLS configuration ────────────────────────────────────────────────
 	// HTTP/2 is disabled by default to mitigate the Rapid Reset CVE.
-	if !enableHTTP2 {
+	var tlsOpts []func(*tls.Config)
+	if !cfg.EnableHTTP2 {
 		tlsOpts = append(tlsOpts, func(c *tls.Config) {
 			c.NextProtos = []string{"http/1.1"}
 		})
 	}
 
-	// ── Webhook server ───────────────────────────────────────────────────
-	webhookServerOptions := webhook.Options{TLSOpts: tlsOpts}
-	if len(webhookCertPath) > 0 {
-		webhookServerOptions.CertDir = webhookCertPath
-		webhookServerOptions.CertName = webhookCertName
-		webhookServerOptions.KeyName = webhookCertKey
-	}
-
 	// ── Metrics server ───────────────────────────────────────────────────
 	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
+		BindAddress:   cfg.MetricsAddr,
+		SecureServing: cfg.SecureMetrics,
 		TLSOpts:       tlsOpts,
 	}
-	if secureMetrics {
+	if cfg.SecureMetrics {
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
-	if len(metricsCertPath) > 0 {
-		metricsServerOptions.CertDir = metricsCertPath
-		metricsServerOptions.CertName = metricsCertName
-		metricsServerOptions.KeyName = metricsCertKey
+	if len(cfg.MetricsCertPath) > 0 {
+		metricsServerOptions.CertDir = cfg.MetricsCertPath
+		metricsServerOptions.CertName = cfg.MetricsCertName
+		metricsServerOptions.KeyName = cfg.MetricsCertKey
 	}
 
 	// ── Controller manager ───────────────────────────────────────────────
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
-		WebhookServer:          webhook.NewServer(webhookServerOptions),
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		HealthProbeBindAddress: cfg.ProbeAddr,
+		LeaderElection:         cfg.EnableLeaderElect,
 		LeaderElectionID:       "gpu-sharing-operator.run.ai",
 	})
 	if err != nil {
@@ -128,17 +125,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Register controllers and webhooks ────────────────────────────────
+	// ── Register controllers ─────────────────────────────────────────────
 	if err := (&controller.GpuSharingConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")
-		os.Exit(1)
-	}
-
-	if err := webhookv1alpha1.SetupGpuSharingConfigWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create webhook", "webhook", "GpuSharingConfig")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

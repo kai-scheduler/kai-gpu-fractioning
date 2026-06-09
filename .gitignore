@@ -3,6 +3,7 @@ coverage.out
 cover.out
 *.test
 testbin/
+.gomod-cache/
 
 # IDE
 .idea/

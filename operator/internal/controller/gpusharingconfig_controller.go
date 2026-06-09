@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/operator/api/v1alpha1"
+	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 )
 
 // GpuSharingConfigReconciler reconciles a GpuSharingConfig object
@@ -34,10 +34,6 @@ type GpuSharingConfigReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
-
-// +kubebuilder:rbac:groups=gpu-sharing.run.ai,resources=gpusharingconfigs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=gpu-sharing.run.ai,resources=gpusharingconfigs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=gpu-sharing.run.ai,resources=gpusharingconfigs/finalizers,verbs=update
 
 func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)

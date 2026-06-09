@@ -33,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/operator/api/v1alpha1"
+	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

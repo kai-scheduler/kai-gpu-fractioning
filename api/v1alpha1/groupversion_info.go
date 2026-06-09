@@ -20,21 +20,24 @@ limitations under the License.
 package v1alpha1
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
 var (
-	// SchemeGroupVersion is group version used to register these objects.
-	// This name is used by applyconfiguration generators (e.g. controller-gen).
 	SchemeGroupVersion = schema.GroupVersion{Group: "gpu-sharing.run.ai", Version: "v1alpha1"}
+	GroupVersion       = SchemeGroupVersion
 
-	// GroupVersion is an alias for SchemeGroupVersion, for backward compatibility.
-	GroupVersion = SchemeGroupVersion
-
-	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
-	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
-
-	// AddToScheme adds the types in this group-version to the given scheme.
-	AddToScheme = SchemeBuilder.AddToScheme
+	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
+	AddToScheme   = SchemeBuilder.AddToScheme
 )
+
+func addKnownTypes(s *runtime.Scheme) error {
+	s.AddKnownTypes(SchemeGroupVersion,
+		&GpuSharingConfig{},
+		&GpuSharingConfigList{},
+	)
+	metav1.AddToGroupVersion(s, SchemeGroupVersion)
+	return nil
+}

@@ -20,9 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // GpuSharingConfigSpec defines the desired state of GpuSharingConfig.
 type GpuSharingConfigSpec struct {
 }
@@ -32,17 +29,12 @@ type GpuSharingConfigStatus struct {
 	// observedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-
-	// conditions represent the current state of the GpuSharingConfig resource.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == 'default'",message="GpuSharingConfig must be named 'default'"
 
 // GpuSharingConfig is the Schema for the gpusharingconfigs API
 type GpuSharingConfig struct {
@@ -50,7 +42,7 @@ type GpuSharingConfig struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec defines the desired state of GpuSharingConfig
 	// +required
@@ -58,7 +50,7 @@ type GpuSharingConfig struct {
 
 	// status defines the observed state of GpuSharingConfig
 	// +optional
-	Status GpuSharingConfigStatus `json:"status,omitzero"`
+	Status GpuSharingConfigStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -66,10 +58,6 @@ type GpuSharingConfig struct {
 // GpuSharingConfigList contains a list of GpuSharingConfig
 type GpuSharingConfigList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []GpuSharingConfig `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&GpuSharingConfig{}, &GpuSharingConfigList{})
 }

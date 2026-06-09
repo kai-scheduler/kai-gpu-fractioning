@@ -52,7 +52,22 @@ lint:
 	$(MAKE) -C operator lint
 	golangci-lint run ./sharing-manager/...
 
-validate: fmt vet lint
+validate:
+	$(MAKE) -C operator validate
+	go fmt ./sharing-manager/...
+	go vet ./sharing-manager/...
+	golangci-lint run ./sharing-manager/...
+
+fix-boilerplate:
+	$(MAKE) -C operator fix-boilerplate
+	@year=$$(date +%Y); \
+	for f in $$(find api -name '*.go' -not -path '*/vendor/*'); do \
+		if ! head -2 "$$f" | grep -q 'Copyright'; then \
+			echo "  FIXING: $$f"; \
+			header=$$(sed "s/YEAR/$$year/" operator/hack/boilerplate.go.txt); \
+			printf '%s\n\n' "$$header" | cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+		fi; \
+	done
 
 # -----------------------------------------------------------
 # Generate (CRDs, deepcopy, manifests) — delegated to operator
@@ -65,6 +80,15 @@ generate:
 
 manifests:
 	$(MAKE) -C operator manifests
+
+# -----------------------------------------------------------
+# Deploy
+# -----------------------------------------------------------
+
+.PHONY: deploy
+
+deploy:
+	$(MAKE) -C operator deploy
 
 # -----------------------------------------------------------
 # Docker

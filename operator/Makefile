@@ -44,12 +44,12 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd paths="{./...,../api/...}" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="./..."
+	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="{./...,../api/...}"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -93,6 +93,37 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+
+.PHONY: validate
+validate: fmt vet lint verify-boilerplate ## Run all code-quality checks.
+
+.PHONY: verify-boilerplate
+verify-boilerplate: ## Verify that all .go files contain the Apache 2.0 boilerplate header.
+	@echo "Checking boilerplate headers..."
+	@failed=0; \
+	for f in $$(find . -name '*.go' -not -path './bin/*' -not -path './vendor/*'); do \
+		if ! head -2 "$$f" | grep -q 'Copyright'; then \
+			echo "  MISSING: $$f"; \
+			failed=1; \
+		fi; \
+	done; \
+	if [ "$$failed" -eq 1 ]; then \
+		echo "ERROR: some files are missing the boilerplate header (see hack/boilerplate.go.txt)"; \
+		exit 1; \
+	fi; \
+	echo "All files have boilerplate headers."
+
+.PHONY: fix-boilerplate
+fix-boilerplate: ## Add the Apache 2.0 boilerplate header to .go files that are missing it.
+	@year=$$(date +%Y); \
+	for f in $$(find . -name '*.go' -not -path './bin/*' -not -path './vendor/*'); do \
+		if ! head -2 "$$f" | grep -q 'Copyright'; then \
+			echo "  FIXING: $$f"; \
+			header=$$(sed "s/YEAR/$$year/" hack/boilerplate.go.txt); \
+			printf '%s\n\n' "$$header" | cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+		fi; \
+	done; \
+	echo "Done."
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

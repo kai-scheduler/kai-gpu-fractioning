@@ -1,14 +1,17 @@
 module github.com/run-ai/gpu-sharing-operator/operator
 
-go 1.25.7
+go 1.26
 
 require (
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
+	github.com/run-ai/gpu-sharing-operator/api v0.0.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
 	sigs.k8s.io/controller-runtime v0.23.3
 )
+
+replace github.com/run-ai/gpu-sharing-operator/api => ../api
 
 require (
 	cel.dev/expr v0.24.0 // indirect
