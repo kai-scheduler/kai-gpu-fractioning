@@ -69,7 +69,7 @@ spec:
           rt.cudaSetDevice(0)
           src = ctypes.c_void_p()
           dst = ctypes.c_void_p()
-          sz = ctypes.c_size_t(256 * 1024 * 1024)
+          sz = ctypes.c_size_t(100 * 1024 * 1024)
           rt.cudaMalloc(ctypes.byref(src), sz)
           rt.cudaMalloc(ctypes.byref(dst), sz)
           print("gpu-frac-2a: running GPU compute loop", flush=True)

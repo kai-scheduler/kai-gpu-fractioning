@@ -19,17 +19,17 @@ import (
 	"github.com/containerd/nri/pkg/api"
 )
 
-// visibleDevicesEnv lists, in priority order, the environment variables whose
-// value enumerates the GPUs visible to a container. NVIDIA_VISIBLE_DEVICES is the
-// NVIDIA container runtime convention; MOCK_NVIDIA_VISIBLE_DEVICES is injected by
-// the fake-gpu-operator on GPU-less test clusters.
+// visibleDevicesEnv lists the environment variables, in priority order, whose
+// value enumerates the GPUs visible to a container. NVIDIA_VISIBLE_DEVICES is
+// the standard NVIDIA container runtime convention;
+// MOCK_NVIDIA_VISIBLE_DEVICES is used by fake-GPU test clusters.
 var visibleDevicesEnv = []string{"NVIDIA_VISIBLE_DEVICES", "MOCK_NVIDIA_VISIBLE_DEVICES"}
 
 // GPUDevices returns the GPU devices advertised by the container's
 // visible-devices environment variable. Each comma-separated token becomes a
-// device: a numeric token is recorded as an Index, anything else (e.g. a GPU
-// UUID, as injected by the fake-gpu-operator) as a UUID. The sentinel values "",
-// "none", "void" and the wildcard "all" yield no GPU.
+// device: a numeric token is recorded as an Index, anything else (e.g. a UUID)
+// as a UUID. The sentinel values "", "none", "void", and the wildcard "all"
+// yield no devices.
 func GPUDevices(container *api.Container) []store.GPUDevice {
 	value := visibleDevicesValue(container)
 	switch value {
@@ -50,25 +50,22 @@ func GPUDevices(container *api.Container) []store.GPUDevice {
 		seen[token] = struct{}{}
 		if index, err := strconv.Atoi(token); err == nil {
 			devices = append(devices, store.GPUDevice{Index: index})
-			continue
+		} else {
+			devices = append(devices, store.GPUDevice{UUID: token})
 		}
-		devices = append(devices, store.GPUDevice{UUID: token})
 	}
 	return devices
 }
 
-// visibleDevicesValue returns the value of the highest-priority visible-devices
-// env var set on the container, or "" if none is set.
 func visibleDevicesValue(container *api.Container) string {
 	env := container.GetEnv()
 	for _, name := range visibleDevicesEnv {
 		prefix := name + "="
 		for _, kv := range env {
-			if !strings.HasPrefix(kv, prefix) {
-				continue
-			}
-			if value := strings.TrimSpace(strings.TrimPrefix(kv, prefix)); value != "" {
-				return value
+			if strings.HasPrefix(kv, prefix) {
+				if value := strings.TrimSpace(strings.TrimPrefix(kv, prefix)); value != "" {
+					return value
+				}
 			}
 		}
 	}

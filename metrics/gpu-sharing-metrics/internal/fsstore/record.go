@@ -27,25 +27,14 @@ const fileExtension = ".json"
 // never picked up by the reader's directory scan.
 const tempFilePattern = ".gpu-sharing-*.tmp"
 
-// gpuDevice is the on-disk GPU device entry. Index is the GPU ordinal; UUID is
-// the device UUID when the NRI detector learned it directly (e.g. from
-// MOCK_NVIDIA_VISIBLE_DEVICES on fake-GPU clusters). On real-GPU clusters the
-// UUID field will be empty and the metrics component resolves index→UUID via
-// its NVML device map. Both fields are optional — at least one is always set.
-type gpuDevice struct {
-	Index int    `json:"index"`
-	UUID  string `json:"uuid,omitempty"`
-}
-
 // record is the on-disk container→pod mapping: pod identity plus assigned GPU
-// devices, nothing else. The
-// container ID is the file name, not a field.
+// devices, nothing else. The container ID is the file name, not a field.
 type record struct {
-	SchemaVersion int         `json:"schemaVersion"`
-	Pod           string      `json:"pod"`
-	Namespace     string      `json:"namespace"`
-	PodUID        string      `json:"podUID"`
-	GPUDevices    []gpuDevice `json:"gpuDevices"`
+	SchemaVersion int               `json:"schemaVersion"`
+	Pod           string            `json:"pod"`
+	Namespace     string            `json:"namespace"`
+	PodUID        string            `json:"podUID"`
+	GPUDevices    []store.GPUDevice `json:"gpuDevices"`
 }
 
 // newRecord projects a store.ContainerInfo onto the minimal on-disk schema. The
@@ -53,16 +42,12 @@ type record struct {
 // the ID is the file name, and the metrics component matches by container ID
 // extracted from /proc/<pid>/cgroup.
 func newRecord(info store.ContainerInfo) record {
-	devices := make([]gpuDevice, 0, len(info.GPUDevices))
-	for _, device := range info.GPUDevices {
-		devices = append(devices, gpuDevice{Index: device.Index, UUID: device.UUID})
-	}
 	return record{
 		SchemaVersion: schemaVersion,
 		Pod:           info.Pod,
 		Namespace:     info.Namespace,
 		PodUID:        info.PodUID,
-		GPUDevices:    devices,
+		GPUDevices:    info.GPUDevices,
 	}
 }
 
@@ -71,16 +56,12 @@ func newRecord(info store.ContainerInfo) record {
 // reader matches processes by container-ID inclusion in the cgroup path, which
 // does not need the mapper's cgroup string.
 func (r record) toContainer(containerID string) store.ContainerInfo {
-	devices := make([]store.GPUDevice, 0, len(r.GPUDevices))
-	for _, device := range r.GPUDevices {
-		devices = append(devices, store.GPUDevice{Index: device.Index, UUID: device.UUID})
-	}
 	return store.ContainerInfo{
 		ContainerID: containerID,
 		Pod:         r.Pod,
 		Namespace:   r.Namespace,
 		PodUID:      r.PodUID,
-		GPUDevices:  devices,
+		GPUDevices:  r.GPUDevices,
 	}
 }
 

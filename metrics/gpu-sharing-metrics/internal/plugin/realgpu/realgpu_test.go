@@ -26,14 +26,14 @@ func TestGPUDevicesExtractsDistinctNVIDIAMinors(t *testing.T) {
 	}
 }
 
-func TestGPUDevicesIgnoresEnvironment(t *testing.T) {
-	// The production detector is authoritative on device nodes only: a container
-	// that advertises a GPU solely via env has no detectable GPU device.
+func TestGPUDevicesIgnoresEnvWithNoDeviceNodes(t *testing.T) {
+	// NVIDIA_VISIBLE_DEVICES is not in the NRI container spec at creation time;
+	// the production detector only reads device nodes.
 	devices := GPUDevices(&api.Container{
 		Env: []string{"NVIDIA_VISIBLE_DEVICES=GPU-from-env,1"},
 	})
 	if len(devices) != 0 {
-		t.Fatalf("expected env-only access to be ignored, got %#v", devices)
+		t.Fatalf("expected no devices without device nodes, got %#v", devices)
 	}
 }
 

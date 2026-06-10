@@ -1,9 +1,8 @@
 // Package realgpu is the production GPU detector. It identifies a container's
 // GPUs from its Linux device nodes (NVIDIA char major 195), which are
-// authoritative for device identity — unlike annotations or environment
-// variables. It is selected by the plugin package's !e2e build (see
-// gpudevices_real.go); the fake-GPU detector used for testing lives in the
-// sibling fakegpu package.
+// authoritative for device identity. It is selected by the plugin package's
+// !e2e build (see gpudevices_real.go); the fake-GPU detector used for testing
+// lives in the sibling fakegpu package.
 package realgpu
 
 import (
@@ -17,10 +16,13 @@ const (
 	maxNVIDIAGPUMinor = 32
 )
 
-// GPUDevices returns the GPU devices assigned to the container, derived from its
-// Linux device nodes. Each distinct NVIDIA device-node minor becomes one
-// GPUDevice{Index: minor}. Returns nil when the container has no GPU device node.
+// GPUDevices returns the GPU devices assigned to the container via Linux device
+// nodes. Returns nil when no NVIDIA device nodes are present.
 func GPUDevices(container *api.Container) []store.GPUDevice {
+	return devicesFromNodes(container)
+}
+
+func devicesFromNodes(container *api.Container) []store.GPUDevice {
 	linux := container.GetLinux()
 	if linux == nil {
 		return nil

@@ -52,4 +52,4 @@ docker buildx build \
 
 echo
 echo ">> pushed ${IMAGE}:${TAG}"
-echo ">> next: kubectl apply -f deploy/production/daemonset.yaml"
+echo ">> next: kubectl apply -f deploy/real-gpu-cluster/daemonset.yaml"

@@ -66,6 +66,17 @@ kubectl -n gpu-sharing port-forward svc/gpu-sharing-plugin-metrics 2112:2112 &
 curl -s http://localhost:2112/metrics | grep runai_gpu
 ```
 
+Inspect the container→pod mapping files written by the NRI plugin on a node
+(replace `<node-pod>` with the plugin pod name on that node):
+
+```bash
+# List all container mapping files
+kubectl -n gpu-sharing exec <node-pod> -- ls /var/run/gpu-sharing/map
+
+# Show the mapping for a specific container ID
+kubectl -n gpu-sharing exec <node-pod> -- cat /var/run/gpu-sharing/map/<container-id>.json
+```
+
 ## 5. Tear down
 
 ```bash
