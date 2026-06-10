@@ -22,11 +22,6 @@ const schemaVersion = 1
 // fileExtension is the suffix of every mapping file: <containerID>.json.
 const fileExtension = ".json"
 
-// tempFilePattern is the os.CreateTemp pattern for the write-then-rename staging
-// file. It is dot-prefixed and does not end in .json so an in-flight write is
-// never picked up by the reader's directory scan.
-const tempFilePattern = ".gpu-sharing-*.tmp"
-
 // record is the on-disk container→pod mapping: pod identity plus assigned GPU
 // devices, nothing else. The container ID is the file name, not a field.
 type record struct {

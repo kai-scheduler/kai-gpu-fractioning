@@ -11,12 +11,14 @@ import (
 	"gpu-sharing-operator/metrics/gpu-sharing-metrics/internal/store"
 )
 
-// dirPerm is the mapping directory mode; filePerm is the per-container file mode.
-// The file is world-readable so the metrics container (which may run as a
-// different UID, mounting the volume read-only) can read what the mapper writes.
 const (
-	dirPerm  os.FileMode = 0o755
-	filePerm os.FileMode = 0o644
+	dirPerm  os.FileMode = 0o755 // rwxr-xr-x
+	filePerm os.FileMode = 0o644 // rw-r--r-- world-readable so the metrics container can read mapper-written files
+
+	// tempFilePattern is the os.CreateTemp pattern for the write-then-rename
+	// staging file. Dot-prefixed and no .json suffix so in-flight writes are
+	// never picked up by the reader's directory scan.
+	tempFilePattern = ".gpu-sharing-*.tmp"
 )
 
 // Writer persists the container→pod mapping as one <containerID>.json file per
