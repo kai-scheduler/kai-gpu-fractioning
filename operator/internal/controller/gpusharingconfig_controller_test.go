@@ -32,7 +32,7 @@ import (
 
 var _ = Describe("GpuSharingConfig Controller", func() {
 	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+		const resourceName = "default"
 
 		ctx := context.Background()
 
