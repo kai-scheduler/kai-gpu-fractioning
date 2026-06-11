@@ -27,7 +27,9 @@ spec:
           image: "{{ .Values.images.operator.repository }}:{{ .Values.images.operator.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.operator.pullPolicy }}
           args:
+            {{- if .Values.leaderElect }}
             - --leader-elect
+            {{- end }}
             - --health-probe-bind-address=:8081
           ports:
             - name: health

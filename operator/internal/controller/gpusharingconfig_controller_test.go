@@ -21,7 +21,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -43,15 +42,12 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind GpuSharingConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, gpusharingconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &gpusharingv1alpha1.GpuSharingConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: resourceName,
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			resource := &gpusharingv1alpha1.GpuSharingConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: resourceName,
+				},
 			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		})
 
 		AfterEach(func() {
