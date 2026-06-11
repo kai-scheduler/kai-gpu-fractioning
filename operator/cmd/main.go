@@ -18,7 +18,6 @@ package main
 
 import (
 	"crypto/tls"
-	"flag"
 	"os"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -33,6 +32,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	"github.com/run-ai/gpu-sharing-operator/operator/internal/config"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -48,43 +48,8 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// config holds all CLI-configurable settings for the operator.
-// We use CLI flags rather than a ConfigMap because these values are
-// deployment-time constants (addresses, TLS paths, leader election) that
-// are set once at pod creation and never change at runtime.
-type config struct {
-	MetricsAddr       string // address the metrics endpoint binds to ("0" disables)
-	ProbeAddr         string // address the health/readiness probe binds to
-	EnableLeaderElect bool   // enable leader election for HA deployments
-	SecureMetrics     bool   // serve metrics over HTTPS
-	EnableHTTP2       bool   // allow HTTP/2 (disabled by default for Rapid Reset CVE)
-	MetricsCertPath   string // directory containing the metrics TLS certificate
-	MetricsCertName   string // filename of the metrics TLS certificate
-	MetricsCertKey    string // filename of the metrics TLS private key
-	Development       bool   // enable development-mode logging (debug, human-readable)
-}
-
-func parseFlags() config {
-	var cfg config
-	flag.StringVar(&cfg.MetricsAddr, "metrics-bind-address", "0",
-		"The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable.")
-	flag.StringVar(&cfg.ProbeAddr, "health-probe-bind-address", ":8081",
-		"The address the probe endpoint binds to.")
-	flag.BoolVar(&cfg.EnableLeaderElect, "leader-elect", false,
-		"Enable leader election for controller manager.")
-	flag.BoolVar(&cfg.SecureMetrics, "metrics-secure", true,
-		"If set, the metrics endpoint is served securely via HTTPS.")
-	flag.StringVar(&cfg.MetricsCertPath, "metrics-cert-path", "", "The directory that contains the metrics server certificate.")
-	flag.StringVar(&cfg.MetricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&cfg.MetricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(&cfg.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics server.")
-	flag.BoolVar(&cfg.Development, "development", false, "Enable development-mode logging (debug level, human-readable).")
-	flag.Parse()
-	return cfg
-}
-
 func main() {
-	cfg := parseFlags()
+	cfg := config.ParseFlags()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(cfg.Development)))
 

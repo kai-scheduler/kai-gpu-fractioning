@@ -4,6 +4,7 @@
 
 IMG ?= controller:latest
 YEAR ?= $(shell date +%Y)
+GO ?= go
 CONTAINER_TOOL ?= docker
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 
@@ -11,10 +12,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 LOCALBIN ?= $(shell pwd)/bin
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
+ifeq (,$(shell $(GO) env GOBIN))
+GOBIN=$(shell $(GO) env GOPATH)/bin
 else
-GOBIN=$(shell go env GOBIN)
+GOBIN=$(shell $(GO) env GOBIN)
 endif
 
 # Tool binaries
@@ -67,46 +68,26 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt ./...
+	$(GO) fmt ./...
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet ./...
+	$(GO) vet ./...
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $$($(GO) list ./... | grep -v /e2e) -coverprofile cover.out
 
 .PHONY: validate
 validate: fmt vet lint verify-boilerplate ## Run all code-quality checks.
 
 .PHONY: verify-boilerplate
 verify-boilerplate: ## Verify that all .go files contain the Apache 2.0 boilerplate header.
-	@echo "Checking boilerplate headers..."
-	@failed=0; \
-	for f in $$(find . -name '*.go' -not -path './bin/*' -not -path './vendor/*'); do \
-		if ! head -2 "$$f" | grep -q 'Copyright'; then \
-			echo "  MISSING: $$f"; \
-			failed=1; \
-		fi; \
-	done; \
-	if [ "$$failed" -eq 1 ]; then \
-		echo "ERROR: some files are missing the boilerplate header (see hack/boilerplate.go.txt)"; \
-		exit 1; \
-	fi; \
-	echo "All files have boilerplate headers."
+	@hack/verify-boilerplate.sh
 
 .PHONY: fix-boilerplate
 fix-boilerplate: ## Add the Apache 2.0 boilerplate header to .go files that are missing it.
-	@year=$$(date +%Y); \
-	for f in $$(find . -name '*.go' -not -path './bin/*' -not -path './vendor/*'); do \
-		if ! head -2 "$$f" | grep -q 'Copyright'; then \
-			echo "  FIXING: $$f"; \
-			header=$$(sed "s/YEAR/$$year/" hack/boilerplate.go.txt); \
-			printf '%s\n\n' "$$header" | cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
-		fi; \
-	done; \
-	echo "Done."
+	@hack/fix-boilerplate.sh
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -124,11 +105,11 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	$(GO) build -o bin/manager cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	$(GO) run ./cmd/main.go
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
@@ -200,12 +181,12 @@ set -e; \
 package=$(2)@$(3) ;\
 echo "Downloading $${package}" ;\
 rm -f "$(1)" ;\
-GOBIN="$(LOCALBIN)" go install $${package} ;\
+GOBIN="$(LOCALBIN)" $(GO) install $${package} ;\
 mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
 } ;\
 ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
 endef
 
 define gomodver
-$(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+$(shell $(GO) list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef

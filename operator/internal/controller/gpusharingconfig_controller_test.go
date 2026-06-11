@@ -38,7 +38,6 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		typeNamespacedName := types.NamespacedName{
 			Name: resourceName,
 		}
-		gpusharingconfig := &gpusharingv1alpha1.GpuSharingConfig{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind GpuSharingConfig")
