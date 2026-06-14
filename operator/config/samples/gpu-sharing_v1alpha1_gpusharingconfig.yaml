@@ -1,0 +1,5 @@
+apiVersion: gpu-sharing.run.ai/v1alpha1
+kind: GpuSharingConfig
+metadata:
+  name: default
+spec: {}

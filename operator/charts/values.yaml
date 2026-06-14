@@ -1,16 +1,9 @@
 replicaCount: 1
+leaderElect: true
 
 images:
   operator:
     repository: gcr.io/run-ai-prod/gpu-sharing-operator
-    tag: ""
-    pullPolicy: IfNotPresent
-  mpsd:
-    repository: gcr.io/run-ai-prod/mpsd
-    tag: ""
-    pullPolicy: IfNotPresent
-  sharingd:
-    repository: gcr.io/run-ai-prod/sharingd
     tag: ""
     pullPolicy: IfNotPresent
 

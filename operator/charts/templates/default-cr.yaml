@@ -1,0 +1,10 @@
+apiVersion: gpu-sharing.run.ai/v1alpha1
+kind: GpuSharingConfig
+metadata:
+  name: default
+  labels:
+    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+spec: {}
