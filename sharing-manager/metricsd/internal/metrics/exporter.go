@@ -101,18 +101,12 @@ type Runtime struct {
 
 // New builds a Runtime from cfg — validates config, wires the collector, pod
 // source, controller, and HTTP server, but does not start any goroutines.
-// Returns nil when cfg.Enabled is false.
 func New(ctx context.Context, cfg Config, reader store.Reader, logger *slog.Logger) (*Runtime, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if !cfg.Enabled {
-		logger.InfoContext(ctx, "GPU metrics exporter disabled")
-		return nil, nil
-	}
 
-	names := cfg.Names.WithDefaults()
-	if err := names.validate(); err != nil {
+	if err := cfg.Names.validate(); err != nil {
 		return nil, fmt.Errorf("configure metric names: %w", err)
 	}
 
@@ -122,7 +116,7 @@ func New(ctx context.Context, cfg Config, reader store.Reader, logger *slog.Logg
 
 	gpuCollector := newCollector(ctx, cfg.collectInterval(), logger)
 	controller := newMetricsController(gpuCollector, ProcCgroupResolver{ProcRoot: cfg.ProcRoot}, reader, cfg.collectInterval(), cfg.SMUtilizationWindow, logger)
-	runtime := newRuntime(controller, names)
+	runtime := newRuntime(controller, cfg.Names)
 	runtime.log = logger
 	runtime.coll = gpuCollector
 	runtime.controller = controller
@@ -156,11 +150,14 @@ func (r *Runtime) Start(ctx context.Context) {
 		defer r.wg.Done()
 		r.coll.Run(metricsCtx)
 	}()
-	go r.controller.Run(metricsCtx)
+	go func() {
+		if err := r.controller.Run(metricsCtx); err != nil {
+			r.log.ErrorContext(metricsCtx, "metrics controller stopped", "error", err)
+		}
+	}()
 }
 
 func newRuntime(provider SnapshotProvider, names MetricNames) *Runtime {
-	names = names.WithDefaults()
 	labels := []string{"namespace", "pod", "pod_uid", "gpu_uuid", "gpu_index"}
 	runtime := &Runtime{
 		provider: provider,
@@ -182,46 +179,39 @@ func newRuntime(provider SnapshotProvider, names MetricNames) *Runtime {
 	return runtime
 }
 
-func (e *Runtime) handler() http.Handler {
-	handler := promhttp.HandlerFor(e.registry, promhttp.HandlerOpts{})
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		e.refresh(r.Context())
-		handler.ServeHTTP(w, r)
+func (r *Runtime) handler() http.Handler {
+	handler := promhttp.HandlerFor(r.registry, promhttp.HandlerOpts{})
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.refresh(req.Context())
+		handler.ServeHTTP(w, req)
 	})
 }
 
 // refresh pulls the latest snapshot from the provider on each scrape. Because the
 // provider may be remote, a fetch failure is non-fatal: we log it and serve the
 // last observed values rather than dropping the scrape.
-func (e *Runtime) refresh(ctx context.Context) {
-	if e.provider == nil {
-		return
-	}
-	snapshot, err := e.provider.Snapshot(ctx)
+func (r *Runtime) refresh(ctx context.Context) {
+	snapshot, err := r.provider.Snapshot(ctx)
 	if err != nil {
-		log := e.log
-		if log == nil {
-			log = slog.Default()
-		}
-		log.WarnContext(ctx, "failed to fetch metrics snapshot from provider; serving last known values", "error", err)
+		r.log.WarnContext(ctx, "failed to fetch metrics snapshot from provider; serving last known values", "error", err)
 		return
 	}
-	e.observeSnapshot(snapshot)
+	r.observeSnapshot(snapshot)
 }
 
-func (e *Runtime) observeSnapshot(snapshot Snapshot) {
-	e.observe(snapshot.Metrics, snapshot.ActivePodUIDs)
+func (r *Runtime) observeSnapshot(snapshot Snapshot) {
+	r.observe(snapshot.Metrics, snapshot.ActivePodUIDs)
 }
 
-func (e *Runtime) observe(metrics []PodGPUMetric, activePodUIDs map[string]struct{}) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (r *Runtime) observe(metrics []PodGPUMetric, activePodUIDs map[string]struct{}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	// Remove series for gone pods, then zero-out remaining known series
 	// (containers still active but currently idle).
-	e.pruneDeletedPods(activePodUIDs)
-	for _, labels := range e.knownLabels {
-		e.setZero(labels)
+	r.pruneDeletedPods(activePodUIDs)
+	for _, labels := range r.knownLabels {
+		r.setZero(labels)
 	}
 
 	// For each active metric: remove any idle placeholder for the same pod+GPU,
@@ -229,47 +219,47 @@ func (e *Runtime) observe(metrics []PodGPUMetric, activePodUIDs map[string]struc
 	// but deleteIdleLabelsForObservedGPU removes it from the gauge immediately.
 	for _, metric := range metrics {
 		key, labels := metricLabels(metric)
-		e.deleteIdleLabelsForObservedGPU(key)
-		e.knownLabels[key] = labels
-		e.memoryBytes.With(labels).Set(float64(metric.MemoryBytes))
-		e.smUtilization.With(labels).Set(metric.SMUtilizationPercent)
+		r.deleteIdleLabelsForObservedGPU(key)
+		r.knownLabels[key] = labels
+		r.memoryBytes.With(labels).Set(float64(metric.MemoryBytes))
+		r.smUtilization.With(labels).Set(metric.SMUtilizationPercent)
 	}
 }
 
-func (e *Runtime) pruneDeletedPods(activePodUIDs map[string]struct{}) {
+func (r *Runtime) pruneDeletedPods(activePodUIDs map[string]struct{}) {
 	if activePodUIDs == nil {
 		return
 	}
-	for key := range e.knownLabels {
+	for key := range r.knownLabels {
 		if _, ok := activePodUIDs[key.PodUID]; !ok {
-			e.deleteSeries(key)
+			r.deleteSeries(key)
 		}
 	}
 }
 
-func (e *Runtime) deleteSeries(key podGPUKey) {
-	labels := e.knownLabels[key]
+func (r *Runtime) deleteSeries(key podGPUKey) {
+	labels := r.knownLabels[key]
 	if labels != nil {
-		e.memoryBytes.Delete(labels)
-		e.smUtilization.Delete(labels)
+		r.memoryBytes.Delete(labels)
+		r.smUtilization.Delete(labels)
 	}
-	delete(e.knownLabels, key)
+	delete(r.knownLabels, key)
 }
 
-func (e *Runtime) deleteIdleLabelsForObservedGPU(observed podGPUKey) {
+func (r *Runtime) deleteIdleLabelsForObservedGPU(observed podGPUKey) {
 	if observed.GPUUUID == "" {
 		return
 	}
-	for key := range e.knownLabels {
+	for key := range r.knownLabels {
 		if key.Namespace == observed.Namespace && key.PodUID == observed.PodUID && key.GPUUUID == "" && key.GPUIndex == observed.GPUIndex {
-			e.deleteSeries(key)
+			r.deleteSeries(key)
 		}
 	}
 }
 
-func (e *Runtime) setZero(labels prometheus.Labels) {
-	e.memoryBytes.With(labels).Set(0)
-	e.smUtilization.With(labels).Set(0)
+func (r *Runtime) setZero(labels prometheus.Labels) {
+	r.memoryBytes.With(labels).Set(0)
+	r.smUtilization.With(labels).Set(0)
 }
 
 func metricLabels(metric PodGPUMetric) (podGPUKey, prometheus.Labels) {
@@ -289,29 +279,29 @@ func metricLabels(metric PodGPUMetric) (podGPUKey, prometheus.Labels) {
 	}
 }
 
-func (e *Runtime) Stop(ctx context.Context, logger *slog.Logger) {
-	if e == nil {
+func (r *Runtime) Stop(ctx context.Context, logger *slog.Logger) {
+	if r == nil {
 		return
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	if e.cancel != nil {
-		e.cancel()
+	if r.cancel != nil {
+		r.cancel()
 	}
 	// Wait for gpuCollector.Run to exit before calling nvml.Shutdown so there is
 	// no race between in-flight NVML calls and the shutdown sequence.
-	e.wg.Wait()
-	if e.server != nil {
+	r.wg.Wait()
+	if r.server != nil {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		if err := e.server.Shutdown(shutdownCtx); err != nil {
+		if err := r.server.Shutdown(shutdownCtx); err != nil {
 			logger.WarnContext(ctx, "failed to shutdown GPU metrics exporter", "error", err)
 		}
 	}
-	if e.coll != nil {
-		if err := e.coll.Close(); err != nil {
+	if r.coll != nil {
+		if err := r.coll.Close(); err != nil {
 			logger.WarnContext(ctx, "failed to close NVML collector", "error", err)
 		}
 	}
@@ -350,4 +340,3 @@ func (c Config) collectInterval() time.Duration {
 	}
 	return c.Interval
 }
-

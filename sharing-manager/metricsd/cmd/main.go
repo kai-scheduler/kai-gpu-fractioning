@@ -74,15 +74,18 @@ func main() {
 	// binary both sides run in-process, but the handoff still goes through the
 	// shared filesystem so the components can be split into two containers without
 	mappingReader := fsstore.NewReader(cfg.MapDir, logger)
-	metricsRuntime, err := metrics.New(ctx, cfg.Metrics.RuntimeConfig(), mappingReader, logger)
-	if err != nil {
-		logger.Error("failed to build metrics exporter", "error", err)
-		os.Exit(1)
-	}
-	if metricsRuntime != nil {
+	var metricsRuntime *metrics.Runtime
+	if cfg.Metrics.Enabled {
+		metricsRuntime, err = metrics.New(ctx, cfg.Metrics.RuntimeConfig(), mappingReader, logger)
+		if err != nil {
+			logger.Error("failed to build metrics exporter", "error", err)
+			os.Exit(1)
+		}
 		metricsRuntime.Start(ctx)
-		defer metricsRuntime.Stop(context.Background(), logger)
+	} else {
+		logger.Info("GPU metrics exporter disabled")
 	}
+	defer metricsRuntime.Stop(context.Background(), logger)
 
 	for {
 		nriStub, err := stub.New(plugin,

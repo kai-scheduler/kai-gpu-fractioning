@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,10 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 )
+
+type staticProvider struct{ snap Snapshot }
+
+func (s *staticProvider) Snapshot(_ context.Context) (Snapshot, error) { return s.snap, nil }
 
 func TestMetricNamesValidate(t *testing.T) {
 	tests := []struct {
@@ -152,8 +157,7 @@ func TestMetricsExporterDropsIdleSeriesWhenRealMetricArrives(t *testing.T) {
 }
 
 func TestMetricsExporterServesPrometheusFormat(t *testing.T) {
-	exporter := newRuntime(nil, DefaultMetricNames())
-	exporter.observeSnapshot(Snapshot{
+	snap := Snapshot{
 		Metrics: []PodGPUMetric{{
 			Namespace:            "default",
 			Pod:                  "pod",
@@ -164,7 +168,8 @@ func TestMetricsExporterServesPrometheusFormat(t *testing.T) {
 			SMUtilizationPercent: 42,
 		}},
 		ActivePodUIDs: map[string]struct{}{"pod-uid": {}},
-	})
+	}
+	exporter := newRuntime(&staticProvider{snap}, DefaultMetricNames())
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", exporter.handler())

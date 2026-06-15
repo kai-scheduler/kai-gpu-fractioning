@@ -4,6 +4,7 @@ TAG ?= dev
 PLATFORMS ?= linux/amd64,linux/arm64
 BIN_DIR ?= bin
 CGO_ENABLED ?= 1
+DOCKER ?= docker
 # GO_TAGS selects optional build tags. Empty = production. "e2e" compiles the
 # fake-GPU detection (internal/plugin/adapter_fakegpu_e2e.go) for testing on
 # GPU-less clusters. Passed to both `go build` and the docker image build.
@@ -36,7 +37,7 @@ clean:
 	rm -rf bin coverage.out
 
 docker-build:
-	docker build \
+	$(DOCKER) build \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DATE=$(DATE) \
@@ -44,7 +45,7 @@ docker-build:
 		-t $(IMAGE):$(TAG) .
 
 docker-buildx:
-	docker buildx build \
+	$(DOCKER) buildx build \
 		--platform $(PLATFORMS) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \

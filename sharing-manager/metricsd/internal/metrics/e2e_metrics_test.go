@@ -1,5 +1,8 @@
 //go:build e2e
 
+// Package-internal e2e tests (not package metrics_test) so they can access
+// unexported controller state and snapshot internals. Compiled only with
+// -tags e2e; require a fake-GPU cluster.
 package metrics
 
 // End-to-end metrics pipeline tests: fake GPU collector → controller → Prometheus

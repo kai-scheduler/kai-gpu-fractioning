@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"strconv"
 	"sync"
 	"time"
@@ -56,9 +58,9 @@ func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSo
 	}
 }
 
-func (s *metricsController) Run(ctx context.Context) {
+func (s *metricsController) Run(ctx context.Context) error {
 	if s.collector == nil || s.pods == nil {
-		return
+		return errors.New("metrics controller: collector or pod source is nil")
 	}
 
 	// Release backend resources (e.g. the PodResources gRPC connection) when the
@@ -78,7 +80,7 @@ func (s *metricsController) Run(ctx context.Context) {
 		case <-ticker.C:
 			s.collect(ctx)
 		case <-ctx.Done():
-			return
+			return nil
 		}
 	}
 }
@@ -132,7 +134,7 @@ func (s *metricsController) setSnapshot(metrics []PodGPUMetric, activePodUIDs ma
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.snapshot.Metrics = append([]PodGPUMetric(nil), metrics...)
-	s.snapshot.ActivePodUIDs = cloneStringSet(activePodUIDs)
+	s.snapshot.ActivePodUIDs = maps.Clone(activePodUIDs)
 }
 
 func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
@@ -318,17 +320,6 @@ func podDeviceIndexKey(key podGPUKey) string {
 func cloneSnapshot(in Snapshot) Snapshot {
 	return Snapshot{
 		Metrics:       append([]PodGPUMetric(nil), in.Metrics...),
-		ActivePodUIDs: cloneStringSet(in.ActivePodUIDs),
+		ActivePodUIDs: maps.Clone(in.ActivePodUIDs),
 	}
-}
-
-func cloneStringSet(in map[string]struct{}) map[string]struct{} {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]struct{}, len(in))
-	for key := range in {
-		out[key] = struct{}{}
-	}
-	return out
 }

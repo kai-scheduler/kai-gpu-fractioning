@@ -8,9 +8,9 @@
 # (it inits NVML unconditionally and crash-loops on non-GPU nodes). This builds
 # a fresh image from your current HEAD, where metrics are correctly gated.
 #
-# Run it from anywhere; it cd's to the module root (the parent of deploy/).
+# Run it from anywhere; it cd's to the module root (the parent of hack/).
 #
-#   ./deploy/build-and-push.sh
+#   ./hack/build-and-push.sh
 #
 # Override any variable inline, e.g.:  TAG=mytest ./deploy/build-and-push.sh
 #
@@ -30,7 +30,7 @@ TAG="${TAG:-e2e}"
 GO_TAGS="${GO_TAGS:-e2e}"
 PLATFORM="${PLATFORM:-linux/amd64}"         # cluster nodes are amd64 (kind-on-AWS)
 
-# Resolve the module root (this script lives in <root>/deploy/).
+# Resolve the module root (this script lives in <root>/hack/).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
@@ -54,7 +54,8 @@ go test -tags "${GO_TAGS}" ./...
 # ---- 1. Authenticate to the registry ---------------------------------------
 # Interactive: prompts for the JFrog username + identity token / API key.
 # Skip if you are already logged in (`docker login` state is cached).
-docker login runai.jfrog.io
+REGISTRY_HOST="${REGISTRY%%/*}"
+docker login "${REGISTRY_HOST}"
 
 # ---- 2. Ensure a buildx builder + amd64 emulation --------------------------
 # This Mac is arm64 (Apple Silicon); the cluster is amd64. The Dockerfile uses
