@@ -26,14 +26,14 @@ import (
 // incoming event to be dropped rather than blocking the NRI callback goroutine.
 const defaultQueueDepth = 10 * 1024
 
-// Adapter produces the mapping for a single container. It is run on the worker
+// adapter produces the mapping for a single container. It is run on the worker
 // goroutine, off the producer's hot path. ok is false when the event carries no
 // metrics-relevant container (e.g. no GPU assigned), in which case it is dropped.
-type Adapter func() (store.ContainerInfo, bool)
+type adapter func() (store.ContainerInfo, bool)
 
-// SyncAdapter produces the full set of current container mappings for a resync.
+// syncAdapter produces the full set of current container mappings for a resync.
 // It is run on the worker goroutine.
-type SyncAdapter func() []store.ContainerInfo
+type syncAdapter func() []store.ContainerInfo
 
 // kind is the type of mapping change an event carries.
 type kind int
@@ -44,12 +44,12 @@ const (
 	replace
 )
 
-// event is a queued mapping change. The adapter (or syncAdapter) is run on the
-// worker so the conversion never touches the producer's goroutine.
+// event is a pending mapping change. The callback is executed on the worker
+// goroutine, keeping the producer's NRI hot path non-blocking.
 type event struct {
 	kind        kind
-	adapt       Adapter     // upsert
-	syncAdapt   SyncAdapter // replace
+	adapt       adapter     // upsert
+	syncAdapt   syncAdapter // replace
 	containerID string      // remove
 }
 
@@ -96,7 +96,7 @@ func NewProcessor(writer store.Writer, logger *slog.Logger, opts Options) *Proce
 // on the worker goroutine and may return ok=false to drop the event. Returns
 // immediately; drops the event if the queue is full rather than blocking the
 // NRI callback.
-func (p *Processor) Upsert(adapt Adapter) {
+func (p *Processor) Upsert(adapt func() (store.ContainerInfo, bool)) {
 	p.enqueue(item{event: event{kind: upsert, adapt: adapt}})
 }
 
@@ -110,7 +110,7 @@ func (p *Processor) Delete(containerID string) {
 // resync). adapt is run on the worker goroutine and returns the complete current
 // container set. Returns immediately; drops the event if the queue is full
 // rather than blocking the NRI callback.
-func (p *Processor) Synchronize(adapt SyncAdapter) {
+func (p *Processor) Synchronize(adapt func() []store.ContainerInfo) {
 	p.enqueue(item{event: event{kind: replace, syncAdapt: adapt}})
 }
 
