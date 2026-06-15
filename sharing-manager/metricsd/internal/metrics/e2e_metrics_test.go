@@ -8,7 +8,7 @@ package metrics
 // End-to-end metrics pipeline tests: fake GPU collector → controller → Prometheus
 // exporter → HTTP scrape. No real GPU, NVML, or /proc access required.
 //
-// Scenario: two pods (pod-a "trainer", pod-b "worker") each request 0.8 of the
+// Scenario: two pods (pod-a "trainer", pod-b "worker") each request 0.5 of the
 // same physical GPU (fractional sharing). Both have live processes that allocate
 // GPU memory. The tests validate that the exporter reports correct per-pod
 // memory and SM-utilization metrics, and that neither pod's numbers bleed into
@@ -78,7 +78,7 @@ func (s *e2ePodSource) ActiveContainers() []store.ContainerInfo {
 func twoFractionalPodsFixture(t *testing.T) *Runtime {
 	t.Helper()
 
-	// Both pods reference GPU index 0 — they share one physical device (0.8 each).
+	// Both pods reference GPU index 0 — they share one physical device (0.5 each).
 	podA := store.ContainerInfo{
 		ContainerID: "ctr-pod-a",
 		Container:   "trainer",

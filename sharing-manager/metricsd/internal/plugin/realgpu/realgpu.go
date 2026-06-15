@@ -12,7 +12,13 @@ import (
 )
 
 const (
+	// nvidiaDeviceMajor is the Linux character device major number assigned to
+	// NVIDIA GPUs (https://www.kernel.org/doc/Documentation/admin-guide/devices.txt).
 	nvidiaDeviceMajor = 195
+
+	// maxNVIDIAGPUMinor is the highest minor device number the driver assigns to
+	// a physical GPU. Minor 0–N map to GPU indices; minors above this threshold
+	// are MIG instances or control devices (e.g. nvidiactl = 255) and are skipped.
 	maxNVIDIAGPUMinor = 32
 )
 

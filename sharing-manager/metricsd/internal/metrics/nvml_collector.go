@@ -14,11 +14,12 @@ import (
 const nvmlValueNotAvailable = ^uint64(0)
 
 type nvmlProcessCollector struct {
-	mu          sync.RWMutex
-	snapshot    GPUProcessSnapshot
-	interval    time.Duration
-	deviceUUIDs map[int]string
-	log         *slog.Logger
+	mu           sync.RWMutex
+	snapshot     GPUProcessSnapshot
+	interval     time.Duration
+	lastPollTime time.Time
+	deviceUUIDs  map[int]string
+	log          *slog.Logger
 }
 
 type gpuProcessKey struct {
@@ -72,7 +73,12 @@ func (c *nvmlProcessCollector) Close() error {
 }
 
 func (c *nvmlProcessCollector) collect(now time.Time) {
-	lastSeenTimestamp := uint64(now.Add(-c.interval).UnixMicro())
+	last := c.lastPollTime
+	if last.IsZero() {
+		last = now.Add(-c.interval)
+	}
+	c.lastPollTime = now
+	lastSeenTimestamp := uint64(last.UnixMicro())
 
 	count, ret := nvml.DeviceGetCount()
 	if !errors.Is(ret, nvml.SUCCESS) {

@@ -1,4 +1,4 @@
-# Test workload: two pods sharing one physical GPU at 0.8 fraction each.
+# Test workload: two pods sharing one physical GPU at 0.5 fraction each.
 #
 # Purpose: validate that the gpu-sharing-plugin reports per-pod GPU metrics
 # (memory bytes, SM utilization) for co-resident pods on the same device.
@@ -42,9 +42,9 @@ metadata:
     app: gpu-frac-test
   annotations:
     # Fractional GPU annotation: the plugin records this container only when this
-    # annotation is present. 9830 MiB ≈ 0.8 × 12000 MiB (V100 12 GB).
-    nvidia.com/container.trainer.gpu-memory.limit: "9830"
-    nvidia.com/container.trainer.gpu-memory.request: "9830"
+    # annotation is present. 6144 MiB = 0.5 × 12288 MiB (V100 12 GB).
+    nvidia.com/container.trainer.gpu-memory.limit: "6144"
+    nvidia.com/container.trainer.gpu-memory.request: "6144"
 spec:
   nodeSelector:
     run.ai/fake.gpu: "true"
@@ -65,8 +65,8 @@ metadata:
   labels:
     app: gpu-frac-test
   annotations:
-    nvidia.com/container.worker.gpu-memory.limit: "9830"
-    nvidia.com/container.worker.gpu-memory.request: "9830"
+    nvidia.com/container.worker.gpu-memory.limit: "6144"
+    nvidia.com/container.worker.gpu-memory.request: "6144"
 spec:
   nodeSelector:
     run.ai/fake.gpu: "true"

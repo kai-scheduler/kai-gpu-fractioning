@@ -154,7 +154,7 @@ func cgroupPathContains(processPath, containerPath string) bool {
 	if processPath == "" || containerPath == "" || containerPath == "/" {
 		return false
 	}
-	return processPath == containerPath || strings.Contains(processPath, containerPath)
+	return processPath == containerPath || strings.HasPrefix(processPath, containerPath+"/")
 }
 
 func cgroupPathContainsContainerID(processPath, containerID string) bool {

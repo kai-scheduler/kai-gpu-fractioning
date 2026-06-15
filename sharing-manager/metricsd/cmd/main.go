@@ -1,3 +1,17 @@
+// Copyright 2024 Run.ai Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -16,6 +30,11 @@ import (
 	gpuext "github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/plugin"
 
 	"github.com/containerd/nri/pkg/stub"
+)
+
+const (
+	defaultLogLevel      = "info"
+	defaultRetryInterval = 5 * time.Second
 )
 
 var (
@@ -38,8 +57,8 @@ func main() {
 	flag.StringVar(&socketPath, "socket", stringFromEnv("NRI_SOCKET_PATH", gpuext.DefaultNRISocketPath), "path to the NRI runtime socket")
 	flag.StringVar(&pluginName, "plugin-name", stringFromEnv("PLUGIN_NAME", gpuext.DefaultPluginName), "NRI plugin name")
 	flag.StringVar(&pluginIndex, "plugin-index", stringFromEnv("PLUGIN_INDEX", gpuext.DefaultPluginIndex), "NRI plugin index used for ordering")
-	flag.StringVar(&logLevel, "log-level", stringFromEnv("LOG_LEVEL", "info"), "log level: debug, info, warn, or error")
-	flag.DurationVar(&retryInterval, "retry-interval", durationFromEnv("RETRY_INTERVAL", 5*time.Second), "delay before reconnecting after the NRI connection exits")
+	flag.StringVar(&logLevel, "log-level", stringFromEnv("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
+	flag.DurationVar(&retryInterval, "retry-interval", durationFromEnv("RETRY_INTERVAL", defaultRetryInterval), "delay before reconnecting after the NRI connection exits")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -72,7 +91,8 @@ func main() {
 	// The NRI mapper (plugin) writes the container→pod mapping to cfg.MapDir; the
 	// metrics component reads it back from the same directory. In this single
 	// binary both sides run in-process, but the handoff still goes through the
-	// shared filesystem so the components can be split into two containers without
+	// shared filesystem so the components can be split into two
+	// containers without any code change — only the deployment topology changes.
 	mappingReader := fsstore.NewReader(cfg.MapDir, logger)
 	var metricsRuntime *metrics.Runtime
 	if cfg.Metrics.Enabled {
