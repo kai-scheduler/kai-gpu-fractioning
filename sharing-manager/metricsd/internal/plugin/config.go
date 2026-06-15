@@ -1,3 +1,7 @@
+// Package plugin TODO: NRI-specific config constants (DefaultNRISocketPath, DefaultPluginName,
+// DefaultPluginIndex) will be removed when this package is deleted. Only the
+// metrics-related config (MapDir, Metrics) survives and moves to a standalone
+// config package for the sidecar binary.
 package plugin
 
 import (

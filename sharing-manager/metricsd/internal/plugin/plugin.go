@@ -1,3 +1,7 @@
+// Package plugin TODO: this entire package is temporary. Once the NRI plugin is extracted into
+// gpu-fractions-operator and metrics runs as a sidecar, delete this package and
+// remove the NRI stub from cmd/main.go. The fsstore handoff (shared directory)
+// is already in place — only the deployment topology needs to change.
 package plugin
 
 import (

@@ -21,10 +21,10 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
 )
 
-// DefaultQueueDepth buffers events so the producer rarely hits the drop path.
+// defaultQueueDepth buffers events so the producer rarely hits the drop path.
 // Sized well above realistic per-node container churn; a full queue causes the
 // incoming event to be dropped rather than blocking the NRI callback goroutine.
-const DefaultQueueDepth = 10 * 1024
+const defaultQueueDepth = 10 * 1024
 
 // Adapter produces the mapping for a single container. It is run on the worker
 // goroutine, off the producer's hot path. ok is false when the event carries no
@@ -86,7 +86,7 @@ func NewProcessor(writer store.Writer, logger *slog.Logger, opts Options) *Proce
 		writer:    writer,
 		log:       logger,
 		logEvents: opts.LogEvents,
-		queue:     make(chan item, DefaultQueueDepth),
+		queue:     make(chan item, defaultQueueDepth),
 	}
 	go p.run()
 	return p

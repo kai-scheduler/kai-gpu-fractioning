@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/envutil"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
 	gpuext "github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/plugin"
@@ -44,6 +45,9 @@ var (
 )
 
 func main() {
+	// TODO: once the NRI plugin is extracted into gpu-fractions-operator and metrics
+	// runs as a sidecar, collapse these flag vars into a typed config struct and
+	// remove the NRI-specific flags (socket, plugin-name, plugin-index).
 	var (
 		configPath    string
 		socketPath    string
@@ -53,12 +57,12 @@ func main() {
 		retryInterval time.Duration
 	)
 
-	flag.StringVar(&configPath, "config", stringFromEnv("CONFIG_PATH", gpuext.DefaultConfigPath), "path to the plugin configuration file")
-	flag.StringVar(&socketPath, "socket", stringFromEnv("NRI_SOCKET_PATH", gpuext.DefaultNRISocketPath), "path to the NRI runtime socket")
-	flag.StringVar(&pluginName, "plugin-name", stringFromEnv("PLUGIN_NAME", gpuext.DefaultPluginName), "NRI plugin name")
-	flag.StringVar(&pluginIndex, "plugin-index", stringFromEnv("PLUGIN_INDEX", gpuext.DefaultPluginIndex), "NRI plugin index used for ordering")
-	flag.StringVar(&logLevel, "log-level", stringFromEnv("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
-	flag.DurationVar(&retryInterval, "retry-interval", durationFromEnv("RETRY_INTERVAL", defaultRetryInterval), "delay before reconnecting after the NRI connection exits")
+	flag.StringVar(&configPath, "config", envutil.StringFromEnv("CONFIG_PATH", gpuext.DefaultConfigPath), "path to the plugin configuration file")
+	flag.StringVar(&socketPath, "socket", envutil.StringFromEnv("NRI_SOCKET_PATH", gpuext.DefaultNRISocketPath), "path to the NRI runtime socket")
+	flag.StringVar(&pluginName, "plugin-name", envutil.StringFromEnv("PLUGIN_NAME", gpuext.DefaultPluginName), "NRI plugin name")
+	flag.StringVar(&pluginIndex, "plugin-index", envutil.StringFromEnv("PLUGIN_INDEX", gpuext.DefaultPluginIndex), "NRI plugin index used for ordering")
+	flag.StringVar(&logLevel, "log-level", envutil.StringFromEnv("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
+	flag.DurationVar(&retryInterval, "retry-interval", envutil.DurationFromEnv("RETRY_INTERVAL", defaultRetryInterval), "delay before reconnecting after the NRI connection exits")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -107,27 +111,16 @@ func main() {
 	}
 	defer metricsRuntime.Stop(context.Background(), logger)
 
+	// TODO: once the NRI plugin is removed from metricsd (next PR), delete runPlugin
+	// and this loop entirely — metrics will read the mapping from the shared filesystem
+	// written by the gpu-fractions-operator NRI plugin.
+	// TODO: add a --max-retries flag (0 = unlimited) so operators can cap reconnect
+	// attempts if indefinite retry is undesirable in their environment.
 	for {
-		nriStub, err := stub.New(plugin,
-			stub.WithPluginName(pluginName),
-			stub.WithPluginIdx(pluginIndex),
-			stub.WithSocketPath(socketPath),
-			stub.WithOnClose(func() {
-				logger.Warn("NRI runtime connection closed")
-			}),
-		)
-		if err != nil {
-			logger.Error("failed to create NRI stub", "error", err)
-			os.Exit(1)
-		}
-
-		err = nriStub.Run(ctx)
-		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-			logger.Info("stopped gpu-sharing-plugin")
+		if runPlugin(ctx, plugin, pluginName, pluginIndex, socketPath, logger) {
 			return
 		}
-
-		logger.Error("NRI stub exited", "error", err, "retryInterval", retryInterval.String())
+		logger.Error("NRI stub exited, retrying", "retryInterval", retryInterval.String())
 		select {
 		case <-time.After(retryInterval):
 		case <-ctx.Done():
@@ -137,23 +130,29 @@ func main() {
 	}
 }
 
-func stringFromEnv(name, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func durationFromEnv(name string, fallback time.Duration) time.Duration {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := time.ParseDuration(value)
+// runPlugin creates and runs one NRI stub connection. It returns true when the
+// context is done (clean shutdown) and false when the connection dropped and the
+// caller should retry.
+func runPlugin(ctx context.Context, plugin stub.Plugin, pluginName, pluginIndex, socketPath string, logger *slog.Logger) (done bool) {
+	nriStub, err := stub.New(plugin,
+		stub.WithPluginName(pluginName),
+		stub.WithPluginIdx(pluginIndex),
+		stub.WithSocketPath(socketPath),
+		stub.WithOnClose(func() {
+			logger.Warn("NRI runtime connection closed")
+		}),
+	)
 	if err != nil {
-		return fallback
+		logger.Error("failed to create NRI stub", "error", err)
+		os.Exit(1)
 	}
-	return parsed
+
+	err = nriStub.Run(ctx)
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+		logger.Info("stopped gpu-sharing-plugin")
+		return true
+	}
+	return false
 }
 
 func parseLogLevel(level string) slog.Level {
