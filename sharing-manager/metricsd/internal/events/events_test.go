@@ -38,8 +38,8 @@ func newTestProcessor(w store.Writer, opts Options) *Processor {
 	return NewProcessor(w, slog.New(slog.NewTextHandler(io.Discard, nil)), opts)
 }
 
-// upsertOf returns an Adapter that yields info unconditionally.
-func upsertOf(info store.ContainerInfo) Adapter {
+// upsertOf returns an adapter that yields info unconditionally.
+func upsertOf(info store.ContainerInfo) adapter {
 	return func() (store.ContainerInfo, bool) { return info, true }
 }
 

@@ -115,7 +115,7 @@ func New(ctx context.Context, cfg Config, reader store.Reader, logger *slog.Logg
 	}
 
 	gpuCollector := newCollector(ctx, cfg.collectInterval(), logger)
-	controller := newMetricsController(gpuCollector, ProcCgroupResolver{ProcRoot: cfg.ProcRoot}, reader, cfg.collectInterval(), cfg.SMUtilizationWindow, logger)
+	controller := newMetricsController(gpuCollector, NewProcCgroupResolver(cfg.ProcRoot), reader, cfg.collectInterval(), cfg.SMUtilizationWindow, logger)
 	runtime := newRuntime(controller, cfg.Names)
 	runtime.log = logger
 	runtime.coll = gpuCollector

@@ -16,16 +16,16 @@ import (
 const DefaultPath = "/metrics"
 
 type metricsController struct {
-	mu               sync.RWMutex
-	collector        GPUProcessCollector
-	pods             podSource
-	interval         time.Duration
-	smUtilWindow     time.Duration
-	smUtilWindowSize int
-	smUtilBuf        map[podGPUKey][]float64
+	mu               sync.RWMutex            // protects snapshot
+	collector        GPUProcessCollector     // NVML or noop source of per-process GPU metrics
+	pods             podSource               // resolves GPU processes to pod/container identity
+	interval         time.Duration           // how often collect() fires
+	smUtilWindow     time.Duration           // smoothing window duration for SM utilisation
+	smUtilWindowSize int                     // window in number of samples (derived: smUtilWindow/interval)
+	smUtilBuf        map[podGPUKey][]float64 // rolling sample buffer per pod×GPU; nil when windowSize == 1
 	log              *slog.Logger
-	deviceUUIDs      map[int]string
-	snapshot         Snapshot
+	deviceUUIDs      map[int]string // GPU index → UUID learned from NVML; fills UUID for NRI-sourced devices
+	snapshot         Snapshot       // latest published snapshot, read by Snapshot()
 }
 
 func newMetricsController(collector GPUProcessCollector, resolver PIDCgroupResolver, reader store.Reader, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsController {
@@ -88,7 +88,7 @@ func (s *metricsController) Run(ctx context.Context) error {
 // Snapshot satisfies SnapshotProvider. The in-process controller returns the latest
 // locally cached snapshot and never errors; the context and error are part of
 // the contract so a future out-of-process provider can honor them.
-func (s *metricsController) Snapshot(ctx context.Context) (Snapshot, error) {
+func (s *metricsController) Snapshot(_ context.Context) (Snapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneSnapshot(s.snapshot), nil
