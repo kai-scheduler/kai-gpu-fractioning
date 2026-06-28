@@ -5,6 +5,9 @@ cover.out
 testbin/
 .gomod-cache/
 
+# Local dev/test files
+.local/
+
 # IDE
 .idea/
 .vscode/
