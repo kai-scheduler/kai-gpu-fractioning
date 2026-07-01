@@ -35,6 +35,50 @@ test-sharing-manager:
 	go test ./sharing-manager/... -race -count=1
 
 # -----------------------------------------------------------
+# E2E (metrics-only, stage 1). Requires k3d, kubectl, helm, docker, python3
+# (see test/e2e/hack/requirements.txt).
+#
+#   make e2e                         # cluster up + load plugin image + run tests
+#   make e2e-cluster-down             # tear down the k3d cluster
+#
+# All knobs are E2E_* env vars — see test/e2e/README.md and
+# test/e2e/hack/create-cluster.py for the full list (node count, fake-gpu-operator
+# version, GPUs per node, etc).
+# -----------------------------------------------------------
+
+E2E_CLUSTER_NAME              ?= gpu-sharing-e2e
+E2E_WORKER_NODES              ?= 2
+E2E_PLUGIN_IMAGE              ?= gpu-sharing-plugin:e2e
+E2E_FAKE_GPU_OPERATOR_VERSION ?=
+PYTHON                        ?= python3
+
+export E2E_CLUSTER_NAME
+export E2E_WORKER_NODES
+export E2E_FAKE_GPU_OPERATOR_VERSION
+
+.PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps e2e-build-plugin-image e2e-load-plugin-image test-e2e
+
+e2e: e2e-cluster-up e2e-load-plugin-image test-e2e
+
+e2e-cluster-deps:
+	$(PYTHON) -m pip install -q -r test/e2e/hack/requirements.txt
+
+e2e-cluster-up: e2e-cluster-deps
+	$(PYTHON) test/e2e/hack/create-cluster.py
+
+e2e-cluster-down: e2e-cluster-deps
+	$(PYTHON) test/e2e/hack/create-cluster.py --delete
+
+e2e-build-plugin-image:
+	docker build --build-arg GO_TAGS=e2e -t $(E2E_PLUGIN_IMAGE) -f sharing-manager/metricsd/Dockerfile sharing-manager/metricsd
+
+e2e-load-plugin-image: e2e-build-plugin-image
+	k3d image import $(E2E_PLUGIN_IMAGE) --cluster $(E2E_CLUSTER_NAME)
+
+test-e2e:
+	cd test/e2e && E2E_PLUGIN_IMAGE=$(E2E_PLUGIN_IMAGE) E2E_EXPECTED_GPU_NODES=$(E2E_WORKER_NODES) go test -tags e2e ./tests/... -v -timeout 20m
+
+# -----------------------------------------------------------
 # Code quality
 # -----------------------------------------------------------
 

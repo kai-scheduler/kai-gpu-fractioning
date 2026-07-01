@@ -1,0 +1,91 @@
+name: E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sharing-manager/metricsd/**"
+      - "test/e2e/**"
+      - ".github/workflows/e2e.yaml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  E2E_CLUSTER_NAME: gpu-sharing-e2e
+  E2E_WORKER_NODES: 2
+  # Pin to a known-good fake-gpu-operator release. Bump deliberately.
+  E2E_FAKE_GPU_OPERATOR_VERSION: 0.1.0
+
+jobs:
+  metrics:
+    name: Metrics e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Create e2e cluster (k3d + fake-gpu-operator)
+        run: make e2e-cluster-up
+
+      - name: Verify cluster is up
+        run: |
+          echo "## Nodes"
+          kubectl get nodes -o wide
+          echo "## gpu-operator pods"
+          kubectl get pods -n gpu-operator -o wide
+
+          ready_gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu.present=true --no-headers | grep -c ' Ready ')
+          echo "Ready GPU nodes: ${ready_gpu_nodes} (expected: ${E2E_WORKER_NODES})"
+
+          if [[ "${ready_gpu_nodes}" -ne "${E2E_WORKER_NODES}" ]]; then
+            echo "::error::expected ${E2E_WORKER_NODES} Ready GPU node(s), found ${ready_gpu_nodes}"
+            {
+              echo "### ❌ Cluster is NOT up"
+              echo "Expected **${E2E_WORKER_NODES}** Ready GPU node(s), found **${ready_gpu_nodes}**."
+              echo
+              echo '```'
+              kubectl get nodes -o wide
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          {
+            echo "### ✅ Cluster is up and running"
+            echo "k3d cluster \`${E2E_CLUSTER_NAME}\`: **${ready_gpu_nodes}/${E2E_WORKER_NODES}** GPU nodes Ready, fake-gpu-operator installed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build and load gpu-sharing-plugin (:e2e) image
+        run: make e2e-load-plugin-image
+
+      - name: Run e2e tests
+        run: make test-e2e
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gpu-sharing describe pods || true
+          kubectl -n gpu-sharing logs -l app=gpu-sharing-plugin --all-containers --tail=200 || true
+          kubectl -n gpu-operator logs -l app=status-updater --tail=200 || true
+
+      - name: Delete e2e cluster
+        if: always()
+        run: make e2e-cluster-down
