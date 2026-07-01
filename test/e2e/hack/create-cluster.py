@@ -140,6 +140,14 @@ migFaker:
   enabled: false
 gpuOperator:
   enabled: false
+# Some k3s node images auto-provision a cluster-scoped RuntimeClass named
+# "nvidia" at startup (unrelated to this chart). Helm then refuses to adopt
+# it during install ("invalid ownership metadata") since it has no Helm
+# annotations. We don't need GPU RuntimeClass handling for the plain
+# devicePlugin path, so disable it — matches fake-gpu-operator's own e2e
+# fixtures (test/e2e/fixtures/values.yaml upstream).
+runtimeClass:
+  enabled: false
 computeDomainController:
   enabled: false
 computeDomainDraPlugin:
