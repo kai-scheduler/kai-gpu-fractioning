@@ -22,6 +22,82 @@ import (
 
 // GpuSharingConfigSpec defines the desired state of GpuSharingConfig.
 type GpuSharingConfigSpec struct {
+	// nodeSelector determines which nodes the managed DaemonSets (sharingd, mpsd)
+	// target. All daemons share the same selector.
+	// Example: {"nvidia.com/gpu.present": "true"} (set by the Helm chart's default CR).
+	//
+	// TODO: Make immutable via a validating webhook. Changing nodeSelector on a
+	// live CR would leave stale node conditions on nodes removed from the target
+	// set. Until the webhook is in place, nodeSelector must not be changed after
+	// initial creation.
+	//
+	// +required
+	NodeSelector map[string]string `json:"nodeSelector"`
+
+	// sharingAgent configures the NRI-based sharing agent (sharingd).
+	// +optional
+	SharingAgent *SharingAgentSpec `json:"sharingAgent,omitempty"`
+}
+
+// ImageSpec defines a container image reference.
+// The full image is constructed as <repository>:<tag>.
+type ImageSpec struct {
+	// repository is the full image path including registry and image name
+	// (e.g. "gcr.io/run-ai-prod/sharingd").
+	// +optional
+	Repository string `json:"repository,omitempty"`
+
+	// tag is the image tag (e.g. "v0.1.0"). Defaults to the chart appVersion.
+	// +optional
+	Tag string `json:"tag,omitempty"`
+
+	// imagePullPolicy controls when the kubelet pulls the image.
+	// One of Always, IfNotPresent, Never. Default: IfNotPresent.
+	// +optional
+	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
+}
+
+// SharingAgentSpec configures the sharingd DaemonSet managed by the controller.
+type SharingAgentSpec struct {
+	// image overrides the default sharingd container image set via Helm env vars (SHARINGD_IMAGE_*).
+	// +optional
+	Image *ImageSpec `json:"image,omitempty"`
+
+	// annotationPrefix is the prefix for GPU memory annotations on pods.
+	// Default: "nvidia.com/gpu-memory.container."
+	// +optional
+	AnnotationPrefix string `json:"annotationPrefix,omitempty"`
+
+	// failOpen controls behavior when annotation parsing fails.
+	// If true, the container is created without GPU memory limits.
+	// Default: false
+	// +optional
+	FailOpen *bool `json:"failOpen,omitempty"`
+
+	// nriSocketPath is the path to the NRI Unix socket used to communicate
+	// with the container runtime (containerd/CRI-O). Default: /var/run/nri/nri.sock.
+	// +optional
+	NRISocketPath string `json:"nriSocketPath,omitempty"`
+
+	// logLevel controls the logging verbosity of the sharing agent.
+	// One of debug, info, warn, error. Default: info.
+	// +optional
+	LogLevel string `json:"logLevel,omitempty"`
+
+	// retryInterval is the initial wait duration before retrying a failed NRI connection.
+	// Backoff doubles on each failure, capped at 60s. Default: 5s.
+	// +optional
+	RetryInterval *metav1.Duration `json:"retryInterval,omitempty"`
+
+	// stableThreshold is how long an NRI connection must stay up to be considered stable.
+	// Once stable, the retry budget and backoff reset. Default: 5m.
+	// +optional
+	StableThreshold *metav1.Duration `json:"stableThreshold,omitempty"`
+
+	// maxRetries is the maximum number of NRI connection retries before giving up.
+	// 0 means unlimited. Default: 0.
+	// +optional
+	MaxRetries *int32 `json:"maxRetries,omitempty"`
 }
 
 // GpuSharingConfigStatus defines the observed state of GpuSharingConfig.
@@ -29,6 +105,11 @@ type GpuSharingConfigStatus struct {
 	// observedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// conditions represent the latest available observations of the config's state.
+	// Known condition types: SharingdReady, MpsdReady, Ready.
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

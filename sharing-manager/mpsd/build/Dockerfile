@@ -15,9 +15,10 @@ COPY sharing-manager/mpsd/ sharing-manager/mpsd/
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./sharing-manager/mpsd/cmd
 
-# Runtime stage — use base-debian12 (not nonroot) because MPS daemon needs
-# root to create config directories and manage GPU processes.
-FROM gcr.io/distroless/base-debian12
+# Runtime stage — nvidia/cuda base provides nvidia-cuda-mps-control which mpsd
+# needs to exec. The NVIDIA container runtime only injects device access, not
+# the MPS control binary itself.
+FROM nvidia/cuda:12.8.1-base-ubuntu24.04
 
 COPY --from=builder /mpsd /usr/local/bin/mpsd
 

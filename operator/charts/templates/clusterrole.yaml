@@ -5,19 +5,14 @@ metadata:
   labels:
     {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
 rules:
-  # Manage the GpuSharingConfig CRD — the reconciler needs full access
-  # to watch for changes and update the resource.
+  # Watch for GpuSharingConfig changes and read the resource.
   - apiGroups:
       - gpu-sharing.run.ai
     resources:
       - gpusharingconfigs
     verbs:
-      - create
-      - delete
       - get
       - list
-      - patch
-      - update
       - watch
   # Update finalizers on the CR so the controller can register cleanup
   # logic that runs before the resource is deleted.
@@ -48,6 +43,44 @@ rules:
       - get
       - patch
       - update
+      - watch
+  # Manage DaemonSets created by the controller for each managed daemon
+  # (sharingd, mpsd).
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # Read node to preserve LastTransitionTime when patching conditions.
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+  # Patch the gpu-sharing.nvidia.com/Ready condition on GPU nodes.
+  - apiGroups:
+      - ""
+    resources:
+      - nodes/status
+    verbs:
+      - get
+      - patch
+  # List pods to determine per-node health for node condition patching.
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
       - watch
   # Emit Kubernetes Events to surface reconciliation activity
   # (e.g. "GpuSharingConfig reconciled successfully").
