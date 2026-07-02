@@ -28,7 +28,7 @@ func (f *Forwarder) Close() {
 // `kubectl port-forward pod/<name> <local>:<podPort>`. The returned forwarder
 // is ready to use once ToPod returns.
 func ToPod(c *cluster.Client, namespace, name string, podPort int) (*Forwarder, error) {
-	url := c.Typed.CoreV1().RESTClient().Post().
+	url := c.RESTClient().Post().
 		Resource("pods").
 		Namespace(namespace).
 		Name(name).

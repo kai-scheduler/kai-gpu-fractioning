@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
@@ -125,17 +126,15 @@ func applyNodeArchOverride(ctx context.Context, c *cluster.Client, ds *appsv1.Da
 		return nil
 	}
 
-	nodes, err := c.Typed.CoreV1().Nodes().List(ctx, metav1.ListOptions{
-		LabelSelector: "nvidia.com/gpu.present=true",
-	})
-	if err != nil {
+	var nodeList corev1.NodeList
+	if err := c.Ctrl.List(ctx, &nodeList, ctrlclient.MatchingLabels{"nvidia.com/gpu.present": "true"}); err != nil {
 		return fmt.Errorf("list GPU nodes: %w", err)
 	}
-	if len(nodes.Items) == 0 {
+	if len(nodeList.Items) == 0 {
 		return nil
 	}
 
-	if arch := nodes.Items[0].Labels["kubernetes.io/arch"]; arch != "" {
+	if arch := nodeList.Items[0].Labels["kubernetes.io/arch"]; arch != "" {
 		ds.Spec.Template.Spec.NodeSelector["kubernetes.io/arch"] = arch
 	}
 	return nil
@@ -153,7 +152,7 @@ func splitYAMLDocs(raw string) []string {
 }
 
 func applyNamespace(ctx context.Context, c *cluster.Client, ns *corev1.Namespace) error {
-	_, err := c.Typed.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	err := c.Ctrl.Create(ctx, ns)
 	if apierrors.IsAlreadyExists(err) {
 		return nil
 	}
@@ -161,17 +160,15 @@ func applyNamespace(ctx context.Context, c *cluster.Client, ns *corev1.Namespace
 }
 
 func applyConfigMap(ctx context.Context, c *cluster.Client, cm *corev1.ConfigMap) error {
-	client := c.Typed.CoreV1().ConfigMaps(cm.Namespace)
-	if _, err := client.Create(ctx, cm, metav1.CreateOptions{}); apierrors.IsAlreadyExists(err) {
-		_, err = client.Update(ctx, cm, metav1.UpdateOptions{})
-		return err
+	if err := c.Ctrl.Create(ctx, cm); apierrors.IsAlreadyExists(err) {
+		return c.Ctrl.Update(ctx, cm)
 	} else {
 		return err
 	}
 }
 
 func applyService(ctx context.Context, c *cluster.Client, svc *corev1.Service) error {
-	_, err := c.Typed.CoreV1().Services(svc.Namespace).Create(ctx, svc, metav1.CreateOptions{})
+	err := c.Ctrl.Create(ctx, svc)
 	if apierrors.IsAlreadyExists(err) {
 		return nil
 	}
@@ -179,10 +176,8 @@ func applyService(ctx context.Context, c *cluster.Client, svc *corev1.Service) e
 }
 
 func applyDaemonSet(ctx context.Context, c *cluster.Client, ds *appsv1.DaemonSet) error {
-	client := c.Typed.AppsV1().DaemonSets(ds.Namespace)
-	if _, err := client.Create(ctx, ds, metav1.CreateOptions{}); apierrors.IsAlreadyExists(err) {
-		_, err = client.Update(ctx, ds, metav1.UpdateOptions{})
-		return err
+	if err := c.Ctrl.Create(ctx, ds); apierrors.IsAlreadyExists(err) {
+		return c.Ctrl.Update(ctx, ds)
 	} else {
 		return err
 	}
@@ -194,8 +189,8 @@ func WaitForDaemonSetReady(ctx context.Context, c *cluster.Client, namespace, na
 	return waiter.PollUntil(ctx, c.Config.DaemonSetReadyTimeout, c.Config.PollInterval,
 		fmt.Sprintf("daemonset %s/%s to be ready", namespace, name),
 		func(ctx context.Context) (bool, error) {
-			ds, err := c.Typed.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
-			if err != nil {
+			var ds appsv1.DaemonSet
+			if err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: name}, &ds); err != nil {
 				return false, err
 			}
 			return ds.Status.DesiredNumberScheduled > 0 &&

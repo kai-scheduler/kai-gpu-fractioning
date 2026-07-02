@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
 )
@@ -14,10 +16,13 @@ import (
 // VerifyGPUNodes lists nodes matching c.Config.GPUNodeSelector and, if
 // c.Config.ExpectedGPUNodes > 0, asserts the count matches.
 func VerifyGPUNodes(ctx context.Context, c *cluster.Client) error {
-	nodeList, err := c.Typed.CoreV1().Nodes().List(ctx, metav1.ListOptions{
-		LabelSelector: c.Config.GPUNodeSelector,
-	})
+	sel, err := labels.Parse(c.Config.GPUNodeSelector)
 	if err != nil {
+		return fmt.Errorf("parse GPU node selector %q: %w", c.Config.GPUNodeSelector, err)
+	}
+
+	var nodeList corev1.NodeList
+	if err := c.Ctrl.List(ctx, &nodeList, ctrlclient.MatchingLabelsSelector{Selector: sel}); err != nil {
 		return fmt.Errorf("list nodes matching %q: %w", c.Config.GPUNodeSelector, err)
 	}
 
