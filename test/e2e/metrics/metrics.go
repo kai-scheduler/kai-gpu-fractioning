@@ -12,6 +12,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 // Scrape fetches and parses the Prometheus text-exposition response from a
@@ -37,7 +38,11 @@ func Scrape(localPort int, path string) (map[string]*dto.MetricFamily, error) {
 		return nil, fmt.Errorf("GET %s: unexpected Content-Type %q", url, ct)
 	}
 
-	var parser expfmt.TextParser
+	// LegacyValidation matches the ASCII metric/label names every Prometheus
+	// exporter in this repo emits; NameValidationScheme has no meaningful
+	// default here since this module never imports client_golang/prometheus
+	// (whose init() would otherwise set the global for us).
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	families, err := parser.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("parse metrics from %s: %w", url, err)

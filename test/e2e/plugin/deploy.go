@@ -80,6 +80,9 @@ func Deploy(ctx context.Context, c *cluster.Client) error {
 				return err
 			}
 			applyImageOverride(&ds, c.Config.PluginImage, c.Config.PluginImagePullPolicy)
+			if err := applyNodeArchOverride(ctx, c, &ds); err != nil {
+				return err
+			}
 			if err := applyDaemonSet(ctx, c, &ds); err != nil {
 				return err
 			}
@@ -109,6 +112,33 @@ func applyImageOverride(ds *appsv1.DaemonSet, image, pullPolicy string) {
 	if pullPolicy != "" {
 		container.ImagePullPolicy = corev1.PullPolicy(pullPolicy)
 	}
+}
+
+// applyNodeArchOverride rewrites the DaemonSet's kubernetes.io/arch node
+// selector to match the GPU nodes actually present in the cluster. The
+// checked-in manifest targets amd64 (real GPU nodes are amd64 datacenter
+// servers), but local e2e clusters — e.g. k3d on Apple Silicon — may run
+// arm64 nodes, which would otherwise leave the DaemonSet permanently
+// unscheduled (DesiredNumberScheduled stays 0 forever).
+func applyNodeArchOverride(ctx context.Context, c *cluster.Client, ds *appsv1.DaemonSet) error {
+	if _, ok := ds.Spec.Template.Spec.NodeSelector["kubernetes.io/arch"]; !ok {
+		return nil
+	}
+
+	nodes, err := c.Typed.CoreV1().Nodes().List(ctx, metav1.ListOptions{
+		LabelSelector: "nvidia.com/gpu.present=true",
+	})
+	if err != nil {
+		return fmt.Errorf("list GPU nodes: %w", err)
+	}
+	if len(nodes.Items) == 0 {
+		return nil
+	}
+
+	if arch := nodes.Items[0].Labels["kubernetes.io/arch"]; arch != "" {
+		ds.Spec.Template.Spec.NodeSelector["kubernetes.io/arch"] = arch
+	}
+	return nil
 }
 
 func splitYAMLDocs(raw string) []string {

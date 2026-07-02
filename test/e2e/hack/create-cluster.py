@@ -44,6 +44,26 @@ app = typer.Typer(help="k3d cluster setup for gpu-sharing-operator e2e tests")
 
 FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator"
 
+# gpu-sharing-plugin (sharing-manager/metricsd/deploy/daemonset.yaml) mounts
+# /var/run/nri as a hostPath of type "Directory", which requires the path to
+# already exist on the node. Stock k3s images ship with containerd's NRI
+# plugin disabled, so that directory/socket is never created and the
+# plugin's pods hang forever in ContainerCreating. Override each node's
+# containerd config to enable NRI so containerd creates the socket (and its
+# parent directory) on startup.
+CONTAINERD_NRI_CONFIG_TEMPLATE = """{{ template "base" . }}
+
+[plugins."io.containerd.nri.v1.nri"]
+  disable = false
+  socket_path = "/var/run/nri/nri.sock"
+"""
+
+
+def write_containerd_nri_template() -> str:
+    with tempfile.NamedTemporaryFile("w", suffix=".toml.tmpl", delete=False) as f:
+        f.write(CONTAINERD_NRI_CONFIG_TEMPLATE)
+        return f.name
+
 
 class ClusterConfig(BaseSettings):
     """Configuration auto-loaded from E2E_* environment variables."""
@@ -82,31 +102,36 @@ def create_cluster(config: ClusterConfig) -> bool:
     for key, value in config.model_dump().items():
         log(f"  {key:26s}: {value}")
 
-    for attempt in range(1, config.max_retries + 1):
-        log(f"Cluster creation attempt {attempt}/{config.max_retries}...")
+    nri_template_path = write_containerd_nri_template()
+    try:
+        for attempt in range(1, config.max_retries + 1):
+            log(f"Cluster creation attempt {attempt}/{config.max_retries}...")
 
-        sh.k3d("cluster", "delete", config.cluster_name, _ok_code=[0, 1])
+            sh.k3d("cluster", "delete", config.cluster_name, _ok_code=[0, 1])
 
-        try:
-            sh.k3d(
-                "cluster", "create", config.cluster_name,
-                "--servers", "1",
-                "--agents", str(config.worker_nodes),
-                "--image", config.k3s_image,
-                "--k3s-node-label", f"run.ai/simulated-gpu-node-pool={config.gpu_node_pool}@agent:*",
-                "--timeout", config.cluster_timeout,
-                "--wait",
-            )
-            log(f"Cluster created successfully on attempt {attempt}.")
-            return True
-        except sh.ErrorReturnCode as e:
-            log(f"cluster creation failed: {e}")
-            if attempt < config.max_retries:
-                log("Retrying in 10s...")
-                time.sleep(10)
+            try:
+                sh.k3d(
+                    "cluster", "create", config.cluster_name,
+                    "--servers", "1",
+                    "--agents", str(config.worker_nodes),
+                    "--image", config.k3s_image,
+                    "--k3s-node-label", f"run.ai/simulated-gpu-node-pool={config.gpu_node_pool}@agent:*",
+                    "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
+                    "--timeout", config.cluster_timeout,
+                    "--wait",
+                )
+                log(f"Cluster created successfully on attempt {attempt}.")
+                return True
+            except sh.ErrorReturnCode as e:
+                log(f"cluster creation failed: {e}")
+                if attempt < config.max_retries:
+                    log("Retrying in 10s...")
+                    time.sleep(10)
 
-    log(f"Cluster creation failed after {config.max_retries} attempts.")
-    return False
+        log(f"Cluster creation failed after {config.max_retries} attempts.")
+        return False
+    finally:
+        Path(nri_template_path).unlink(missing_ok=True)
 
 
 def wait_for_nodes(config: ClusterConfig) -> None:

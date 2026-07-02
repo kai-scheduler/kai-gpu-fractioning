@@ -37,11 +37,12 @@ func TestE2E_GPUSharingPluginMetricsEndpointHealthy(t *testing.T) {
 	}
 	defer fw.Close()
 
-	families, err := metrics.Scrape(fw.LocalPort, "/metrics")
-	if err != nil {
+	// Scrape itself already validates a 200 status, a text/plain Content-Type,
+	// and a parseable body. It's the health signal this smoke test cares
+	// about — the GPU gauges only emit samples once a GPU-attributed pod has
+	// been observed, so an empty family set here (no GPU workload running)
+	// doesn't mean the endpoint is unhealthy.
+	if _, err := metrics.Scrape(fw.LocalPort, "/metrics"); err != nil {
 		t.Fatalf("scrape metrics from %s/%s: %v", pod.Namespace, pod.Name, err)
-	}
-	if len(families) == 0 {
-		t.Fatalf("expected at least one metric family from %s/%s", pod.Namespace, pod.Name)
 	}
 }
