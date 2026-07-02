@@ -3,7 +3,7 @@ module github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd
 go 1.26.4
 
 require (
-	github.com/NVIDIA/go-nvml v0.13.1-0
+	github.com/NVIDIA/go-nvml v0.13.3-0
 	github.com/containerd/nri v0.12.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
