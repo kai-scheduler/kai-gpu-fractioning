@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/pods"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/portforward"
 )
-
-const pluginLabelSelector = "app=gpu-sharing-plugin"
 
 // TestE2E_GPUSharingPluginMetricsEndpointHealthy is a fast smoke test: the
 // gpu-sharing-plugin DaemonSet pods serve a valid Prometheus /metrics
@@ -22,7 +21,7 @@ func TestE2E_GPUSharingPluginMetricsEndpointHealthy(t *testing.T) {
 	defer cancel()
 
 	client := s.Client
-	pluginPods, err := pods.ListByLabel(ctx, client, client.Config.PluginNamespace, pluginLabelSelector)
+	pluginPods, err := pods.ListByLabel(ctx, client, client.Config.PluginNamespace, plugin.LabelSelector)
 	if err != nil {
 		t.Fatalf("list gpu-sharing-plugin pods: %v", err)
 	}
