@@ -11,7 +11,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,6 +51,20 @@ type FractionalPod struct {
 	// (c.Config.GPUNodeSelector) when nil — pass an explicit selector (or a
 	// specific node via kubernetes.io/hostname) to control co-location.
 	NodeSelector map[string]string
+
+	// Marker is a unique token embedded in the container's command line so the
+	// nvmlmock helper can resolve this container's host PID via `pgrep -f`
+	// inside the nvml-mock pod (which runs hostPID: true). Defaults to
+	// DefaultMarker(Namespace, Name) when empty.
+	Marker string
+}
+
+// DefaultMarker is the process-name token Apply embeds in a pod's command line
+// when FractionalPod.Marker is empty. The nvmlmock helper pgreps for it to
+// resolve the container's host-namespace PID, which it then pins as a mock NVML
+// GPU process so per-pod memory/utilization becomes deterministic.
+func DefaultMarker(namespace, name string) string {
+	return fmt.Sprintf("gpumock-%s-%s", namespace, name)
 }
 
 // Apply creates the namespace (if missing) and the pod, and waits for the
@@ -78,6 +91,11 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 		}
 	}
 
+	marker := spec.Marker
+	if marker == "" {
+		marker = DefaultMarker(spec.Namespace, spec.Name)
+	}
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        spec.Name,
@@ -89,14 +107,14 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 			NodeSelector:  nodeSelector,
 			Containers: []corev1.Container{
 				{
-					Name:    spec.ContainerName,
-					Image:   DefaultImage,
-					Command: []string{"sh", "-c", "sleep 86400"},
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							"nvidia.com/gpu": resource.MustParse("1"),
-						},
-					},
+					Name:  spec.ContainerName,
+					Image: DefaultImage,
+					// The marker rides in the shell's command line (visible in
+					// /proc/<pid>/cmdline) so nvmlmock.HostPID can pgrep it. No
+					// nvidia.com/gpu resource request: with nvml-mock there is no
+					// device plugin, and attribution keys off the fractional
+					// annotation + cgroup + NVML UUID, not a scheduled GPU.
+					Command: []string{"sh", "-c", fmt.Sprintf("sleep 86400 # %s", marker)},
 				},
 			},
 		},

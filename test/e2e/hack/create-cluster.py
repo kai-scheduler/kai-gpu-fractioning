@@ -18,16 +18,15 @@ Environment variables (all optional, E2E_ prefix, see ClusterConfig):
     E2E_GPUS_PER_NODE              (default: 2)
     E2E_GPU_PRODUCT                (default: NVIDIA A100-SXM4-40GB)
     E2E_GPU_MEMORY_MIB             (default: 40960)
-    E2E_FAKE_GPU_OPERATOR_VERSION  (required unless --skip-fake-gpu-operator)
     E2E_MAX_RETRIES                (default: 3)
 
 Usage:
     ./create-cluster.py
-    E2E_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.0.80 ./create-cluster.py
-    ./create-cluster.py --skip-fake-gpu-operator
+    E2E_WORKER_NODES=4 ./create-cluster.py
+    ./create-cluster.py --skip-gpu-mock
     ./create-cluster.py --delete
 
-Requires: k3d, kubectl, helm (unless --skip-fake-gpu-operator).
+Requires: k3d, kubectl.
 """
 
 import shutil
@@ -42,7 +41,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 app = typer.Typer(help="k3d cluster setup for gpu-sharing-operator e2e tests")
 
-FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator"
+# nvml-mock: NVIDIA's mock libnvidia-ml.so DaemonSet (replaces fake-gpu-operator).
+# Applied as a static manifest — its setup.sh self-labels nodes
+# nvidia.com/gpu.present=true (the gpu-sharing-plugin nodeSelector) and installs a
+# real libnvidia-ml.so into /var/lib/nvml-mock/driver, so the plugin's NVML calls
+# resolve against the mock instead of falling back to deadCollector. No Helm
+# release and no device plugin are needed for the metrics e2e suite: attribution
+# keys off the fractional annotation + cgroup + NVML UUID, not a scheduled
+# nvidia.com/gpu resource.
+NVML_MOCK_MANIFEST = "sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml"
 
 # gpu-sharing-plugin (sharing-manager/metricsd/deploy/daemonset.yaml) mounts
 # /var/run/nri as a hostPath of type "Directory", which requires the path to
@@ -140,76 +147,22 @@ def wait_for_nodes(config: ClusterConfig) -> None:
     log("All nodes are ready.")
 
 
-def install_fake_gpu_operator(config: ClusterConfig) -> None:
-    log(f"Installing fake-gpu-operator {config.fake_gpu_operator_version}...")
+def install_nvml_mock(config: ClusterConfig) -> None:
+    log("Installing nvml-mock (real mock libnvidia-ml.so + node labels)...")
 
-    # Scoped to device-plugin + status-updater + status-exporter — no
-    # DRA/KWOK/mock-NVML/gpu-operator, which this suite does not need for
-    # metrics e2e.
-    values = f"""
-devicePlugin:
-  enabled: true
-statusUpdater:
-  enabled: true
-statusExporter:
-  enabled: true
-topologyServer:
-  enabled: false
-draPlugin:
-  enabled: false
-kwokDraPlugin:
-  enabled: false
-kwokGpuDevicePlugin:
-  enabled: false
-migFaker:
-  enabled: false
-gpuOperator:
-  enabled: false
-# Some k3s node images auto-provision a cluster-scoped RuntimeClass named
-# "nvidia" at startup (unrelated to this chart). Helm then refuses to adopt
-# it during install ("invalid ownership metadata") since it has no Helm
-# annotations. We don't need GPU RuntimeClass handling for the plain
-# devicePlugin path, so disable it — matches fake-gpu-operator's own e2e
-# fixtures (test/e2e/fixtures/values.yaml upstream).
-runtimeClass:
-  enabled: false
-computeDomainController:
-  enabled: false
-computeDomainDraPlugin:
-  enabled: false
-kwokComputeDomainDraPlugin:
-  enabled: false
-topology:
-  nodePoolLabelKey: run.ai/simulated-gpu-node-pool
-  nodePools:
-    {config.gpu_node_pool}:
-      gpuProduct: "{config.gpu_product}"
-      gpuCount: {config.gpus_per_node}
-      gpuMemory: {config.gpu_memory_mib}
-"""
+    # test/e2e/hack -> repo root (hack, e2e, test, <root>).
+    manifest = Path(__file__).resolve().parents[3] / NVML_MOCK_MANIFEST
 
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
-        f.write(values)
-        values_path = f.name
+    # The manifest is namespaced to gpu-operator; create it up-front so apply
+    # doesn't race the namespace. _ok_code tolerates AlreadyExists.
+    sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
+    sh.kubectl("apply", "-f", str(manifest))
 
-    try:
-        sh.helm(
-            "upgrade", "-i", "fake-gpu-operator",
-            FAKE_GPU_OPERATOR_CHART,
-            "--version", config.fake_gpu_operator_version,
-            "--namespace", "gpu-operator",
-            "--create-namespace",
-            "-f", values_path,
-        )
-    finally:
-        Path(values_path).unlink(missing_ok=True)
+    log("Waiting for nvml-mock daemonset rollout...")
+    sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", "--timeout=180s")
 
-    log("Waiting for status-updater to be ready...")
-    sh.kubectl("wait", "--for=condition=Ready", "pod", "-l", "app=status-updater", "-n", "gpu-operator", "--timeout=120s")
-
-    log("Waiting for device-plugin daemonset rollout...")
-    sh.kubectl("rollout", "status", "daemonset/device-plugin", "-n", "gpu-operator", "--timeout=180s")
-
+    # nvml-mock's setup.sh labels each node nvidia.com/gpu.present=true — the
+    # gpu-sharing-plugin nodeSelector and the suite's default GPU node selector.
     wait_for_gpu_node_labels(config)
 
 
@@ -233,11 +186,11 @@ def wait_for_gpu_node_labels(config: ClusterConfig, max_retries: int = 30, inter
 @app.command()
 def main(
     delete: bool = typer.Option(False, "--delete", help="Delete the cluster and exit"),
-    skip_fake_gpu_operator: bool = typer.Option(
-        False, "--skip-fake-gpu-operator", help="Create the cluster only, skip fake-gpu-operator install"
+    skip_gpu_mock: bool = typer.Option(
+        False, "--skip-gpu-mock", help="Create the cluster only, skip nvml-mock install"
     ),
 ) -> None:
-    """Create (or delete) a k3d cluster with fake-gpu-operator for gpu-sharing-operator e2e tests."""
+    """Create (or delete) a k3d cluster with nvml-mock for gpu-sharing-operator e2e tests."""
     config = ClusterConfig()
 
     require_command("k3d")
@@ -247,24 +200,17 @@ def main(
         delete_cluster(config)
         return
 
-    if not skip_fake_gpu_operator:
-        require_command("helm")
-        if not config.fake_gpu_operator_version:
-            log("E2E_FAKE_GPU_OPERATOR_VERSION must be set (or pass --skip-fake-gpu-operator).")
-            log("See https://github.com/run-ai/fake-gpu-operator/releases for available versions.")
-            raise typer.Exit(1)
-
     if not create_cluster(config):
         raise typer.Exit(1)
 
     wait_for_nodes(config)
 
-    if skip_fake_gpu_operator:
-        log("Skipping fake-gpu-operator installation (--skip-fake-gpu-operator).")
+    if skip_gpu_mock:
+        log("Skipping nvml-mock installation (--skip-gpu-mock).")
         log(f"Cluster '{config.cluster_name}' is ready.")
         return
 
-    install_fake_gpu_operator(config)
+    install_nvml_mock(config)
 
     log(f"Cluster '{config.cluster_name}' is ready for e2e tests.")
     log("Next steps:")

@@ -4,24 +4,27 @@ package tests
 
 import (
 	"context"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/pods"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
 // TestE2E_SingleFractionalPodAttribution is TC-1 from
 // test/e2e/docs/metricsd-e2e-test-plan.md: a pod carrying a fractional GPU
-// annotation is tracked under the namespace/pod/pod_uid it actually has, and
-// the gpu_index/gpu_uuid label matches what the device plugin actually
-// assigned it — not an assumed value.
+// annotation is attributed under the namespace/pod/pod_uid it actually has, on
+// the GPU whose UUID we pinned in nvml-mock — and the exported memory gauge
+// equals the value we made NVML report for that pod's process.
+//
+// Flow: create the annotated pod, resolve its container's host PID, tell
+// nvml-mock that PID is a GPU process using wantBytes on a known device UUID,
+// then assert the plugin attributes exactly that to the pod's series.
 func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Two nvml-mock + plugin DaemonSet rollouts (inside SetProcesses) plus a
+	// collection cycle — give it well over the single-rollout budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 
 	c := s.Client
@@ -43,50 +46,50 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 		}
 	})
 
-	deviceLabel, deviceValue := discoverAssignedDevice(ctx, t, c, spec)
+	// Resolve the container's host-namespace PID and make NVML report it as a
+	// GPU process using wantBytes of memory on gpuUUID.
+	marker := workload.DefaultMarker(spec.Namespace, spec.Name)
+	pid, err := nvmlmock.HostPID(ctx, c, pod.Spec.NodeName, marker)
+	if err != nil {
+		t.Fatalf("resolve host PID for %s/%s: %v", spec.Namespace, spec.Name, err)
+	}
+
+	const (
+		gpuUUID   = nvmlmock.Device0UUID
+		wantBytes = 8 * 1024 * 1024 * 1024 // 8 GiB
+	)
+	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, UsedGPUMemory: wantBytes}}
+	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+		t.Fatalf("configure nvml-mock processes: %v", err)
+	}
+	t.Cleanup(func() {
+		// Reset the mock to idle so a stale process entry (pointing at a PID that
+		// no longer exists once the pod is gone) doesn't leak into later tests.
+		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
+			t.Errorf("reset nvml-mock to idle: %v", err)
+		}
+	})
 
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
 		"pod_uid":   string(pod.UID),
+		"gpu_uuid":  gpuUUID,
 	}
 
-	for _, metricName := range []string{memMetricName, smMetricName} {
-		series, err := waitForSeries(ctx, c, metricName, matchLabels)
-		if err != nil {
-			t.Fatalf("%s: %v", metricName, err)
-		}
-
-		if got := metrics.Label(series, deviceLabel); got != deviceValue {
-			t.Errorf("%s: %s label = %q, want %q (from MOCK_NVIDIA_VISIBLE_DEVICES)",
-				metricName, deviceLabel, got, deviceValue)
-		}
-	}
-}
-
-// discoverAssignedDevice reads MOCK_NVIDIA_VISIBLE_DEVICES from the running
-// container to learn which GPU the device plugin actually assigned — this
-// is injected at container-create time and isn't visible on the stored Pod
-// spec, so it must be read from the live container.
-// sharing-manager/metricsd/internal/plugin/fakegpu/fakegpu.go treats numeric
-// tokens as a gpu_index and non-numeric tokens as a gpu_uuid; this mirrors
-// that so the test doesn't assume which form the device plugin used.
-func discoverAssignedDevice(ctx context.Context, t *testing.T, c *cluster.Client, spec workload.FractionalPod) (label, value string) {
-	t.Helper()
-
-	out, err := pods.Exec(ctx, c, spec.Namespace, spec.Name, spec.ContainerName,
-		[]string{"sh", "-c", "printenv MOCK_NVIDIA_VISIBLE_DEVICES"})
+	// Memory is the value we control end-to-end: assert it exactly.
+	memSeries, err := waitForSeries(ctx, c, memMetricName, matchLabels)
 	if err != nil {
-		t.Fatalf("read MOCK_NVIDIA_VISIBLE_DEVICES from %s/%s: %v", spec.Namespace, spec.Name, err)
+		t.Fatalf("%s: %v", memMetricName, err)
+	}
+	if got := metrics.GaugeValue(memSeries); got != wantBytes {
+		t.Errorf("%s = %v, want %v (the memory we pinned in nvml-mock)", memMetricName, got, wantBytes)
 	}
 
-	value = strings.TrimSpace(out)
-	if value == "" {
-		t.Fatalf("MOCK_NVIDIA_VISIBLE_DEVICES was empty in %s/%s — did the device plugin assign a GPU?", spec.Namespace, spec.Name)
+	// The same attributed process also produces the SM-utilization series for
+	// this pod/GPU. Assert co-attribution (presence); the per-process util value
+	// isn't controlled here, so we don't assert a specific number.
+	if _, err := waitForSeries(ctx, c, smMetricName, matchLabels); err != nil {
+		t.Errorf("%s: %v", smMetricName, err)
 	}
-
-	if _, err := strconv.Atoi(value); err == nil {
-		return "gpu_index", value
-	}
-	return "gpu_uuid", value
 }
