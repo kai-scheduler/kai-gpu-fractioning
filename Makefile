@@ -49,6 +49,14 @@ test-sharing-manager:
 E2E_CLUSTER_NAME              ?= gpu-sharing-e2e
 E2E_WORKER_NODES              ?= 2
 E2E_PLUGIN_IMAGE              ?= gpu-sharing-plugin:e2e
+# Workload image used by the attribution test pods (workload.DefaultImage).
+# Pre-imported into the cluster so the pods never do a live, anonymous
+# Docker Hub pull at test time — those get 429-rate-limited and the pods
+# sit in ImagePullBackOff past the test's Running timeout.
+E2E_WORKLOAD_IMAGE            ?= busybox:1.37
+# Platform to load the workload image for — must match the cluster nodes' arch.
+# Defaults to the Docker daemon's arch (the k3d nodes run on the same daemon).
+E2E_WORKLOAD_IMAGE_PLATFORM   ?= linux/$(shell docker version --format '{{.Server.Arch}}')
 E2E_FAKE_GPU_OPERATOR_VERSION ?=
 PYTHON                        ?= python3
 
@@ -56,9 +64,9 @@ export E2E_CLUSTER_NAME
 export E2E_WORKER_NODES
 export E2E_FAKE_GPU_OPERATOR_VERSION
 
-.PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps e2e-build-plugin-image e2e-load-plugin-image test-e2e
+.PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps e2e-build-plugin-image e2e-load-plugin-image e2e-load-workload-image test-e2e
 
-e2e: e2e-cluster-up e2e-load-plugin-image test-e2e
+e2e: e2e-cluster-up e2e-load-plugin-image e2e-load-workload-image test-e2e
 
 e2e-cluster-deps:
 	$(PYTHON) -m pip install -q -r test/e2e/hack/requirements.txt
@@ -74,6 +82,15 @@ e2e-build-plugin-image:
 
 e2e-load-plugin-image: e2e-build-plugin-image
 	k3d image import $(E2E_PLUGIN_IMAGE) --cluster $(E2E_CLUSTER_NAME)
+
+# Docker Desktop's containerd image store exports multi-arch manifest lists that
+# `k3d image import <name>` can't unpack ("content digest ... not found"), so
+# save a single-platform tarball matching the nodes' arch and import that.
+e2e-load-workload-image:
+	docker pull --platform $(E2E_WORKLOAD_IMAGE_PLATFORM) $(E2E_WORKLOAD_IMAGE)
+	docker save --platform $(E2E_WORKLOAD_IMAGE_PLATFORM) $(E2E_WORKLOAD_IMAGE) -o $(TMPDIR)e2e-workload-image.tar
+	k3d image import $(TMPDIR)e2e-workload-image.tar --cluster $(E2E_CLUSTER_NAME)
+	rm -f $(TMPDIR)e2e-workload-image.tar
 
 test-e2e:
 	cd test/e2e && E2E_PLUGIN_IMAGE=$(E2E_PLUGIN_IMAGE) E2E_EXPECTED_GPU_NODES=$(E2E_WORKER_NODES) go test -tags e2e ./tests/... -v -timeout 20m

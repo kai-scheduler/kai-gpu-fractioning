@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
@@ -19,7 +20,10 @@ import (
 // right today, easy to break in a future refactor), and the deleted pod's
 // series must eventually disappear rather than leak forever.
 func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Two DaemonSet rollouts (inside SetProcesses) plus a collection cycle and
+	// the post-delete prune wait — give it well over the single-rollout budget,
+	// matching TC-1.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 
 	c := s.Client
@@ -44,6 +48,26 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	// Not t.Cleanup: this test deletes the pod itself as part of the
 	// scenario under test; cleanup here would just be a redundant delete of
 	// an already-gone pod, which workload.Delete tolerates but adds nothing.
+
+	// Make NVML report this pod's container as a GPU process so the plugin
+	// exports a series for it — the deletion race can only be exercised once
+	// there is a series to prune. Same PID-pinning dance as TC-1.
+	marker := workload.DefaultMarker(spec.Namespace, spec.Name)
+	pid, err := nvmlmock.HostPID(ctx, c, pod.Spec.NodeName, marker)
+	if err != nil {
+		t.Fatalf("resolve host PID for %s/%s: %v", spec.Namespace, spec.Name, err)
+	}
+	procs := []nvmlmock.Proc{{UUID: nvmlmock.Device0UUID, PID: pid, UsedGPUMemory: 8 * 1024 * 1024 * 1024}}
+	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+		t.Fatalf("configure nvml-mock processes: %v", err)
+	}
+	t.Cleanup(func() {
+		// Reset the mock to idle so a stale process entry (pointing at a PID that
+		// no longer exists once the pod is gone) doesn't leak into later tests.
+		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
+			t.Errorf("reset nvml-mock to idle: %v", err)
+		}
+	})
 
 	match := map[string]string{
 		"namespace": spec.Namespace,

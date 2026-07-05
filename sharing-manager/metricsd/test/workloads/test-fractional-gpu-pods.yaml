@@ -51,7 +51,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: trainer
-      image: busybox:1.36
+      image: busybox:1.37
       command: ["sh", "-c", "echo 'gpu-frac-a: running'; sleep 86400"]
       resources:
         limits:
@@ -73,7 +73,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: worker
-      image: busybox:1.36
+      image: busybox:1.37
       command: ["sh", "-c", "echo 'gpu-frac-b: running'; sleep 86400"]
       resources:
         limits:

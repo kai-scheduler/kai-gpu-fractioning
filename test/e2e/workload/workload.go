@@ -21,7 +21,7 @@ import (
 
 // DefaultImage is a minimal image with no GPU/CUDA dependency — attribution
 // tests only need a live process holding a GPU allocation, not real compute.
-const DefaultImage = "busybox:1.36"
+const DefaultImage = "busybox:1.37"
 
 // FractionalPod describes a single-container pod carrying the
 // nvidia.com/container.<name>.gpu-memory.{limit,request} annotation that
@@ -53,14 +53,14 @@ type FractionalPod struct {
 	NodeSelector map[string]string
 
 	// Marker is a unique token embedded in the container's command line so the
-	// nvmlmock helper can resolve this container's host PID via `pgrep -f`
-	// inside the nvml-mock pod (which runs hostPID: true). Defaults to
-	// DefaultMarker(Namespace, Name) when empty.
+	// nvmlmock helper can resolve this container's host PID by scanning
+	// /proc/<pid>/cmdline inside the nvml-mock pod (which runs hostPID: true).
+	// Defaults to DefaultMarker(Namespace, Name) when empty.
 	Marker string
 }
 
 // DefaultMarker is the process-name token Apply embeds in a pod's command line
-// when FractionalPod.Marker is empty. The nvmlmock helper pgreps for it to
+// when FractionalPod.Marker is empty. The nvmlmock helper greps /proc for it to
 // resolve the container's host-namespace PID, which it then pins as a mock NVML
 // GPU process so per-pod memory/utilization becomes deterministic.
 func DefaultMarker(namespace, name string) string {
@@ -110,11 +110,19 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 					Name:  spec.ContainerName,
 					Image: DefaultImage,
 					// The marker rides in the shell's command line (visible in
-					// /proc/<pid>/cmdline) so nvmlmock.HostPID can pgrep it. No
+					// /proc/<pid>/cmdline) so nvmlmock.HostPID can find it. No
 					// nvidia.com/gpu resource request: with nvml-mock there is no
 					// device plugin, and attribution keys off the fractional
 					// annotation + cgroup + NVML UUID, not a scheduled GPU.
-					Command: []string{"sh", "-c", fmt.Sprintf("sleep 86400 # %s", marker)},
+					//
+					// "sleep & wait" (not a bare "sleep # marker") is deliberate:
+					// busybox ash exec-optimizes a single simple command, replacing
+					// the shell with `sleep 86400` and dropping the `#` comment — so
+					// no process would carry the marker. Backgrounding sleep and
+					// waiting keeps the shell alive with the marker in its argv. The
+					// matched PID (the shell) is in the pod's cgroup, which is all
+					// attribution needs.
+					Command: []string{"sh", "-c", fmt.Sprintf("sleep 86400 & wait # %s", marker)},
 				},
 			},
 		},

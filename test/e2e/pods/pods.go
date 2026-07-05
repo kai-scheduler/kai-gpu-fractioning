@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -36,28 +37,47 @@ func ListByLabel(ctx context.Context, c *cluster.Client, namespace, labelSelecto
 // MOCK_NVIDIA_VISIBLE_DEVICES) the device plugin injected into a running
 // container — information not visible on the stored Pod spec.
 func Exec(ctx context.Context, c *cluster.Client, namespace, name, container string, command []string) (string, error) {
+	return ExecStdin(ctx, c, namespace, name, container, command, "")
+}
+
+// ExecStdin is Exec with stdin piped into the command, equivalent to
+// `printf %s <stdin> | kubectl exec -i <pod> -c <container> -- <command>`.
+// Passing data on stdin (rather than as a command argument) keeps it off the
+// process's own command line — nvmlmock.HostPID relies on this so the marker
+// it searches for never appears in the search process's /proc/<pid>/cmdline.
+func ExecStdin(ctx context.Context, c *cluster.Client, namespace, name, container string, command []string, stdin string) (string, error) {
+	opts := &corev1.PodExecOptions{
+		Container: container,
+		Command:   command,
+		Stdout:    true,
+		Stderr:    true,
+	}
+	var stdinReader *strings.Reader
+	if stdin != "" {
+		stdinReader = strings.NewReader(stdin)
+		opts.Stdin = true
+	}
+
 	req := c.RESTClient().Post().
 		Resource("pods").
 		Namespace(namespace).
 		Name(name).
 		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: container,
-			Command:   command,
-			Stdout:    true,
-			Stderr:    true,
-		}, scheme.ParameterCodec)
+		VersionedParams(opts, scheme.ParameterCodec)
 
 	exec, err := remotecommand.NewSPDYExecutor(c.REST, "POST", req.URL())
 	if err != nil {
 		return "", fmt.Errorf("build executor for %s/%s: %w", namespace, name, err)
 	}
 
+	streamOpts := remotecommand.StreamOptions{}
 	var stdout, stderr bytes.Buffer
-	if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdout: &stdout,
-		Stderr: &stderr,
-	}); err != nil {
+	streamOpts.Stdout = &stdout
+	streamOpts.Stderr = &stderr
+	if stdinReader != nil {
+		streamOpts.Stdin = stdinReader
+	}
+	if err := exec.StreamWithContext(ctx, streamOpts); err != nil {
 		return "", fmt.Errorf("exec %v in %s/%s: %w (stderr: %s)", command, namespace, name, err, stderr.String())
 	}
 	return stdout.String(), nil
