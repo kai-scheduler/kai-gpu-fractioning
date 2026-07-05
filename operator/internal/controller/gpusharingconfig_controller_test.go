@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,6 +46,9 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: resourceName,
 				},
+				Spec: gpusharingv1alpha1.GpuSharingConfigSpec{
+					NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
+				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 		})
@@ -60,10 +64,10 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &GpuSharingConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", nil,
+			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -72,10 +76,10 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		})
 
 		It("should update observedGeneration on reconcile", func() {
-			controllerReconciler := &GpuSharingConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", nil,
+			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -88,10 +92,10 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		})
 
 		It("should handle not-found resources gracefully", func() {
-			controllerReconciler := &GpuSharingConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", nil,
+			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{

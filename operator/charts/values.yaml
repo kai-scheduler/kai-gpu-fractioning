@@ -6,6 +6,10 @@ images:
     repository: gcr.io/run-ai-prod/gpu-sharing-operator
     tag: ""
     pullPolicy: IfNotPresent
+  sharingd:
+    repository: gcr.io/run-ai-prod/sharingd
+    tag: ""
+    pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 nameOverride: ""

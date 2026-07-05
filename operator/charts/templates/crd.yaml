@@ -45,6 +45,45 @@ spec:
             spec:
               description: spec defines the desired state of GpuSharingConfig
               type: object
+              required:
+                - nodeSelector
+              properties:
+                nodeSelector:
+                  description: >-
+                    nodeSelector determines which nodes the managed DaemonSets
+                    (sharingd, mpsd) target. All daemons share the same selector.
+                  type: object
+                  additionalProperties:
+                    type: string
+                sharingAgent:
+                  description: sharingAgent configures the NRI-based sharing agent (sharingd).
+                  type: object
+                  properties:
+                    image:
+                      description: image overrides the default sharingd container image.
+                      type: object
+                      properties:
+                        repository:
+                          type: string
+                        tag:
+                          type: string
+                        imagePullPolicy:
+                          type: string
+                    annotationPrefix:
+                      type: string
+                    failOpen:
+                      type: boolean
+                    nriSocketPath:
+                      type: string
+                    logLevel:
+                      type: string
+                    retryInterval:
+                      type: string
+                    stableThreshold:
+                      type: string
+                    maxRetries:
+                      type: integer
+                      format: int32
             status:
               description: status defines the observed state of GpuSharingConfig
               type: object
@@ -55,3 +94,32 @@ spec:
                     by the controller.
                   format: int64
                   type: integer
+                conditions:
+                  description: >-
+                    conditions represent the latest available observations of
+                    the config's state.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      observedGeneration:
+                        type: integer
+                        format: int64

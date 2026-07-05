@@ -38,10 +38,144 @@ spec:
             type: object
           spec:
             description: spec defines the desired state of GpuSharingConfig
+            properties:
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: |-
+                  nodeSelector determines which nodes the managed DaemonSets (sharingd, mpsd)
+                  target. All daemons share the same selector.
+                  Example: {"nvidia.com/gpu.present": "true"} (set by the Helm chart's default CR).
+
+                  live CR would leave stale node conditions on nodes removed from the target
+                  set. Until the webhook is in place, nodeSelector must not be changed after
+                  initial creation.
+                type: object
+              sharingAgent:
+                description: sharingAgent configures the NRI-based sharing agent (sharingd).
+                properties:
+                  annotationPrefix:
+                    description: |-
+                      annotationPrefix is the prefix for GPU memory annotations on pods.
+                      Default: "nvidia.com/gpu-memory.container."
+                    type: string
+                  failOpen:
+                    description: |-
+                      failOpen controls behavior when annotation parsing fails.
+                      If true, the container is created without GPU memory limits.
+                      Default: false
+                    type: boolean
+                  image:
+                    description: image overrides the default sharingd container image
+                      set via Helm env vars (SHARINGD_IMAGE_*).
+                    properties:
+                      imagePullPolicy:
+                        description: |-
+                          imagePullPolicy controls when the kubelet pulls the image.
+                          One of Always, IfNotPresent, Never. Default: IfNotPresent.
+                        type: string
+                      repository:
+                        description: |-
+                          repository is the full image path including registry and image name
+                          (e.g. "gcr.io/run-ai-prod/sharingd").
+                        type: string
+                      tag:
+                        description: tag is the image tag (e.g. "v0.1.0"). Defaults
+                          to the chart appVersion.
+                        type: string
+                    type: object
+                  logLevel:
+                    description: |-
+                      logLevel controls the logging verbosity of the sharing agent.
+                      One of debug, info, warn, error. Default: info.
+                    type: string
+                  maxRetries:
+                    description: |-
+                      maxRetries is the maximum number of NRI connection retries before giving up.
+                      0 means unlimited. Default: 0.
+                    format: int32
+                    type: integer
+                  nriSocketPath:
+                    description: |-
+                      nriSocketPath is the path to the NRI Unix socket used to communicate
+                      with the container runtime (containerd/CRI-O). Default: /var/run/nri/nri.sock.
+                    type: string
+                  retryInterval:
+                    description: |-
+                      retryInterval is the initial wait duration before retrying a failed NRI connection.
+                      Backoff doubles on each failure, capped at 60s. Default: 5s.
+                    type: string
+                  stableThreshold:
+                    description: |-
+                      stableThreshold is how long an NRI connection must stay up to be considered stable.
+                      Once stable, the retry budget and backoff reset. Default: 5m.
+                    type: string
+                type: object
+            required:
+            - nodeSelector
             type: object
           status:
             description: status defines the observed state of GpuSharingConfig
             properties:
+              conditions:
+                description: |-
+                  conditions represent the latest available observations of the config's state.
+                  Known condition types: SharingdReady, MpsdReady, Ready.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
               observedGeneration:
                 description: observedGeneration is the most recent generation observed
                   by the controller.
