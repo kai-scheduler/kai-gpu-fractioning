@@ -15,6 +15,15 @@ import (
 
 const DefaultPath = "/metrics"
 
+const (
+	// maxSMUtilPercent is the upper bound for a well-formed SM utilization
+	// percentage; sums and normalized values are clamped to it.
+	maxSMUtilPercent = 100
+	// fullGPUFraction is the fallback used when a pod's requested fraction is
+	// unknown, treating it as if it requested the whole GPU.
+	fullGPUFraction = 1
+)
+
 type metricsController struct {
 	mu               sync.RWMutex            // protects snapshot
 	collector        GPUProcessCollector     // NVML or noop source of per-process GPU metrics
@@ -117,9 +126,6 @@ func (s *metricsController) collect(ctx context.Context) {
 	if s.smUtilWindow > s.interval {
 		metrics = s.windowedSMUtil(metrics)
 	}
-	// Normalize after any windowing so the normalized series smooths in lockstep
-	// with the base SM-utilization series (the requested fraction is constant, so
-	// dividing the windowed value is equivalent to windowing the ratio).
 	s.normalizeSMUtil(metrics)
 	s.setSnapshot(metrics, activePodUIDs)
 	s.log.DebugContext(ctx, "completed GPU metrics collect", "podMetrics", len(metrics), "unmatchedGPUProcesses", unmatched)
@@ -208,8 +214,8 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 		// SM utilization is summed from per-process NVML samples, each a 0-100
 		// time fraction. Concurrent processes (the common MPS case) can push the
 		// sum above 100, so clamp it to keep the exported percentage well-formed.
-		if metric.SMUtilizationPercent > 100 {
-			metric.SMUtilizationPercent = 100
+		if metric.SMUtilizationPercent > maxSMUtilPercent {
+			metric.SMUtilizationPercent = maxSMUtilPercent
 		}
 		metric.RequestedGPUFraction = sumRequestedFraction(requestedByKey[key])
 		out = append(out, *metric)
@@ -265,16 +271,17 @@ func (s *metricsController) normalizeSMUtil(metrics []PodGPUMetric) {
 }
 
 // normalizedSMUtil computes smUtil ÷ fraction, capped at 100. When the requested
-// fraction is unknown (≤ 0) it falls back to a fraction of 1 — i.e. the pod is
+// fraction is unknown (0) it falls back to a fraction of 1 — i.e. the pod is
 // treated as if it requested the whole GPU, so the normalized value equals the
-// raw SM utilization rather than a misleading 0.
+// raw SM utilization rather than a misleading 0. Negative fractions are already
+// filtered to 0 at ingest (adapter.requestedGPUFraction), so they cannot reach here.
 func normalizedSMUtil(smUtil, fraction float64) float64 {
-	if fraction <= 0 {
-		fraction = 1
+	if fraction == 0 {
+		fraction = fullGPUFraction
 	}
 	normalized := smUtil / fraction
-	if normalized > 100 {
-		return 100
+	if normalized > maxSMUtilPercent {
+		return maxSMUtilPercent
 	}
 	return normalized
 }

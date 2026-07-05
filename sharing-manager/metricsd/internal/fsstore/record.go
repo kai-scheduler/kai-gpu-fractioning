@@ -31,10 +31,7 @@ type record struct {
 	Namespace     string            `json:"namespace"`
 	PodUID        string            `json:"podUID"`
 	GPUDevices    []store.GPUDevice `json:"gpuDevices"`
-	// RequestedGPUFraction is additive to schema v1: older files simply decode it
-	// as 0, and older readers ignore the field, so no schema-version bump is
-	// needed. It carries the requested GPU fraction used to normalize SM
-	// utilization.
+	// RequestedGPUFraction is the requested GPU fraction, used to normalize SM utilization.
 	RequestedGPUFraction float64 `json:"requestedGpuFraction,omitempty"`
 }
 

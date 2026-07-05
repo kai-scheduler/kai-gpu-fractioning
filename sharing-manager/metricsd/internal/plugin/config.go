@@ -40,8 +40,9 @@ type Config struct {
 	MapDir string `json:"mapDir"`
 	// GPUFractionAnnotation is the pod annotation key whose value is the requested
 	// GPU fraction used to normalize SM utilization. Empty disables normalization.
-	GPUFractionAnnotation string        `json:"gpuFractionAnnotation"`
-	Metrics               MetricsConfig `json:"metrics"`
+	GPUFractionAnnotation string `json:"gpuFractionAnnotation"`
+	// Metrics configures the Prometheus GPU metrics exporter.
+	Metrics MetricsConfig `json:"metrics"`
 }
 
 // MetricsConfig is the on-disk configuration for the metrics exporter. It holds

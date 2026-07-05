@@ -137,7 +137,7 @@ func TestMetricsControllerNormalizesSMUtilByRequestedFraction(t *testing.T) {
 		{name: "over-utilized is capped at 100", fraction: 0.5, smUtil: 80, wantNormalized: 100},
 		{name: "quarter request", fraction: 0.25, smUtil: 10, wantNormalized: 40},
 		{name: "unknown request falls back to raw utilization", fraction: 0, smUtil: 40, wantNormalized: 40},
-		{name: "unknown request still capped at 100", fraction: 0, smUtil: 100, wantNormalized: 100},
+		{name: "unknown request still capped at 100", fraction: 0, smUtil: 150, wantNormalized: 100},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -173,6 +173,31 @@ func TestMetricsControllerNormalizesSMUtilByRequestedFraction(t *testing.T) {
 			}
 			if m.SMUtilizationPercentNormalized != tt.wantNormalized {
 				t.Fatalf("expected normalized SM util = %g, got %g", tt.wantNormalized, m.SMUtilizationPercentNormalized)
+			}
+		})
+	}
+}
+
+// Directly exercises normalizedSMUtil so its own cap and fallback are pinned
+// independently of the enrich-level clamp (which caps raw SM util before this
+// runs). The unknown-fraction case uses smUtil > 100 to prove the cap fires here.
+func TestNormalizedSMUtil(t *testing.T) {
+	tests := []struct {
+		name     string
+		smUtil   float64
+		fraction float64
+		want     float64
+	}{
+		{name: "half request scales up", smUtil: 30, fraction: 0.5, want: 60},
+		{name: "quarter request scales up", smUtil: 10, fraction: 0.25, want: 40},
+		{name: "over-utilized is capped at 100", smUtil: 80, fraction: 0.5, want: 100},
+		{name: "unknown fraction falls back to raw util", smUtil: 40, fraction: 0, want: 40},
+		{name: "unknown fraction still capped at 100", smUtil: 150, fraction: 0, want: 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizedSMUtil(tt.smUtil, tt.fraction); got != tt.want {
+				t.Fatalf("normalizedSMUtil(%g, %g) = %g, want %g", tt.smUtil, tt.fraction, got, tt.want)
 			}
 		})
 	}
