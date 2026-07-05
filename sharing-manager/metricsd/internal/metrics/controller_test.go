@@ -125,6 +125,104 @@ func TestMetricsControllerAggregatesContainersByPodAndGPU(t *testing.T) {
 	}
 }
 
+func TestMetricsControllerNormalizesSMUtilByRequestedFraction(t *testing.T) {
+	tests := []struct {
+		name           string
+		fraction       float64
+		smUtil         uint32
+		wantNormalized float64
+	}{
+		{name: "half request fully used", fraction: 0.5, smUtil: 30, wantNormalized: 60},
+		{name: "exactly at cap", fraction: 0.5, smUtil: 50, wantNormalized: 100},
+		{name: "over-utilized is capped at 100", fraction: 0.5, smUtil: 80, wantNormalized: 100},
+		{name: "quarter request", fraction: 0.25, smUtil: 10, wantNormalized: 40},
+		{name: "unknown request falls back to raw utilization", fraction: 0, smUtil: 40, wantNormalized: 40},
+		{name: "unknown request still capped at 100", fraction: 0, smUtil: 100, wantNormalized: 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			containerStore := store.FakeStore{Containers: []store.ContainerInfo{{
+				ContainerID:          "container-id",
+				Container:            "container",
+				Pod:                  "pod",
+				Namespace:            "default",
+				PodUID:               "pod-uid",
+				CgroupPath:           "/kubepods.slice/pod.slice/container.scope",
+				GPUDevices:           []store.GPUDevice{{Index: 0}},
+				RequestedGPUFraction: tt.fraction,
+			}}}
+
+			controller := newMetricsController(nil, fakeCgroupResolver{
+				1234: []string{"/kubepods.slice/pod.slice/container.scope/deeper"},
+			}, containerStore, 0, 0, slog.Default())
+
+			metrics, unmatched := controller.enrich(context.Background(), []GPUProcessMetric{
+				{PID: 1234, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: tt.smUtil},
+			}, controller.pods.Snapshot())
+			controller.normalizeSMUtil(metrics)
+
+			if unmatched != 0 {
+				t.Fatalf("expected no unmatched processes, got %d", unmatched)
+			}
+			if len(metrics) != 1 {
+				t.Fatalf("expected one pod metric, got %d", len(metrics))
+			}
+			m := metrics[0]
+			if m.RequestedGPUFraction != tt.fraction {
+				t.Fatalf("expected RequestedGPUFraction = %g, got %g", tt.fraction, m.RequestedGPUFraction)
+			}
+			if m.SMUtilizationPercentNormalized != tt.wantNormalized {
+				t.Fatalf("expected normalized SM util = %g, got %g", tt.wantNormalized, m.SMUtilizationPercentNormalized)
+			}
+		})
+	}
+}
+
+// Two containers of the same pod share one GPU; their fractions sum, and each
+// container's fraction is counted once even when it has multiple GPU processes.
+func TestMetricsControllerSumsRequestedFractionAcrossContainers(t *testing.T) {
+	containerStore := store.FakeStore{Containers: []store.ContainerInfo{
+		{
+			ContainerID:          "container-a",
+			Pod:                  "pod",
+			Namespace:            "default",
+			PodUID:               "pod-uid",
+			CgroupPath:           "/kubepods.slice/pod.slice/container-a.scope",
+			GPUDevices:           []store.GPUDevice{{Index: 0}},
+			RequestedGPUFraction: 0.25,
+		},
+		{
+			ContainerID:          "container-b",
+			Pod:                  "pod",
+			Namespace:            "default",
+			PodUID:               "pod-uid",
+			CgroupPath:           "/kubepods.slice/pod.slice/container-b.scope",
+			GPUDevices:           []store.GPUDevice{{Index: 0}},
+			RequestedGPUFraction: 0.25,
+		},
+	}}
+
+	controller := newMetricsController(nil, fakeCgroupResolver{
+		1001: []string{"/kubepods.slice/pod.slice/container-a.scope/deeper"},
+		1002: []string{"/kubepods.slice/pod.slice/container-a.scope/deeper"}, // second process, same container
+		1003: []string{"/kubepods.slice/pod.slice/container-b.scope/deeper"},
+	}, containerStore, 0, 0, slog.Default())
+
+	metrics, _ := controller.enrich(context.Background(), []GPUProcessMetric{
+		{PID: 1001, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: 10},
+		{PID: 1002, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: 10},
+		{PID: 1003, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: 10},
+	}, controller.pods.Snapshot())
+
+	if len(metrics) != 1 {
+		t.Fatalf("expected one pod/device metric, got %d", len(metrics))
+	}
+	// container-a counted once (0.25) + container-b (0.25) = 0.5, not 0.75.
+	if metrics[0].RequestedGPUFraction != 0.5 {
+		t.Fatalf("expected summed fraction 0.5, got %g", metrics[0].RequestedGPUFraction)
+	}
+}
+
 func TestMetricsControllerPublishesIdleMetricForActiveGPUContainer(t *testing.T) {
 	containerStore := store.FakeStore{Containers: []store.ContainerInfo{{
 		ContainerID: "container-id",

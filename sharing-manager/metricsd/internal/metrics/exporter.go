@@ -36,8 +36,9 @@ type Config struct {
 // MetricNames holds the exported Prometheus metric names. Each is independently
 // configurable; empty fields fall back to the defaults via WithDefaults.
 type MetricNames struct {
-	GPUMemoryUsedBytes      string `json:"gpuMemoryUsedBytes"`
-	GPUSMUtilizationPercent string `json:"gpuSmUtilizationPercent"`
+	GPUMemoryUsedBytes                string `json:"gpuMemoryUsedBytes"`
+	GPUSMUtilizationPercent           string `json:"gpuSmUtilizationPercent"`
+	GPUSMUtilizationPercentNormalized string `json:"gpuSmUtilizationPercentNormalized"`
 }
 
 // DefaultMetricNames returns the built-in metric names used when none are
@@ -45,8 +46,9 @@ type MetricNames struct {
 // the names describe the measurement and unit only, per Prometheus convention.
 func DefaultMetricNames() MetricNames {
 	return MetricNames{
-		GPUMemoryUsedBytes:      "gpu_sharing_gpu_memory_used_bytes",
-		GPUSMUtilizationPercent: "gpu_sharing_gpu_sm_utilization_percent",
+		GPUMemoryUsedBytes:                "gpu_sharing_gpu_memory_used_bytes",
+		GPUSMUtilizationPercent:           "gpu_sharing_gpu_sm_utilization_percent",
+		GPUSMUtilizationPercentNormalized: "gpu_sharing_gpu_sm_utilization_percent_normalized",
 	}
 }
 
@@ -59,6 +61,9 @@ func (n MetricNames) WithDefaults() MetricNames {
 	}
 	if strings.TrimSpace(n.GPUSMUtilizationPercent) == "" {
 		n.GPUSMUtilizationPercent = d.GPUSMUtilizationPercent
+	}
+	if strings.TrimSpace(n.GPUSMUtilizationPercentNormalized) == "" {
+		n.GPUSMUtilizationPercentNormalized = d.GPUSMUtilizationPercentNormalized
 	}
 	return n
 }
@@ -74,8 +79,9 @@ var metricNamePattern = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 // clear error instead of panicking inside MustRegister.
 func (n MetricNames) validate() error {
 	for field, name := range map[string]string{
-		"gpuMemoryUsedBytes":      n.GPUMemoryUsedBytes,
-		"gpuSmUtilizationPercent": n.GPUSMUtilizationPercent,
+		"gpuMemoryUsedBytes":                n.GPUMemoryUsedBytes,
+		"gpuSmUtilizationPercent":           n.GPUSMUtilizationPercent,
+		"gpuSmUtilizationPercentNormalized": n.GPUSMUtilizationPercentNormalized,
 	} {
 		if !metricNamePattern.MatchString(name) {
 			return fmt.Errorf("metric name %s=%q is not a valid Prometheus metric name", field, name)
@@ -85,18 +91,19 @@ func (n MetricNames) validate() error {
 }
 
 type Runtime struct {
-	cancel        context.CancelFunc
-	server        *http.Server
-	coll          collector
-	controller    *metricsController
-	wg            sync.WaitGroup
-	provider      SnapshotProvider
-	log           *slog.Logger
-	mu            sync.Mutex
-	registry      *prometheus.Registry
-	memoryBytes   *prometheus.GaugeVec
-	smUtilization *prometheus.GaugeVec
-	knownLabels   map[podGPUKey]prometheus.Labels
+	cancel                  context.CancelFunc
+	server                  *http.Server
+	coll                    collector
+	controller              *metricsController
+	wg                      sync.WaitGroup
+	provider                SnapshotProvider
+	log                     *slog.Logger
+	mu                      sync.Mutex
+	registry                *prometheus.Registry
+	memoryBytes             *prometheus.GaugeVec
+	smUtilization           *prometheus.GaugeVec
+	smUtilizationNormalized *prometheus.GaugeVec
+	knownLabels             map[podGPUKey]prometheus.Labels
 }
 
 // New builds a Runtime from cfg — validates config, wires the collector, pod
@@ -170,11 +177,16 @@ func newRuntime(provider SnapshotProvider, names MetricNames) *Runtime {
 			Name: names.GPUSMUtilizationPercent,
 			Help: "GPU SM utilization attributed to a Kubernetes pod: the sum of per-process NVML SM-active time fractions, clamped to [0,100]. Approximate under MPS where a pod's processes execute concurrently.",
 		}, labels),
+		smUtilizationNormalized: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: names.GPUSMUtilizationPercentNormalized,
+			Help: "GPU SM utilization normalized by the pod's requested GPU fraction (SM utilization ÷ requested fraction), clamped to [0,100]. A pod using as much of the GPU as it requested reports 100. Falls back to the raw SM utilization when the requested fraction is unknown.",
+		}, labels),
 		knownLabels: map[podGPUKey]prometheus.Labels{},
 	}
 	runtime.registry.MustRegister(
 		runtime.memoryBytes,
 		runtime.smUtilization,
+		runtime.smUtilizationNormalized,
 	)
 	return runtime
 }
@@ -223,6 +235,7 @@ func (r *Runtime) observe(metrics []PodGPUMetric, activePodUIDs map[string]struc
 		r.knownLabels[key] = labels
 		r.memoryBytes.With(labels).Set(float64(metric.MemoryBytes))
 		r.smUtilization.With(labels).Set(metric.SMUtilizationPercent)
+		r.smUtilizationNormalized.With(labels).Set(metric.SMUtilizationPercentNormalized)
 	}
 }
 
@@ -242,6 +255,7 @@ func (r *Runtime) deleteSeries(key podGPUKey) {
 	if labels != nil {
 		r.memoryBytes.Delete(labels)
 		r.smUtilization.Delete(labels)
+		r.smUtilizationNormalized.Delete(labels)
 	}
 	delete(r.knownLabels, key)
 }
@@ -260,6 +274,7 @@ func (r *Runtime) deleteIdleLabelsForObservedGPU(observed podGPUKey) {
 func (r *Runtime) setZero(labels prometheus.Labels) {
 	r.memoryBytes.With(labels).Set(0)
 	r.smUtilization.With(labels).Set(0)
+	r.smUtilizationNormalized.With(labels).Set(0)
 }
 
 func metricLabels(metric PodGPUMetric) (podGPUKey, prometheus.Labels) {

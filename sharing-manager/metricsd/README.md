@@ -124,8 +124,16 @@ sample with Kubernetes pod labels.
 
 Exported metrics include:
 
-- `gpu_sharing_pod_gpu_memory_bytes`
-- `gpu_sharing_pod_gpu_sm_utilization_percent`
+- `gpu_sharing_gpu_memory_used_bytes`
+- `gpu_sharing_gpu_sm_utilization_percent`
+- `gpu_sharing_gpu_sm_utilization_percent_normalized` — SM utilization divided by
+  the pod's requested GPU fraction and capped at 100. The requested fraction is
+  read from the pod annotation named by `gpuFractionAnnotation` (default
+  `gpu-fraction`, e.g. `"0.5"`); a pod using as much of the GPU as it requested
+  reports 100. When the fraction annotation is absent or unparseable it falls
+  back to a fraction of 1, so the value equals the raw SM utilization.
+
+Metric names are configurable under `metrics.metricNames`.
 
 NVML returns process-level data. The plugin joins
 `nvmlDeviceGetProcessUtilization` with compute and graphics running-process

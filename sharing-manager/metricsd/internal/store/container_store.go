@@ -6,12 +6,12 @@ import (
 )
 
 type GPUDevice struct {
-	Index int    `json:"index"`
+	Index int `json:"index"`
 	// UUID is the GPU/MIG UUID as reported by the kubelet PodResources API. The
 	// production NRI path leaves it empty and identifies devices by Index; it is
 	// populated by the PodResources metrics backend, and by the fake-GPU (e2e)
 	// detector when it reads a UUID from MOCK_NVIDIA_VISIBLE_DEVICES.
-	UUID  string `json:"uuid,omitempty"`
+	UUID string `json:"uuid,omitempty"`
 }
 
 type ContainerInfo struct {
@@ -21,7 +21,11 @@ type ContainerInfo struct {
 	Namespace   string
 	PodUID      string
 	CgroupPath  string
-	GPUDevices []GPUDevice
+	GPUDevices  []GPUDevice
+	// RequestedGPUFraction is the GPU fraction the container requested (e.g. 0.5),
+	// read from the configured GPU-fraction annotation. It is the divisor used to
+	// normalize SM utilization. Zero when the annotation is absent or unparseable.
+	RequestedGPUFraction float64
 }
 
 // Writer is the write side of the container→pod mapping storage, used by the

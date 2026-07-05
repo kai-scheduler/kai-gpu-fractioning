@@ -27,6 +27,10 @@ data:
   config.yaml: |
     logPodEvents: true
     mapDir: /var/run/gpu-sharing/map
+    # gpuFractionAnnotation: pod annotation key whose value is the requested GPU
+    # fraction (e.g. "0.5"), used for gpu_sharing_gpu_sm_utilization_percent_normalized.
+    # Set empty to disable normalization.
+    gpuFractionAnnotation: gpu-fraction
     metrics:
       enabled: true
       address: ":2112"
