@@ -22,16 +22,21 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/config"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
 	// +kubebuilder:scaffold:imports
@@ -44,7 +49,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(gpusharingv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -77,6 +82,13 @@ func main() {
 		metricsServerOptions.KeyName = cfg.MetricsCertKey
 	}
 
+	// ── Operator namespace ───────────────────────────────────────────────
+	podNamespace := os.Getenv("POD_NAMESPACE")
+	if podNamespace == "" {
+		podNamespace = "default"
+	}
+	setupLog.Info("operator namespace", "namespace", podNamespace)
+
 	// ── Controller manager ───────────────────────────────────────────────
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -84,17 +96,38 @@ func main() {
 		HealthProbeBindAddress: cfg.ProbeAddr,
 		LeaderElection:         cfg.EnableLeaderElect,
 		LeaderElectionID:       "gpu-sharing-operator.run.ai",
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}: {
+					Namespaces: map[string]cache.Config{
+						podNamespace: {},
+					},
+					Label: labels.SelectorFromSet(labels.Set{
+						daemonmgr.LabelManagedBy: daemonmgr.ManagedByValue,
+					}),
+				},
+			},
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
 		os.Exit(1)
 	}
 
+	// ── Component images (defaults from Helm, overridable via CRD) ──────
+	sharingdImage := controller.ReadImageFromEnv("SHARINGD_IMAGE")
+	setupLog.Info("sharingd default image", "image", sharingdImage.FullImage())
+
 	// ── Register controllers ─────────────────────────────────────────────
-	if err := (&controller.GpuSharingConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err := controller.NewGpuSharingConfigReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		mgr.GetEventRecorderFor("gpusharingconfig-controller"),
+		podNamespace,
+		map[string]v1alpha1.ImageSpec{
+			"sharingd": sharingdImage,
+		},
+	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")
 		os.Exit(1)
 	}

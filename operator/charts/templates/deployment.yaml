@@ -26,6 +26,17 @@ spec:
         - name: manager
           image: "{{ .Values.images.operator.repository }}:{{ .Values.images.operator.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.images.operator.pullPolicy }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: SHARINGD_IMAGE_REPOSITORY
+              value: {{ .Values.images.sharingd.repository | quote }}
+            - name: SHARINGD_IMAGE_TAG
+              value: {{ .Values.images.sharingd.tag | default .Chart.AppVersion | quote }}
+            - name: SHARINGD_IMAGE_PULL_POLICY
+              value: {{ .Values.images.sharingd.pullPolicy | quote }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect
