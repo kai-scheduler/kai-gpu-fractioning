@@ -31,13 +31,12 @@ Cluster lifecycle and the Go test suite are deliberately separate concerns:
 | Deploy `gpu-sharing-plugin` DaemonSet | `test/e2e/suite` (`plugin.Deploy`) | the one thing the Go suite deploys — it's what's under test |
 | Run test assertions | `test/e2e/tests` | metrics scrape/assert |
 
-This mirrors [Grove's e2e split](https://github.com/ai-dynamo/grove/tree/main/operator/e2e):
-a standalone script (there: `create-e2e-cluster.py`; here: `create-cluster.py`)
-provisions the cluster and cluster-level dependencies, while the Go suite only
-connects, verifies preconditions, and deploys/tests the component actually
-under test. `create-cluster.py` reuses grove's pattern — pydantic-settings for
-`E2E_*`-prefixed config, typer for the CLI, retry-on-create-failure — but is
-scoped down to what this project needs: a k3d cluster with fake-gpu-operator
+a standalone script (`create-cluster.py`) provisions the cluster and
+cluster-level dependencies, while the Go suite only connects, verifies
+preconditions, and deploys/tests the component actually under test.
+`create-cluster.py` uses pydantic-settings for `E2E_*`-prefixed config, typer for
+the CLI, and retry-on-create-failure, scoped down to what this project needs: a
+k3d cluster with fake-gpu-operator
 and nothing else, so the dependency list is just `typer`, `pydantic-settings`,
 `sh` — no docker SDK (nothing here builds or pre-pulls images) and no `rich`
 (plain stdout is enough for CI logs).
@@ -125,8 +124,8 @@ and plugin/status-updater logs before tearing down.
 
 ## Package layout
 
-Each Go package is single-purpose, mirroring grove's `e2e/` split so
-dependencies only point one way (leaf packages like `waiter`/`metrics` have
+Each Go package is single-purpose, so dependencies only point one way (leaf
+packages like `waiter`/`metrics` have
 no dependency on the rest of the framework, so future additions — e.g. a
 diagnostics collector — can depend on them without an import cycle):
 

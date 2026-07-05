@@ -21,10 +21,10 @@ type Config struct {
 	// GPUNodeSelector selects nodes expected to advertise (fake) GPUs.
 	GPUNodeSelector string
 
-	// ExpectedGPUNodes, if > 0, is asserted against the count of nodes matching
-	// GPUNodeSelector during setup. 0 disables the check. Set this to the same
-	// value passed as E2E_WORKER_NODES to create-cluster.py to catch a
-	// misconfigured/partially-up cluster before any test runs.
+	// ExpectedGPUNodes, if > 0, asserts the exact count of nodes matching
+	// GPUNodeSelector; 0 skips the assertion (and the node listing) entirely.
+	// Set it to the E2E_WORKER_NODES value passed to create-cluster.py to catch
+	// a misconfigured/partially-up cluster before any test runs.
 	ExpectedGPUNodes int
 
 	// PluginImage overrides the gpu-sharing-plugin image in the DaemonSet

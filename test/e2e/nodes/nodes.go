@@ -13,12 +13,18 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
 )
 
-// VerifyGPUNodes lists nodes matching c.Config.GPUNodeSelector and, if
-// c.Config.ExpectedGPUNodes > 0, asserts the count matches.
+// VerifyGPUNodes validates c.Config.GPUNodeSelector and, when
+// c.Config.ExpectedGPUNodes > 0, asserts that exactly that many nodes match. With
+// ExpectedGPUNodes == 0 there is nothing to assert, so it returns after validating
+// the selector without listing nodes.
 func VerifyGPUNodes(ctx context.Context, c *cluster.Client) error {
 	sel, err := labels.Parse(c.Config.GPUNodeSelector)
 	if err != nil {
 		return fmt.Errorf("parse GPU node selector %q: %w", c.Config.GPUNodeSelector, err)
+	}
+
+	if c.Config.ExpectedGPUNodes == 0 {
+		return nil
 	}
 
 	var nodeList corev1.NodeList
@@ -30,7 +36,7 @@ func VerifyGPUNodes(ctx context.Context, c *cluster.Client) error {
 		return fmt.Errorf("no nodes matched GPU node selector %q — is the fake-gpu-operator cluster up? (see test/e2e/hack/create-cluster.py)", c.Config.GPUNodeSelector)
 	}
 
-	if c.Config.ExpectedGPUNodes > 0 && len(nodeList.Items) != c.Config.ExpectedGPUNodes {
+	if len(nodeList.Items) != c.Config.ExpectedGPUNodes {
 		return fmt.Errorf("expected %d GPU node(s) matching %q, found %d", c.Config.ExpectedGPUNodes, c.Config.GPUNodeSelector, len(nodeList.Items))
 	}
 

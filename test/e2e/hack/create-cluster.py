@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """create-cluster.py - k3d cluster + fake-gpu-operator for gpu-sharing-operator e2e tests.
 
-Uses the env-driven pydantic-settings config / typer CLI / retry-on-create-failure
-pattern from grove's create-e2e-cluster.py, scoped down to what this project
-needs: a k3d cluster with a single fake-GPU node pool and fake-gpu-operator
-installed. No other cluster-level components are deployed here.
+Uses an env-driven pydantic-settings config, a typer CLI, and
+retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
+single fake-GPU node pool and fake-gpu-operator installed. No other
+cluster-level components are deployed here.
 
 Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
