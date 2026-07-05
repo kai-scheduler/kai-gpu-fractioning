@@ -141,7 +141,7 @@ spec:
       hostPID: true
       terminationGracePeriodSeconds: 10
       nodeSelector:
-        run.ai/fake.gpu: "true"
+        nvidia.com/gpu.present: "true"
       tolerations:
         - operator: Exists
       containers:

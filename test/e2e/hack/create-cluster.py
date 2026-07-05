@@ -122,7 +122,7 @@ def create_cluster(config: ClusterConfig) -> bool:
                     "--servers", "1",
                     "--agents", str(config.worker_nodes),
                     "--image", config.k3s_image,
-                    "--k3s-node-label", f"run.ai/simulated-gpu-node-pool={config.gpu_node_pool}@agent:*",
+                    "--k3s-node-label", "nvidia.com/gpu.present=true@agent:*",
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
                     "--timeout", config.cluster_timeout,
                     "--wait",
@@ -158,11 +158,25 @@ def install_nvml_mock(config: ClusterConfig) -> None:
     sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
     sh.kubectl("apply", "-f", str(manifest))
 
+    # Guard against a silent no-op: a DaemonSet whose nodeSelector matches zero
+    # nodes reports "rollout status" success with desiredNumberScheduled=0, so
+    # without this check a selector mismatch looks like success and only surfaces
+    # later as a confusing GPU-node-label timeout.
+    desired = int(str(sh.kubectl(
+        "get", "daemonset/nvml-mock", "-n", "gpu-operator",
+        "-o", "jsonpath={.status.desiredNumberScheduled}",
+    )).strip() or "0")
+    if desired < config.worker_nodes:
+        log(f"nvml-mock scheduled onto {desired} node(s), expected {config.worker_nodes} "
+            f"— check the DaemonSet nodeSelector matches the GPU nodes' labels.")
+        raise typer.Exit(1)
+
     log("Waiting for nvml-mock daemonset rollout...")
     sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", "--timeout=180s")
 
-    # nvml-mock's setup.sh labels each node nvidia.com/gpu.present=true — the
-    # gpu-sharing-plugin nodeSelector and the suite's default GPU node selector.
+    # Agents are pre-labeled nvidia.com/gpu.present=true at cluster creation and
+    # nvml-mock's setup.sh re-applies it; confirm the label is present before the
+    # suite (and the plugin's nodeSelector) relies on it.
     wait_for_gpu_node_labels(config)
 
 
