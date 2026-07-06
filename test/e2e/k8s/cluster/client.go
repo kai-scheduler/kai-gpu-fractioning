@@ -1,5 +1,5 @@
-// Package cluster connects to a Kubernetes cluster. It never creates or
-// destroys clusters — that is handled by test/e2e/hack/create-cluster.py.
+// Package cluster connects to an existing Kubernetes cluster (whatever the
+// kubeconfig points at). It never creates or destroys clusters.
 package cluster
 
 import (

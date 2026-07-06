@@ -1,6 +1,6 @@
 module github.com/run-ai/gpu-sharing-operator/test/e2e
 
-go 1.26.0
+go 1.26.2
 
 require (
 	github.com/prometheus/client_model v0.6.2

@@ -1,8 +1,7 @@
 // Package plugin deploys the gpu-sharing-plugin DaemonSet under test onto the
 // e2e cluster and waits for its rollout. It is the one thing this e2e suite
-// deploys itself — the cluster, fake-gpu-operator, and GPU nodes are
-// preconditions handled by test/e2e/hack/create-cluster.py and checked by the
-// nodes package, not something plugin creates.
+// deploys itself — the cluster and its GPU nodes are preconditions (checked by
+// the nodes package), not something plugin creates.
 package plugin
 
 import (

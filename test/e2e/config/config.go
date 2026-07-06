@@ -1,12 +1,13 @@
-// Package config loads e2e run configuration entirely from the environment
-// so the suite can point at whatever cluster the caller specifies (no config
-// file). Cluster creation itself is handled by test/e2e/hack/create-cluster.py,
-// not by this package or by Go test code.
+// Package config loads e2e run configuration entirely from the environment so
+// the suite can point at whatever cluster the caller provides (no config file,
+// no assumption about how the cluster was created). The suite only connects to
+// an existing cluster — it never provisions one.
 package config
 
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -18,33 +19,31 @@ type Config struct {
 	// PluginNamespace is where the gpu-sharing-plugin DaemonSet is deployed.
 	PluginNamespace string
 
-	// GPUNodeSelector selects nodes expected to advertise (fake) GPUs.
+	// GPUNodeSelector selects nodes expected to advertise GPUs.
 	GPUNodeSelector string
 
-	// ExpectedGPUNodes, if > 0, asserts the exact count of nodes matching
+	// GPUNodeCount, if > 0, asserts the exact count of nodes matching
 	// GPUNodeSelector; 0 skips the assertion (and the node listing) entirely.
-	// Set it to the E2E_GPU_WORKER_NODES value passed to create-cluster.py to catch
-	// a misconfigured/partially-up cluster before any test runs.
-	ExpectedGPUNodes int
+	// Set it to the number of GPU nodes the target cluster is expected to have,
+	// to catch a misconfigured/partially-up cluster before any test runs.
+	GPUNodeCount int
 
 	// PluginImage overrides the gpu-sharing-plugin image in the DaemonSet
 	// manifest. Empty keeps whatever the manifest already specifies. Set this
-	// (together with PluginImagePullPolicy) when running against a k3d
-	// cluster with a locally built+loaded image.
+	// (together with PluginImagePullPolicy) when running against a cluster with
+	// a locally built+loaded image.
 	PluginImage string
 
 	// PluginImagePullPolicy overrides the image pull policy when PluginImage
-	// is set. Defaults to "Never" in that case (k3d-imported images have no
+	// is set. Defaults to "Never" in that case (locally loaded images have no
 	// registry to pull from); the manifest's own "Always" is used otherwise.
 	PluginImagePullPolicy string
 
-	PodReadyTimeout       time.Duration
 	DaemonSetReadyTimeout time.Duration
 	PollInterval          time.Duration
 }
 
-// Load builds a Config from environment variables, applying defaults suited
-// to a fake-gpu-operator cluster set up per create-cluster.py.
+// Load builds a Config from environment variables.
 func Load() Config {
 	pluginImage := os.Getenv("E2E_PLUGIN_IMAGE")
 	pullPolicy := os.Getenv("E2E_PLUGIN_IMAGE_PULL_POLICY")
@@ -56,10 +55,9 @@ func Load() Config {
 		Kubeconfig:            envOr("E2E_KUBECONFIG", defaultKubeconfig()),
 		PluginNamespace:       envOr("E2E_PLUGIN_NAMESPACE", "gpu-sharing"),
 		GPUNodeSelector:       envOr("E2E_GPU_NODE_SELECTOR", "nvidia.com/gpu.present=true"),
-		ExpectedGPUNodes:      envIntOr("E2E_EXPECTED_GPU_NODES", 0),
+		GPUNodeCount:          envIntOr("E2E_GPU_NODE_COUNT", 0),
 		PluginImage:           pluginImage,
 		PluginImagePullPolicy: pullPolicy,
-		PodReadyTimeout:       envDurationOr("E2E_POD_READY_TIMEOUT", 2*time.Minute),
 		DaemonSetReadyTimeout: envDurationOr("E2E_DAEMONSET_READY_TIMEOUT", 3*time.Minute),
 		PollInterval:          envDurationOr("E2E_POLL_INTERVAL", 2*time.Second),
 	}
@@ -76,6 +74,9 @@ func defaultKubeconfig() string {
 	return filepath.Join(home, ".kube", "config")
 }
 
+// Small local env helpers. Intentionally not shared with sharing-manager/common/env:
+// that lives in the root module, and importing it would couple this separate e2e
+// module to the operator's entire dependency graph just for a few wrappers.
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -88,12 +89,9 @@ func envIntOr(key string, fallback int) int {
 	if v == "" {
 		return fallback
 	}
-	n := 0
-	for _, c := range v {
-		if c < '0' || c > '9' {
-			return fallback
-		}
-		n = n*10 + int(c-'0')
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
 	}
 	return n
 }

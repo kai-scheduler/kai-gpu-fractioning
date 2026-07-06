@@ -86,7 +86,9 @@ cluster.
 | `make e2e-cluster-deps` | `pip install -r test/e2e/hack/requirements.txt` |
 | `make e2e-build-plugin-image` | `docker build --build-arg GO_TAGS=e2e` |
 | `make e2e-load-plugin-image` | build + `k3d image import` into `E2E_CLUSTER_NAME` |
-| `make test-e2e` | run the Go suite only (cluster + image assumed already up/loaded) |
+| `make test-e2e` | run all Go suites (cluster + image assumed already up/loaded) |
+| `make test-e2e-metrics` | run only the metrics suite (`./tests/metrics/...`) |
+| `make run-e2e` | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created |
 
 `E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_PLUGIN_IMAGE`,
 `E2E_FAKE_GPU_OPERATOR_VERSION` are overridable `make` variables mirroring the
@@ -101,10 +103,9 @@ script's env vars. `PYTHON` overrides the Python interpreter (default
 | `E2E_TEST_NAMESPACE` | `runai-proj-1` | namespace for test workload pods |
 | `E2E_PLUGIN_NAMESPACE` | `gpu-sharing` | namespace the plugin DaemonSet is deployed into |
 | `E2E_GPU_NODE_SELECTOR` | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes |
-| `E2E_EXPECTED_GPU_NODES` | `0` (unchecked) | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES` |
+| `E2E_GPU_NODE_COUNT` | `0` (unchecked) | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES` |
 | `E2E_PLUGIN_IMAGE` | *(manifest default)* | override the plugin image, e.g. a locally built `:e2e` tag |
 | `E2E_PLUGIN_IMAGE_PULL_POLICY` | `Never` if `E2E_PLUGIN_IMAGE` is set, else unset | pull policy for the overridden image (k3d-imported images have no registry to pull from) |
-| `E2E_POD_READY_TIMEOUT` | `2m` | timeout waiting for test pods to become Running |
 | `E2E_DAEMONSET_READY_TIMEOUT` | `3m` | timeout waiting for the plugin DaemonSet rollout |
 | `E2E_POLL_INTERVAL` | `2s` | poll interval used by all wait helpers |
 
