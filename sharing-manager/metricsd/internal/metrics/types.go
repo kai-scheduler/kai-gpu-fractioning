@@ -32,6 +32,16 @@ type PodGPUMetric struct {
 	GPUIndex             int     `json:"gpuIndex"`
 	MemoryBytes          uint64  `json:"memoryBytes"`
 	SMUtilizationPercent float64 `json:"smUtilizationPercent"`
+	// RequestedGPUFraction is the GPU fraction the pod requested on this device
+	// (e.g. 0.5), summed across its fractional containers. It is the divisor used
+	// to normalize SM utilization. Zero when no request is known.
+	RequestedGPUFraction float64 `json:"requestedGpuFraction"`
+	// SMUtilizationPercentNormalized is SMUtilizationPercent divided by the
+	// requested GPU fraction and capped at 100. It expresses how fully the pod
+	// uses what it asked for: a pod requesting 0.5 of a GPU and using 0.5 of it
+	// reports 100. When the requested fraction is unknown it falls back to a
+	// fraction of 1, so the value equals the raw SM utilization.
+	SMUtilizationPercentNormalized float64 `json:"smUtilizationPercentNormalized"`
 }
 
 type Snapshot struct {

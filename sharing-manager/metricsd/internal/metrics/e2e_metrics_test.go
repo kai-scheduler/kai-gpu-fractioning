@@ -42,6 +42,10 @@ const (
 	// SM utilization reported by NVML for each process.
 	e2eSMUtilPodA uint32 = 30
 	e2eSMUtilPodB uint32 = 50
+
+	// Each pod requested half of the shared GPU, so normalized SM utilization is
+	// SMUtil ÷ 0.5: pod-a → 60, pod-b → 100 (capped).
+	e2eRequestedFraction = 0.5
 )
 
 // e2ePodSource is a PodSource that resolves GPU processes to pods by PID lookup
@@ -51,6 +55,10 @@ type e2ePodSource struct {
 	byPID      map[uint32]store.ContainerInfo
 	containers []store.ContainerInfo
 }
+
+// Snapshot returns the source itself: the fixture's container set is fixed for
+// the duration of a test, so no point-in-time copy is needed.
+func (s *e2ePodSource) Snapshot() podSource { return s }
 
 func (s *e2ePodSource) ResolveProcess(p GPUProcessMetric) (store.ContainerInfo, bool) {
 	info, ok := s.byPID[p.PID]
@@ -80,20 +88,22 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 
 	// Both pods reference GPU index 0 — they share one physical device (0.5 each).
 	podA := store.ContainerInfo{
-		ContainerID: "ctr-pod-a",
-		Container:   "trainer",
-		Pod:         "pod-a",
-		Namespace:   e2eNamespace,
-		PodUID:      "uid-pod-a",
-		GPUDevices:  []store.GPUDevice{{Index: e2eGPUIndex}},
+		ContainerID:          "ctr-pod-a",
+		Container:            "trainer",
+		Pod:                  "pod-a",
+		Namespace:            e2eNamespace,
+		PodUID:               "uid-pod-a",
+		GPUDevices:           []store.GPUDevice{{Index: e2eGPUIndex}},
+		RequestedGPUFraction: e2eRequestedFraction,
 	}
 	podB := store.ContainerInfo{
-		ContainerID: "ctr-pod-b",
-		Container:   "worker",
-		Pod:         "pod-b",
-		Namespace:   e2eNamespace,
-		PodUID:      "uid-pod-b",
-		GPUDevices:  []store.GPUDevice{{Index: e2eGPUIndex}},
+		ContainerID:          "ctr-pod-b",
+		Container:            "worker",
+		Pod:                  "pod-b",
+		Namespace:            e2eNamespace,
+		PodUID:               "uid-pod-b",
+		GPUDevices:           []store.GPUDevice{{Index: e2eGPUIndex}},
+		RequestedGPUFraction: e2eRequestedFraction,
 	}
 
 	pods := &e2ePodSource{
@@ -211,6 +221,33 @@ func TestE2EFractionalGPUSharingSMUtilization(t *testing.T) {
 	}
 }
 
+// TestE2EFractionalGPUSharingSMUtilizationNormalized validates that SM
+// utilization is normalized per-pod by the requested GPU fraction (0.5 each) and
+// capped at 100: pod-a (30% used) → 60, pod-b (50% used) → 100.
+func TestE2EFractionalGPUSharingSMUtilizationNormalized(t *testing.T) {
+	exporter := twoFractionalPodsFixture(t)
+
+	tests := []struct {
+		pod      string
+		podUID   string
+		wantNorm float64
+	}{
+		{"pod-a", "uid-pod-a", float64(e2eSMUtilPodA) / e2eRequestedFraction}, // 60
+		{"pod-b", "uid-pod-b", 100},                                           // 50/0.5 = 100 (at cap)
+	}
+	for _, tt := range tests {
+		t.Run(tt.pod, func(t *testing.T) {
+			got, ok := gatheredGaugeValue(t, exporter, "gpu_sharing_gpu_sm_utilization_percent_normalized", podLabels(tt.pod, tt.podUID))
+			if !ok {
+				t.Fatalf("%s: expected gpu_sharing_gpu_sm_utilization_percent_normalized series to be present", tt.pod)
+			}
+			if got != tt.wantNorm {
+				t.Fatalf("%s: normalized SM util = %g, want %g", tt.pod, got, tt.wantNorm)
+			}
+		})
+	}
+}
+
 // TestE2EFractionalGPUSharingBothPodsHaveAllMetrics validates that both pods
 // have all expected metric families present — neither pod is silently absent.
 func TestE2EFractionalGPUSharingBothPodsHaveAllMetrics(t *testing.T) {
@@ -223,6 +260,7 @@ func TestE2EFractionalGPUSharingBothPodsHaveAllMetrics(t *testing.T) {
 	metricNames := []string{
 		"gpu_sharing_gpu_memory_used_bytes",
 		"gpu_sharing_gpu_sm_utilization_percent",
+		"gpu_sharing_gpu_sm_utilization_percent_normalized",
 	}
 
 	for _, pc := range podCases {
@@ -265,6 +303,7 @@ func TestE2EFractionalGPUSharingPrometheusEndpoint(t *testing.T) {
 		// Metric family names
 		"gpu_sharing_gpu_memory_used_bytes",
 		"gpu_sharing_gpu_sm_utilization_percent",
+		"gpu_sharing_gpu_sm_utilization_percent_normalized",
 		// Both pods present with correct labels
 		`pod="pod-a"`, `pod_uid="uid-pod-a"`,
 		`pod="pod-b"`, `pod_uid="uid-pod-b"`,

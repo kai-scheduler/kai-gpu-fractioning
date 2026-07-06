@@ -50,8 +50,9 @@ func New(cfg Config, logger *slog.Logger) *Plugin {
 	cfg = cfg.withDefaults()
 	writer := fsstore.NewWriter(cfg.MapDir, logger)
 	p := &Plugin{
-		cfg: cfg,
-		log: logger,
+		cfg:     cfg,
+		log:     logger,
+		adapter: adapter{gpuFractionAnnotation: cfg.GPUFractionAnnotation},
 	}
 	p.events = events.NewProcessor(writer, logger, events.Options{
 		LogEvents: func() bool { return p.config().LogPodEvents },
@@ -84,8 +85,9 @@ func (p *Plugin) Configure(ctx context.Context, config, runtime, version string)
 // (re)connect. The conversion of the container set runs on the events worker; the
 // handler returns no container updates (this plugin does not mutate) immediately.
 func (p *Plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
+	a := p.currentAdapter()
 	p.events.Synchronize(func() []store.ContainerInfo {
-		return p.adapter.containers(pods, containers)
+		return a.containers(pods, containers)
 	})
 
 	p.log.InfoContext(ctx, "scheduled synchronize with runtime",
@@ -103,8 +105,9 @@ func (p *Plugin) Shutdown(ctx context.Context) {
 // CreateContainer records the container→pod mapping for metrics and returns no
 // adjustment: this plugin never changes containers.
 func (p *Plugin) CreateContainer(ctx context.Context, pod *api.PodSandbox, container *api.Container) (*api.ContainerAdjustment, []*api.ContainerUpdate, error) {
+	a := p.currentAdapter()
 	p.events.Upsert(func() (store.ContainerInfo, bool) {
-		return p.adapter.container(pod, container)
+		return a.container(pod, container)
 	})
 	return nil, nil, nil
 }
@@ -130,5 +133,14 @@ func (p *Plugin) setConfig(cfg Config) {
 	cfg = cfg.withDefaults()
 	p.mu.Lock()
 	p.cfg = cfg
+	p.adapter = adapter{gpuFractionAnnotation: cfg.GPUFractionAnnotation}
 	p.mu.Unlock()
+}
+
+// the currentAdapter returns the adapter under the read lock so a concurrent
+// Configure (which rebuilds it) does not race with the NRI handlers.
+func (p *Plugin) currentAdapter() adapter {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.adapter
 }

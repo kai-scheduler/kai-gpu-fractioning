@@ -84,6 +84,7 @@ func TestMetricsExporterKeepsZeroSeriesForMissingReadings(t *testing.T) {
 	for _, name := range []string{
 		"gpu_sharing_gpu_memory_used_bytes",
 		"gpu_sharing_gpu_sm_utilization_percent",
+		"gpu_sharing_gpu_sm_utilization_percent_normalized",
 	} {
 		value, ok := gatheredGaugeValue(t, exporter, name, labels)
 		if !ok {
@@ -200,6 +201,7 @@ func TestMetricsExporterServesPrometheusFormat(t *testing.T) {
 	for _, want := range []string{
 		"gpu_sharing_gpu_memory_used_bytes",
 		"gpu_sharing_gpu_sm_utilization_percent",
+		"gpu_sharing_gpu_sm_utilization_percent_normalized",
 		`namespace="default"`,
 		`pod="pod"`,
 		`pod_uid="pod-uid"`,
