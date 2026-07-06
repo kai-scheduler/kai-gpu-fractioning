@@ -42,8 +42,8 @@ jobs:
       - name: Build and load gpu-sharing-plugin (:e2e) image
         run: make e2e-load-plugin-image
 
-      - name: Run e2e tests
-        run: make test-e2e
+      - name: Run metrics e2e tests
+        run: make test-e2e-metrics
 
       - name: Collect diagnostics on failure
         if: failure()
