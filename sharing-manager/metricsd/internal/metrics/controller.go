@@ -15,6 +15,15 @@ import (
 
 const DefaultPath = "/metrics"
 
+const (
+	// maxSMUtilPercent is the upper bound for a well-formed SM utilization
+	// percentage; sums and normalized values are clamped to it.
+	maxSMUtilPercent = 100
+	// fullGPUFraction is the fallback used when a pod's requested fraction is
+	// unknown, treating it as if it requested the whole GPU.
+	fullGPUFraction = 1
+)
+
 type metricsController struct {
 	mu               sync.RWMutex            // protects snapshot
 	collector        GPUProcessCollector     // NVML or noop source of per-process GPU metrics
@@ -117,6 +126,7 @@ func (s *metricsController) collect(ctx context.Context) {
 	if s.smUtilWindow > s.interval {
 		metrics = s.windowedSMUtil(metrics)
 	}
+	s.normalizeSMUtil(metrics)
 	s.setSnapshot(metrics, activePodUIDs)
 	s.log.DebugContext(ctx, "completed GPU metrics collect", "podMetrics", len(metrics), "unmatchedGPUProcesses", unmatched)
 	for _, m := range metrics {
@@ -126,6 +136,8 @@ func (s *metricsController) collect(ctx context.Context) {
 			"gpu_index", m.GPUIndex,
 			"memory_bytes", m.MemoryBytes,
 			"sm_utilization_percent", m.SMUtilizationPercent,
+			"sm_utilization_percent_normalized", m.SMUtilizationPercentNormalized,
+			"requested_gpu_fraction", m.RequestedGPUFraction,
 		)
 	}
 }
@@ -140,6 +152,10 @@ func (s *metricsController) setSnapshot(metrics []PodGPUMetric, activePodUIDs ma
 func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
 	byPodGPU := map[podGPUKey]*PodGPUMetric{}
 	observedPodDevices := map[string]struct{}{}
+	// requestedByKey sums each pod×GPU's requested GPU fraction across its
+	// containers, deduped by container ID so multiple GPU processes of one
+	// container are not counted more than once.
+	requestedByKey := map[podGPUKey]map[string]float64{}
 	unmatched := 0
 
 	for _, process := range processes {
@@ -162,6 +178,7 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 			GPUIndex:  process.GPUIndex,
 		}
 		observePodDevice(observedPodDevices, key)
+		recordRequestedFraction(requestedByKey, key, container.ContainerID, container.RequestedGPUFraction)
 		metric := byPodGPU[key]
 		if metric == nil {
 			metric = &PodGPUMetric{
@@ -181,6 +198,7 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 	for _, container := range pods.ActiveContainers() {
 		for _, device := range container.GPUDevices {
 			key := s.idlePodGPUKey(container, device)
+			recordRequestedFraction(requestedByKey, key, container.ContainerID, container.RequestedGPUFraction)
 			if _, ok := byPodGPU[key]; ok {
 				continue
 			}
@@ -192,13 +210,14 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 	}
 
 	out := make([]PodGPUMetric, 0, len(byPodGPU))
-	for _, metric := range byPodGPU {
+	for key, metric := range byPodGPU {
 		// SM utilization is summed from per-process NVML samples, each a 0-100
 		// time fraction. Concurrent processes (the common MPS case) can push the
 		// sum above 100, so clamp it to keep the exported percentage well-formed.
-		if metric.SMUtilizationPercent > 100 {
-			metric.SMUtilizationPercent = 100
+		if metric.SMUtilizationPercent > maxSMUtilPercent {
+			metric.SMUtilizationPercent = maxSMUtilPercent
 		}
+		metric.RequestedGPUFraction = sumRequestedFraction(requestedByKey[key])
 		out = append(out, *metric)
 	}
 	return out, unmatched
@@ -238,6 +257,58 @@ func (s *metricsController) pushSample(key podGPUKey, sample float64) float64 {
 		sum += v
 	}
 	return sum / float64(len(buf))
+}
+
+// normalizeSMUtil sets each metric's SMUtilizationPercentNormalized to its SM
+// utilization divided by the requested GPU fraction, capped at 100.
+func (s *metricsController) normalizeSMUtil(metrics []PodGPUMetric) {
+	for i := range metrics {
+		metrics[i].SMUtilizationPercentNormalized = normalizedSMUtil(
+			metrics[i].SMUtilizationPercent,
+			metrics[i].RequestedGPUFraction,
+		)
+	}
+}
+
+// normalizedSMUtil computes smUtil ÷ fraction, capped at 100. When the requested
+// fraction is unknown (0) it falls back to a fraction of 1 — i.e. the pod is
+// treated as if it requested the whole GPU, so the normalized value equals the
+// raw SM utilization rather than a misleading 0. Negative fractions are already
+// filtered to 0 at ingest (adapter.requestedGPUFraction), so they cannot reach here.
+func normalizedSMUtil(smUtil, fraction float64) float64 {
+	if fraction == 0 {
+		fraction = fullGPUFraction
+	}
+	normalized := smUtil / fraction
+	if normalized > maxSMUtilPercent {
+		return maxSMUtilPercent
+	}
+	return normalized
+}
+
+// recordRequestedFraction notes containerID's requested GPU fraction under key,
+// deduped by container ID so repeated observations of the same container (one
+// per GPU process) do not inflate the pod's requested total.
+func recordRequestedFraction(requestedByKey map[podGPUKey]map[string]float64, key podGPUKey, containerID string, fraction float64) {
+	if fraction <= 0 || containerID == "" {
+		return
+	}
+	byContainer := requestedByKey[key]
+	if byContainer == nil {
+		byContainer = map[string]float64{}
+		requestedByKey[key] = byContainer
+	}
+	byContainer[containerID] = fraction
+}
+
+// sumRequestedFraction totals the per-container requested GPU fraction recorded
+// for a pod×GPU key.
+func sumRequestedFraction(byContainer map[string]float64) float64 {
+	var sum float64
+	for _, fraction := range byContainer {
+		sum += fraction
+	}
+	return sum
 }
 
 func (s *metricsController) rememberDeviceUUIDs(deviceUUIDs map[int]string) {

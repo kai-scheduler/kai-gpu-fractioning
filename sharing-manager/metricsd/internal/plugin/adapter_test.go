@@ -94,6 +94,70 @@ func TestContainerFractionalRequestAnnotationIncluded(t *testing.T) {
 	}
 }
 
+func TestContainerParsesRequestedGPUFraction(t *testing.T) {
+	pod := fractionalPod("trainer", "4096", "")
+	pod.Annotations["gpu-fraction"] = "0.5"
+
+	info, ok := adapter{gpuFractionAnnotation: "gpu-fraction"}.container(
+		pod,
+		&api.Container{Id: "mps-client", Name: "trainer", PodSandboxId: "pod-id"},
+	)
+	if !ok {
+		t.Fatalf("expected fractional GPU container to be included")
+	}
+	if info.RequestedGPUFraction != 0.5 {
+		t.Fatalf("expected RequestedGPUFraction = 0.5, got %g", info.RequestedGPUFraction)
+	}
+}
+
+func TestContainerRequestedFractionZeroWhenAnnotationAbsentOrInvalid(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		set   bool
+	}{
+		{name: "absent", set: false},
+		{name: "not a number", value: "half", set: true},
+		{name: "non-positive", value: "0", set: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pod := fractionalPod("trainer", "4096", "")
+			if c.set {
+				pod.Annotations["gpu-fraction"] = c.value
+			}
+			info, ok := adapter{gpuFractionAnnotation: "gpu-fraction"}.container(
+				pod,
+				&api.Container{Id: "mps-client", Name: "trainer", PodSandboxId: "pod-id"},
+			)
+			if !ok {
+				t.Fatalf("expected fractional GPU container to be included")
+			}
+			if info.RequestedGPUFraction != 0 {
+				t.Fatalf("expected RequestedGPUFraction = 0, got %g", info.RequestedGPUFraction)
+			}
+		})
+	}
+}
+
+func TestContainerRequestedFractionZeroWhenAnnotationUnconfigured(t *testing.T) {
+	// The empty (unconfigured) annotation key disables fraction lookup even when a
+	// "gpu-fraction" annotation happens to be present.
+	pod := fractionalPod("trainer", "4096", "")
+	pod.Annotations["gpu-fraction"] = "0.5"
+
+	info, ok := adapter{}.container(
+		pod,
+		&api.Container{Id: "mps-client", Name: "trainer", PodSandboxId: "pod-id"},
+	)
+	if !ok {
+		t.Fatalf("expected fractional GPU container to be included")
+	}
+	if info.RequestedGPUFraction != 0 {
+		t.Fatalf("expected RequestedGPUFraction = 0 when annotation key unconfigured, got %g", info.RequestedGPUFraction)
+	}
+}
+
 func TestContainerFractionalWithDeviceNodePopulatesDevices(t *testing.T) {
 	// Some fractional GPU setups inject a device node alongside the annotation.
 	// Devices must be recorded.

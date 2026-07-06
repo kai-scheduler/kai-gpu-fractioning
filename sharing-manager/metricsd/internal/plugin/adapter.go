@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
 
@@ -31,9 +33,15 @@ var annotationGPUMemoryRE = regexp.MustCompile(
 // the only place that knows the NRI api.* types on the ingest path, which keeps
 // the events processor and the store free of any NRI dependency.
 //
-// adapter is stateless; the methods read only their arguments, so the value can
-// be shared and its methods called concurrently.
-type adapter struct{}
+// adapter is stateless apart from the configured GPU-fraction annotation key; the
+// methods read only their arguments plus that key, so the value can be shared and
+// its methods called concurrently.
+type adapter struct {
+	// gpuFractionAnnotation is the pod annotation key whose value is the requested
+	// GPU fraction (e.g. "0.5"), used to normalize SM utilization. Empty disables
+	// fraction lookup (RequestedGPUFraction stays 0).
+	gpuFractionAnnotation string
+}
 
 // container builds the container→pod mapping for a single container. Only
 // fractional GPU containers are tracked: the pod must carry at least one of the
@@ -41,7 +49,7 @@ type adapter struct{}
 // otherwise. Full-GPU (non-fractional) containers are intentionally excluded.
 // GPU device nodes are still read when present (they supply the device index
 // for process-to-pod attribution), but their presence is not required.
-func (adapter) container(pod *api.PodSandbox, container *api.Container) (store.ContainerInfo, bool) {
+func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store.ContainerInfo, bool) {
 	if container == nil || container.GetId() == "" {
 		return store.ContainerInfo{}, false
 	}
@@ -50,12 +58,13 @@ func (adapter) container(pod *api.PodSandbox, container *api.Container) (store.C
 	}
 
 	info := store.ContainerInfo{
-		ContainerID: container.GetId(),
-		Container:   container.GetName(),
-		Pod:         pod.GetName(),
-		Namespace:   pod.GetNamespace(),
-		PodUID:      pod.GetUid(),
-		GPUDevices:  gpuDevices(container),
+		ContainerID:          container.GetId(),
+		Container:            container.GetName(),
+		Pod:                  pod.GetName(),
+		Namespace:            pod.GetNamespace(),
+		PodUID:               pod.GetUid(),
+		GPUDevices:           gpuDevices(container),
+		RequestedGPUFraction: a.requestedGPUFraction(pod.GetAnnotations()),
 	}
 	if linux := container.GetLinux(); linux != nil {
 		info.CgroupPath = linux.GetCgroupsPath()
@@ -75,6 +84,26 @@ func isFractionalGPUContainer(containerName string, annotations map[string]strin
 		}
 	}
 	return false
+}
+
+// requestedGPUFraction returns the requested GPU fraction read from the
+// configured annotation key (e.g. "gpu-fraction" → "0.5"). It returns 0 when the
+// key is unconfigured, absent, or its value is not a parseable fraction —
+// normalization then treats the container as having no known request rather than
+// failing ingest.
+func (a adapter) requestedGPUFraction(annotations map[string]string) float64 {
+	if a.gpuFractionAnnotation == "" {
+		return 0
+	}
+	value, ok := annotations[a.gpuFractionAnnotation]
+	if !ok {
+		return 0
+	}
+	fraction, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || fraction <= 0 {
+		return 0
+	}
+	return fraction
 }
 
 // containers builds the full mapping set delivered by an NRI Synchronize. Each
