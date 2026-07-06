@@ -1,11 +1,11 @@
-package plugin
+package internal
 
 import (
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
 
 	"github.com/containerd/nri/pkg/api"
 )

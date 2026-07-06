@@ -1,4 +1,4 @@
-package plugin
+package internal
 
 import (
 	"context"
@@ -8,26 +8,31 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
-
 	"github.com/containerd/nri/pkg/api"
+
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/fsstore"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
 )
 
-// testPlugin builds a plugin whose mapping handoff goes through a throwaway
-// directory, plus a reader over the same directory so a test can observe what the
-// metrics component would read back.
-func testPlugin(t *testing.T) (*Plugin, *fsstore.Reader) {
+// testMappingPlugin builds a plugin whose mapping handoff goes through a
+// throwaway directory, plus a reader over the same directory so a test can
+// observe what the metrics sidecar would read back.
+func testMappingPlugin(t *testing.T) (*Plugin, *fsstore.Reader) {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := DefaultConfig()
-	cfg.MapDir = dir
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return New(cfg, logger), fsstore.NewReader(dir, logger)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := NewPlugin(Config{
+		AnnotationPrefix:      "nvidia.com/gpu-memory.container.",
+		MPSPipeDirectory:      "/run/nvidia-mps",
+		MapDir:                dir,
+		GPUFractionAnnotation: "gpu-fraction",
+		Log:                   log,
+	})
+	return p, fsstore.NewReader(dir, log)
 }
 
 // activeContainers drains queued events and returns the containers the metrics
-// component would attribute processes to.
+// sidecar would attribute processes to.
 func activeContainers(t *testing.T, p *Plugin, r *fsstore.Reader) []store.ContainerInfo {
 	t.Helper()
 	p.Flush()
@@ -56,34 +61,8 @@ func gpuContainer(id, name, podSandboxID string, minors ...int64) *api.Container
 	}
 }
 
-func TestCreateContainerDoesNotMutateContainer(t *testing.T) {
-	plugin, _ := testPlugin(t)
-
-	adjust, updates, err := plugin.CreateContainer(context.Background(),
-		&api.PodSandbox{
-			Name:      "pod",
-			Namespace: "default",
-			Uid:       "pod-uid",
-			// Annotations are intentionally ignored now — the plugin does not mutate.
-			Annotations: map[string]string{
-				"nvidia.com/container.container.gpu-memory.limit": "2Gi",
-			},
-		},
-		gpuContainer("container-id", "container", "", 0),
-	)
-	if err != nil {
-		t.Fatalf("CreateContainer returned error: %v", err)
-	}
-	if adjust != nil {
-		t.Fatalf("expected no container adjustment (no mutation), got %#v", adjust)
-	}
-	if len(updates) != 0 {
-		t.Fatalf("expected no container updates, got %d", len(updates))
-	}
-}
-
 func TestCreateContainerRecordsGPUMapping(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
@@ -111,7 +90,7 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 }
 
 func TestCreateContainerIgnoresNonFractionalContainer(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{Name: "pod"},
@@ -125,8 +104,33 @@ func TestCreateContainerIgnoresNonFractionalContainer(t *testing.T) {
 	}
 }
 
+// A fail-closed annotation parse error must block the container AND skip the
+// mapping: the container will not exist, so recording it would be stale.
+func TestCreateContainerFailClosedDoesNotRecordMapping(t *testing.T) {
+	plugin, reader := testMappingPlugin(t)
+
+	_, _, err := plugin.CreateContainer(context.Background(),
+		&api.PodSandbox{
+			Name: "pod", Uid: "pod-uid",
+			Annotations: map[string]string{
+				// Malformed sharingd mutation annotation → fail-closed error.
+				"nvidia.com/gpu-memory.container.container.limit": "not-a-quantity",
+				// A valid mapping annotation that would otherwise be recorded.
+				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4096",
+			},
+		},
+		gpuContainer("container-id", "container", "", 0),
+	)
+	if err == nil {
+		t.Fatal("expected fail-closed error for malformed annotation")
+	}
+	if n := len(activeContainers(t, plugin, reader)); n != 0 {
+		t.Fatalf("expected no mapping recorded on fail-closed, got %d", n)
+	}
+}
+
 func TestRemoveContainerDeletesMapping(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
@@ -153,7 +157,7 @@ func TestRemoveContainerDeletesMapping(t *testing.T) {
 }
 
 func TestSynchronizeReplacesMappings(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	updates, err := plugin.Synchronize(context.Background(),
 		[]*api.PodSandbox{{

@@ -94,7 +94,7 @@ func TestCreateContainer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := newTestPlugin()
+			p := newTestPlugin(t)
 			pod := &api.PodSandbox{
 				Name:        "test-pod",
 				Annotations: tt.annotations,
@@ -161,7 +161,13 @@ func TestCreateContainer(t *testing.T) {
 func TestCreateContainer_FailOpenLogsWarning(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	p := NewPlugin(configuration.DefaultAnnotationPrefix, configuration.DefaultMPSPipeDirectory, true, log)
+	p := NewPlugin(Config{
+		AnnotationPrefix: configuration.DefaultAnnotationPrefix,
+		MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
+		FailOpen:         true,
+		MapDir:           t.TempDir(),
+		Log:              log,
+	})
 
 	pod := &api.PodSandbox{
 		Name: "test-pod",
@@ -183,7 +189,14 @@ func TestCreateContainer_FailOpenLogsWarning(t *testing.T) {
 	}
 }
 
-func newTestPlugin() *Plugin {
+func newTestPlugin(t *testing.T) *Plugin {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	return NewPlugin(configuration.DefaultAnnotationPrefix, configuration.DefaultMPSPipeDirectory, false, log)
+	return NewPlugin(Config{
+		AnnotationPrefix: configuration.DefaultAnnotationPrefix,
+		MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
+		FailOpen:         false,
+		MapDir:           t.TempDir(),
+		Log:              log,
+	})
 }

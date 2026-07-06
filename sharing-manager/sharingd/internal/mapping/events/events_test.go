@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
 )
 
 type fakeWriter struct {

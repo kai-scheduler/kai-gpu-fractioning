@@ -1,4 +1,4 @@
-package plugin
+package internal
 
 import (
 	"testing"
@@ -215,7 +215,7 @@ func TestContainersDropsNonFractionalAndSiblingContainers(t *testing.T) {
 			{Id: "full-pod-id", Name: "full-pod", Namespace: "default", Uid: "full-uid"},
 		},
 		[]*api.Container{
-			gpuContainer("frac-container", "trainer", "frac-pod-id", 0), // annotation matches → kept
+			gpuContainer("frac-container", "trainer", "frac-pod-id", 0),   // annotation matches → kept
 			{Id: "sidecar", Name: "sidecar", PodSandboxId: "frac-pod-id"}, // no annotation for "sidecar" → dropped
 			gpuContainer("full-container", "gpu", "full-pod-id", 0),       // pod has no annotation → dropped
 		},

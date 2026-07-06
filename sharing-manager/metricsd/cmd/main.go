@@ -16,27 +16,20 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/config"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/envutil"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
-	gpuext "github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/plugin"
-
-	"github.com/containerd/nri/pkg/stub"
 )
 
-const (
-	defaultLogLevel      = "info"
-	defaultRetryInterval = 5 * time.Second
-)
+const defaultLogLevel = "info"
 
 var (
 	version = "dev"
@@ -44,42 +37,32 @@ var (
 	date    = "unknown"
 )
 
+// metricsd is the metrics-only sidecar: it reads the container→pod mapping
+// written by the sharingd NRI plugin (via the shared MapDir handoff) and exports
+// per-pod GPU metrics. It contains no NRI plugin — the mapping is produced by the
+// sharingd container it is co-scheduled with in the same DaemonSet pod.
 func main() {
-	// TODO: once the NRI plugin is extracted into gpu-fractions-operator and metrics
-	// runs as a sidecar, collapse these flag vars into a typed config struct and
-	// remove the NRI-specific flags (socket, plugin-name, plugin-index).
 	var (
-		configPath    string
-		socketPath    string
-		pluginName    string
-		pluginIndex   string
-		logLevel      string
-		retryInterval time.Duration
+		configPath string
+		logLevel   string
 	)
 
-	flag.StringVar(&configPath, "config", envutil.StringFromEnv("CONFIG_PATH", gpuext.DefaultConfigPath), "path to the plugin configuration file")
-	flag.StringVar(&socketPath, "socket", envutil.StringFromEnv("NRI_SOCKET_PATH", gpuext.DefaultNRISocketPath), "path to the NRI runtime socket")
-	flag.StringVar(&pluginName, "plugin-name", envutil.StringFromEnv("PLUGIN_NAME", gpuext.DefaultPluginName), "NRI plugin name")
-	flag.StringVar(&pluginIndex, "plugin-index", envutil.StringFromEnv("PLUGIN_INDEX", gpuext.DefaultPluginIndex), "NRI plugin index used for ordering")
+	flag.StringVar(&configPath, "config", envutil.StringFromEnv("CONFIG_PATH", config.DefaultConfigPath), "path to the metrics configuration file")
 	flag.StringVar(&logLevel, "log-level", envutil.StringFromEnv("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
-	flag.DurationVar(&retryInterval, "retry-interval", envutil.DurationFromEnv("RETRY_INTERVAL", defaultRetryInterval), "delay before reconnecting after the NRI connection exits")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(logLevel),
 	}))
 
-	logger.Info("starting gpu-sharing-plugin",
+	logger.Info("starting gpu-sharing-metrics",
 		"version", version,
 		"commit", commit,
 		"date", date,
 		"config", configPath,
-		"socket", socketPath,
-		"pluginName", pluginName,
-		"pluginIndex", pluginIndex,
 	)
 
-	cfg, err := gpuext.LoadConfig(configPath)
+	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Error("failed to load configuration", "error", err)
 		os.Exit(1)
@@ -90,69 +73,26 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	plugin := gpuext.New(cfg, logger)
+	if !cfg.Metrics.Enabled {
+		logger.Info("GPU metrics exporter disabled; nothing to do")
+		return
+	}
 
-	// The NRI mapper (plugin) writes the container→pod mapping to cfg.MapDir; the
-	// metrics component reads it back from the same directory. In this single
-	// binary both sides run in-process, but the handoff still goes through the
-	// shared filesystem so the components can be split into two
-	// containers without any code change — only the deployment topology changes.
+	// The sharingd NRI plugin writes the container→pod mapping to cfg.MapDir (a
+	// shared volume); this sidecar reads it back from the same directory to
+	// attribute NVML-reported GPU processes to Kubernetes pods.
 	mappingReader := fsstore.NewReader(cfg.MapDir, logger)
-	var metricsRuntime *metrics.Runtime
-	if cfg.Metrics.Enabled {
-		metricsRuntime, err = metrics.New(ctx, cfg.Metrics.RuntimeConfig(), mappingReader, logger)
-		if err != nil {
-			logger.Error("failed to build metrics exporter", "error", err)
-			os.Exit(1)
-		}
-		metricsRuntime.Start(ctx)
-	} else {
-		logger.Info("GPU metrics exporter disabled")
-	}
-	defer metricsRuntime.Stop(context.Background(), logger)
 
-	// TODO: once the NRI plugin is removed from metricsd (next PR), delete runPlugin
-	// and this loop entirely — metrics will read the mapping from the shared filesystem
-	// written by the gpu-fractions-operator NRI plugin.
-	// TODO: add a --max-retries flag (0 = unlimited) so operators can cap reconnect
-	// attempts if indefinite retry is undesirable in their environment.
-	for {
-		if runPlugin(ctx, plugin, pluginName, pluginIndex, socketPath, logger) {
-			return
-		}
-		logger.Error("NRI stub exited, retrying", "retryInterval", retryInterval.String())
-		select {
-		case <-time.After(retryInterval):
-		case <-ctx.Done():
-			logger.Info("stopped gpu-sharing-plugin")
-			return
-		}
-	}
-}
-
-// runPlugin creates and runs one NRI stub connection. It returns true when the
-// context is done (clean shutdown) and false when the connection dropped and the
-// caller should retry.
-func runPlugin(ctx context.Context, plugin stub.Plugin, pluginName, pluginIndex, socketPath string, logger *slog.Logger) (done bool) {
-	nriStub, err := stub.New(plugin,
-		stub.WithPluginName(pluginName),
-		stub.WithPluginIdx(pluginIndex),
-		stub.WithSocketPath(socketPath),
-		stub.WithOnClose(func() {
-			logger.Warn("NRI runtime connection closed")
-		}),
-	)
+	metricsRuntime, err := metrics.New(ctx, cfg.Metrics.RuntimeConfig(), mappingReader, logger)
 	if err != nil {
-		logger.Error("failed to create NRI stub", "error", err)
+		logger.Error("failed to build metrics exporter", "error", err)
 		os.Exit(1)
 	}
+	metricsRuntime.Start(ctx)
+	defer metricsRuntime.Stop(context.Background(), logger)
 
-	err = nriStub.Run(ctx)
-	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-		logger.Info("stopped gpu-sharing-plugin")
-		return true
-	}
-	return false
+	<-ctx.Done()
+	logger.Info("stopped gpu-sharing-metrics")
 }
 
 func parseLogLevel(level string) slog.Level {
