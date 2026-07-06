@@ -23,7 +23,7 @@ type Config struct {
 
 	// ExpectedGPUNodes, if > 0, asserts the exact count of nodes matching
 	// GPUNodeSelector; 0 skips the assertion (and the node listing) entirely.
-	// Set it to the E2E_WORKER_NODES value passed to create-cluster.py to catch
+	// Set it to the E2E_GPU_WORKER_NODES value passed to create-cluster.py to catch
 	// a misconfigured/partially-up cluster before any test runs.
 	ExpectedGPUNodes int
 

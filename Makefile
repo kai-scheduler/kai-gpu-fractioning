@@ -47,13 +47,15 @@ test-sharing-manager:
 # -----------------------------------------------------------
 
 E2E_CLUSTER_NAME              ?= gpu-sharing-e2e
-E2E_WORKER_NODES              ?= 2
+E2E_GPU_WORKER_NODES          ?= 2
+E2E_NON_GPU_WORKER_NODES      ?= 1
 E2E_PLUGIN_IMAGE              ?= gpu-sharing-plugin:e2e
 E2E_FAKE_GPU_OPERATOR_VERSION ?=
 PYTHON                        ?= python3
 
 export E2E_CLUSTER_NAME
-export E2E_WORKER_NODES
+export E2E_GPU_WORKER_NODES
+export E2E_NON_GPU_WORKER_NODES
 export E2E_FAKE_GPU_OPERATOR_VERSION
 
 .PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps e2e-build-plugin-image e2e-load-plugin-image test-e2e
@@ -76,7 +78,7 @@ e2e-load-plugin-image: e2e-build-plugin-image
 	k3d image import $(E2E_PLUGIN_IMAGE) --cluster $(E2E_CLUSTER_NAME)
 
 test-e2e:
-	cd test/e2e && E2E_PLUGIN_IMAGE=$(E2E_PLUGIN_IMAGE) E2E_EXPECTED_GPU_NODES=$(E2E_WORKER_NODES) go test -tags e2e ./tests/... -v -timeout 20m
+	cd test/e2e && E2E_PLUGIN_IMAGE=$(E2E_PLUGIN_IMAGE) E2E_EXPECTED_GPU_NODES=$(E2E_GPU_WORKER_NODES) go test -tags e2e ./tests/... -v -timeout 20m
 
 # -----------------------------------------------------------
 # Code quality

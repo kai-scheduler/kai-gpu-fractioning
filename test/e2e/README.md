@@ -48,7 +48,7 @@ All configurable via `E2E_*` environment variables:
 | Variable | Default | Purpose |
 |---|---|---|
 | `E2E_CLUSTER_NAME` | `gpu-sharing-e2e` | k3d cluster name |
-| `E2E_WORKER_NODES` | `2` | number of agent nodes, each labeled into the fake-GPU node pool |
+| `E2E_GPU_WORKER_NODES` | `2` | number of agent nodes, each labeled into the fake-GPU node pool |
 | `E2E_K3S_IMAGE` | `rancher/k3s:v1.31.5-k3s1` | k3s node image |
 | `E2E_GPU_NODE_POOL` | `default` | fake-gpu-operator node pool name |
 | `E2E_GPUS_PER_NODE` | `2` | GPUs advertised per node in that pool |
@@ -60,7 +60,7 @@ All configurable via `E2E_*` environment variables:
 ```sh
 pip install -r test/e2e/hack/requirements.txt
 
-E2E_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.1.0 test/e2e/hack/create-cluster.py
+E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.1.0 test/e2e/hack/create-cluster.py
 test/e2e/hack/create-cluster.py --delete
 test/e2e/hack/create-cluster.py --skip-fake-gpu-operator   # cluster only, e.g. for iterating on the script itself
 ```
@@ -88,7 +88,7 @@ cluster.
 | `make e2e-load-plugin-image` | build + `k3d image import` into `E2E_CLUSTER_NAME` |
 | `make test-e2e` | run the Go suite only (cluster + image assumed already up/loaded) |
 
-`E2E_CLUSTER_NAME`, `E2E_WORKER_NODES`, `E2E_PLUGIN_IMAGE`,
+`E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_PLUGIN_IMAGE`,
 `E2E_FAKE_GPU_OPERATOR_VERSION` are overridable `make` variables mirroring the
 script's env vars. `PYTHON` overrides the Python interpreter (default
 `python3`).
@@ -101,7 +101,7 @@ script's env vars. `PYTHON` overrides the Python interpreter (default
 | `E2E_TEST_NAMESPACE` | `runai-proj-1` | namespace for test workload pods |
 | `E2E_PLUGIN_NAMESPACE` | `gpu-sharing` | namespace the plugin DaemonSet is deployed into |
 | `E2E_GPU_NODE_SELECTOR` | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes |
-| `E2E_EXPECTED_GPU_NODES` | `0` (unchecked) | exact GPU node count to assert, if > 0 — set to `E2E_WORKER_NODES` |
+| `E2E_EXPECTED_GPU_NODES` | `0` (unchecked) | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES` |
 | `E2E_PLUGIN_IMAGE` | *(manifest default)* | override the plugin image, e.g. a locally built `:e2e` tag |
 | `E2E_PLUGIN_IMAGE_PULL_POLICY` | `Never` if `E2E_PLUGIN_IMAGE` is set, else unset | pull policy for the overridden image (k3d-imported images have no registry to pull from) |
 | `E2E_POD_READY_TIMEOUT` | `2m` | timeout waiting for test pods to become Running |

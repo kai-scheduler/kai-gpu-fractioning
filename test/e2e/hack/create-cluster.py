@@ -12,7 +12,8 @@ stdout is enough for CI logs).
 
 Environment variables (all optional, E2E_ prefix, see ClusterConfig):
     E2E_CLUSTER_NAME               (default: gpu-sharing-e2e)
-    E2E_WORKER_NODES               (default: 2)
+    E2E_GPU_WORKER_NODES               (default: 2)   # GPU worker nodes
+    E2E_NON_GPU_WORKER_NODES       (default: 1)   # plain (no-GPU) worker nodes
     E2E_K3S_IMAGE                  (default: rancher/k3s:v1.31.5-k3s1)
     E2E_GPU_NODE_POOL              (default: default)
     E2E_GPUS_PER_NODE              (default: 2)
@@ -23,7 +24,7 @@ Environment variables (all optional, E2E_ prefix, see ClusterConfig):
 
 Usage:
     ./create-cluster.py
-    E2E_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.0.80 ./create-cluster.py
+    E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.0.80 ./create-cluster.py
     ./create-cluster.py --skip-fake-gpu-operator
     ./create-cluster.py --delete
 
@@ -71,7 +72,11 @@ class ClusterConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="E2E_", extra="ignore")
 
     cluster_name: str = "gpu-sharing-e2e"
-    worker_nodes: int = Field(default=2, ge=1, le=50)
+    # GPU worker nodes (carry the fake-gpu-operator node-pool label; get
+    # nvidia.com/gpu.present=true). Non-GPU workers below are plain agents with
+    # no GPU label, so the cluster mirrors a real mixed GPU/CPU topology.
+    gpu_worker_nodes: int = Field(default=2, ge=1, le=50)
+    non_gpu_worker_nodes: int = Field(default=1, ge=0, le=50)
     k3s_image: str = "rancher/k3s:v1.31.5-k3s1"
     gpu_node_pool: str = "default"
     gpus_per_node: int = Field(default=2, ge=1, le=16)
@@ -103,6 +108,13 @@ def create_cluster(config: ClusterConfig) -> bool:
         log(f"  {key:26s}: {value}")
 
     nri_template_path = write_containerd_nri_template()
+
+    # k3d indexes agents 0..(total-1). GPU agents come first and carry the
+    # node-pool label; the remaining agents stay unlabeled (non-GPU workers).
+    total_agents = config.gpu_worker_nodes + config.non_gpu_worker_nodes
+    gpu_node_filter = ";".join(f"agent:{i}" for i in range(config.gpu_worker_nodes))
+    gpu_node_label = f"run.ai/simulated-gpu-node-pool={config.gpu_node_pool}@{gpu_node_filter}"
+
     try:
         for attempt in range(1, config.max_retries + 1):
             log(f"Cluster creation attempt {attempt}/{config.max_retries}...")
@@ -113,9 +125,9 @@ def create_cluster(config: ClusterConfig) -> bool:
                 sh.k3d(
                     "cluster", "create", config.cluster_name,
                     "--servers", "1",
-                    "--agents", str(config.worker_nodes),
+                    "--agents", str(total_agents),
                     "--image", config.k3s_image,
-                    "--k3s-node-label", f"run.ai/simulated-gpu-node-pool={config.gpu_node_pool}@agent:*",
+                    "--k3s-node-label", gpu_node_label,
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
                     "--timeout", config.cluster_timeout,
                     "--wait",
@@ -221,11 +233,11 @@ def wait_for_gpu_node_labels(config: ClusterConfig, max_retries: int = 30, inter
             "--no-headers", _ok_code=[0, 1],
         )).strip()
         count = len(out.splitlines()) if out else 0
-        if count >= config.worker_nodes:
+        if count >= config.gpu_worker_nodes:
             log(f"{count} node(s) labeled.")
             return
         if attempt == max_retries:
-            log(f"timed out waiting for GPU node labels (found {count}/{config.worker_nodes})")
+            log(f"timed out waiting for GPU node labels (found {count}/{config.gpu_worker_nodes})")
             raise typer.Exit(1)
         time.sleep(interval_seconds)
 
@@ -269,7 +281,7 @@ def main(
     log(f"Cluster '{config.cluster_name}' is ready for e2e tests.")
     log("Next steps:")
     log(f"  make e2e-load-plugin-image E2E_CLUSTER_NAME={config.cluster_name}")
-    log(f"  make test-e2e E2E_EXPECTED_GPU_NODES={config.worker_nodes}")
+    log(f"  make test-e2e E2E_EXPECTED_GPU_NODES={config.gpu_worker_nodes}")
 
 
 if __name__ == "__main__":

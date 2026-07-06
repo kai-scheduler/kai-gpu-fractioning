@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "sharing-manager/metricsd/**"
+      - "sharing-manager/mpsd/**"
+      - "sharing-manager/sharingd/**"
       - "test/e2e/**"
       - ".github/workflows/e2e.yaml"
   workflow_dispatch: {}
@@ -14,7 +16,8 @@ permissions:
 
 env:
   E2E_CLUSTER_NAME: gpu-sharing-e2e
-  E2E_WORKER_NODES: 2
+  E2E_GPU_WORKER_NODES: 2          # GPU worker nodes
+  E2E_NON_GPU_WORKER_NODES: 1  # plain (no-GPU) worker nodes, for a mixed topology
   # Pin to a known-good fake-gpu-operator release. Bump deliberately.
   E2E_FAKE_GPU_OPERATOR_VERSION: 0.1.0
 
@@ -51,13 +54,13 @@ jobs:
           kubectl get pods -n gpu-operator -o wide
 
           ready_gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu.present=true --no-headers | grep -c ' Ready ')
-          echo "Ready GPU nodes: ${ready_gpu_nodes} (expected: ${E2E_WORKER_NODES})"
+          echo "Ready GPU nodes: ${ready_gpu_nodes} (expected: ${E2E_GPU_WORKER_NODES})"
 
-          if [[ "${ready_gpu_nodes}" -ne "${E2E_WORKER_NODES}" ]]; then
-            echo "::error::expected ${E2E_WORKER_NODES} Ready GPU node(s), found ${ready_gpu_nodes}"
+          if [[ "${ready_gpu_nodes}" -ne "${E2E_GPU_WORKER_NODES}" ]]; then
+            echo "::error::expected ${E2E_GPU_WORKER_NODES} Ready GPU node(s), found ${ready_gpu_nodes}"
             {
               echo "### ❌ Cluster is NOT up"
-              echo "Expected **${E2E_WORKER_NODES}** Ready GPU node(s), found **${ready_gpu_nodes}**."
+              echo "Expected **${E2E_GPU_WORKER_NODES}** Ready GPU node(s), found **${ready_gpu_nodes}**."
               echo
               echo '```'
               kubectl get nodes -o wide
@@ -68,7 +71,7 @@ jobs:
 
           {
             echo "### ✅ Cluster is up and running"
-            echo "k3d cluster \`${E2E_CLUSTER_NAME}\`: **${ready_gpu_nodes}/${E2E_WORKER_NODES}** GPU nodes Ready, fake-gpu-operator installed."
+            echo "k3d cluster \`${E2E_CLUSTER_NAME}\`: **${ready_gpu_nodes}/${E2E_GPU_WORKER_NODES}** GPU nodes Ready, fake-gpu-operator installed."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and load gpu-sharing-plugin (:e2e) image
