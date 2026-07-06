@@ -13,18 +13,17 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
 )
 
-// VerifyGPUNodes validates c.Config.GPUNodeSelector and, when
-// c.Config.ExpectedGPUNodes > 0, asserts that exactly that many nodes match. With
-// ExpectedGPUNodes == 0 there is nothing to assert, so it returns after validating
-// the selector without listing nodes.
+// VerifyGPUNodes asserts that exactly c.Config.ExpectedGPUNodes nodes match
+// c.Config.GPUNodeSelector. With ExpectedGPUNodes == 0 there is nothing to
+// assert, so it returns immediately without parsing the selector or listing nodes.
 func VerifyGPUNodes(ctx context.Context, c *cluster.Client) error {
+	if c.Config.ExpectedGPUNodes == 0 {
+		return nil
+	}
+
 	sel, err := labels.Parse(c.Config.GPUNodeSelector)
 	if err != nil {
 		return fmt.Errorf("parse GPU node selector %q: %w", c.Config.GPUNodeSelector, err)
-	}
-
-	if c.Config.ExpectedGPUNodes == 0 {
-		return nil
 	}
 
 	var nodeList corev1.NodeList
