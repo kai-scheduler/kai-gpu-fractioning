@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/pods"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/portforward"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/portforward"
 )
 
 const pluginLabelSelector = "app=gpu-sharing-plugin"

@@ -9,7 +9,7 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 )
 
 // Forwarder holds an active port-forward to a pod. Close must be called to

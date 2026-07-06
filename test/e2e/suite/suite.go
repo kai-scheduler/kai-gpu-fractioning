@@ -6,10 +6,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/config"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/nodes"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/plugin"
 )
 
 // Suite holds the shared state for a run of the e2e test binary. The cluster

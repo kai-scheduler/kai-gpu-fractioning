@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 )
 
 // ListByLabel lists pods in namespace matching labelSelector.

@@ -20,7 +20,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/waiter"
 )
 
@@ -28,8 +28,8 @@ import (
 // source file so it works regardless of the caller's working directory.
 func manifestPath() string {
 	_, thisFile, _, _ := runtime.Caller(0)
-	// this file: <repo>/test/e2e/plugin/deploy.go
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+	// this file: <repo>/test/e2e/k8s/plugin/deploy.go
+	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..")
 	return filepath.Join(repoRoot, "sharing-manager", "metricsd", "deploy", "daemonset.yaml")
 }
 
