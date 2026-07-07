@@ -127,11 +127,13 @@ Exported metrics include:
 - `gpu_sharing_gpu_memory_used_bytes`
 - `gpu_sharing_gpu_sm_utilization_percent`
 - `gpu_sharing_gpu_sm_utilization_percent_normalized` — SM utilization divided by
-  the pod's requested GPU fraction and capped at 100. The requested fraction is
-  read from the pod annotation named by `gpuFractionAnnotation` (default
-  `gpu-fraction`, e.g. `"0.5"`); a pod using as much of the GPU as it requested
-  reports 100. When the fraction annotation is absent or unparseable it falls
-  back to a fraction of 1, so the value equals the raw SM utilization.
+  the pod's GPU fraction and capped at 100. The fraction is derived as the pod's
+  requested GPU memory ÷ the device's total memory (from NVML), where the
+  requested memory comes from the `nvidia.com/gpu-memory.container.<name>.{limit,request}`
+  annotation the sharingd plugin records (limit, else request); a pod using as
+  much of the GPU as it requested reports 100. When the request is unknown or the
+  device's total memory is unavailable it falls back to a fraction of 1, so the
+  value equals the raw SM utilization.
 
 Metric names are configurable under `metrics.metricNames`.
 

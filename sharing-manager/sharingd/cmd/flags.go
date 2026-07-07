@@ -27,8 +27,6 @@ type cliFlags struct {
 	failOpen bool
 	// mapDir is the shared dir for the container->pod mapping handoff.
 	mapDir string
-	// gpuFraction is the annotation key for the requested GPU fraction.
-	gpuFraction string
 	// logPodEvents logs each recorded/removed mapping event.
 	logPodEvents bool
 	// logLevel is the log level (debug, info, warn, error).
@@ -50,7 +48,6 @@ func parseFlags() cliFlags {
 	flag.StringVar(&f.mpsPipeDir, "pipe-dir", configuration.DefaultMPSPipeDirectory, "MPS pipe directory path")
 	flag.BoolVar(&f.failOpen, "fail-open", false, "if true, annotation parse errors skip the container instead of blocking it")
 	flag.StringVar(&f.mapDir, "map-dir", env.String("MAP_DIR", fsstore.DefaultMapDir), "shared directory for the container->pod mapping handoff read by the metrics sidecar")
-	flag.StringVar(&f.gpuFraction, "gpu-fraction-annotation", env.String("GPU_FRACTION_ANNOTATION", internal.DefaultGPUFractionAnnotation), "pod annotation key whose value is the requested GPU fraction (empty disables)")
 	flag.BoolVar(&f.logPodEvents, "log-pod-events", env.Bool("LOG_POD_EVENTS", false), "log each recorded/removed container->pod mapping event")
 	flag.StringVar(&f.logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 	flag.DurationVar(&f.retryInterval, "retry-interval", 5*time.Second, "initial wait between NRI connection retries")

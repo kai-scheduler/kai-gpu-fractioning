@@ -43,6 +43,12 @@ const (
 	e2eSMUtilPodA uint32 = 30
 	e2eSMUtilPodB uint32 = 50
 
+	// The simulated device's total memory (decimal MB). Each pod requests half of
+	// it, so its derived GPU fraction is 0.5.
+	e2eDeviceTotalMemMB = 10000
+	// GPU memory each pod requests (decimal MB) — half the device.
+	e2eRequestedMemoryMB int64 = e2eDeviceTotalMemMB / 2
+
 	// Each pod requested half of the shared GPU, so normalized SM utilization is
 	// SMUtil ÷ 0.5: pod-a -> 60, pod-b -> 100 (capped).
 	e2eRequestedFraction = 0.5
@@ -88,22 +94,22 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 
 	// Both pods reference GPU index 0 — they share one physical device (0.5 each).
 	podA := store.ContainerInfo{
-		ContainerID:          "ctr-pod-a",
-		Container:            "trainer",
-		Pod:                  "pod-a",
-		Namespace:            e2eNamespace,
-		PodUID:               "uid-pod-a",
-		GPUDevices:           []store.GPUDevice{{Index: e2eGPUIndex}},
-		RequestedGPUFraction: e2eRequestedFraction,
+		ContainerID:       "ctr-pod-a",
+		Container:         "trainer",
+		Pod:               "pod-a",
+		Namespace:         e2eNamespace,
+		PodUID:            "uid-pod-a",
+		GPUDevices:        []store.GPUDevice{{Index: e2eGPUIndex}},
+		RequestedMemoryMB: e2eRequestedMemoryMB,
 	}
 	podB := store.ContainerInfo{
-		ContainerID:          "ctr-pod-b",
-		Container:            "worker",
-		Pod:                  "pod-b",
-		Namespace:            e2eNamespace,
-		PodUID:               "uid-pod-b",
-		GPUDevices:           []store.GPUDevice{{Index: e2eGPUIndex}},
-		RequestedGPUFraction: e2eRequestedFraction,
+		ContainerID:       "ctr-pod-b",
+		Container:         "worker",
+		Pod:               "pod-b",
+		Namespace:         e2eNamespace,
+		PodUID:            "uid-pod-b",
+		GPUDevices:        []store.GPUDevice{{Index: e2eGPUIndex}},
+		RequestedMemoryMB: e2eRequestedMemoryMB,
 	}
 
 	pods := &e2ePodSource{
@@ -130,7 +136,8 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 					SMUtilizationPercent: e2eSMUtilPodB,
 				},
 			},
-			DeviceUUIDs: map[int]string{e2eGPUIndex: e2eGPUUUID},
+			DeviceUUIDs:            map[int]string{e2eGPUIndex: e2eGPUUUID},
+			DeviceTotalMemoryBytes: map[int]uint64{e2eGPUIndex: e2eDeviceTotalMemMB * bytesPerDecimalMB},
 		},
 	}
 

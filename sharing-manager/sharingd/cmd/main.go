@@ -21,13 +21,12 @@ func main() {
 	logger := configuration.NewLogger(flags.logLevel)
 
 	plugin := internal.NewPlugin(internal.Config{
-		AnnotationPrefix:      flags.annotationPrefix,
-		MPSPipeDirectory:      flags.mpsPipeDir,
-		FailOpen:              flags.failOpen,
-		MapDir:                flags.mapDir,
-		GPUFractionAnnotation: flags.gpuFraction,
-		LogPodEvents:          flags.logPodEvents,
-		Log:                   logger,
+		AnnotationPrefix: flags.annotationPrefix,
+		MPSPipeDirectory: flags.mpsPipeDir,
+		FailOpen:         flags.failOpen,
+		MapDir:           flags.mapDir,
+		LogPodEvents:     flags.logPodEvents,
+		Log:              logger,
 	})
 
 	logger.Info("container→pod mapping handoff directory", "mapDir", flags.mapDir)
