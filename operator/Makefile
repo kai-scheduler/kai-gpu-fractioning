@@ -112,8 +112,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	$(GO) run ./cmd/main.go
 
 .PHONY: docker-build
+# PLATFORM selects the target arch (GPU clusters are amd64). buildkit emulates
+# when the host arch differs.
+PLATFORM ?= linux/amd64
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} -f Dockerfile ..
+	$(CONTAINER_TOOL) build --platform $(PLATFORM) -t ${IMG} -f Dockerfile ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

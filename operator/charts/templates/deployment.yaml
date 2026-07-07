@@ -37,6 +37,12 @@ spec:
               value: {{ .Values.images.sharingd.tag | default .Chart.AppVersion | quote }}
             - name: SHARINGD_IMAGE_PULL_POLICY
               value: {{ .Values.images.sharingd.pullPolicy | quote }}
+            - name: METRICSD_IMAGE_REPOSITORY
+              value: {{ .Values.images.metricsd.repository | quote }}
+            - name: METRICSD_IMAGE_TAG
+              value: {{ .Values.images.metricsd.tag | default .Chart.AppVersion | quote }}
+            - name: METRICSD_IMAGE_PULL_POLICY
+              value: {{ .Values.images.metricsd.pullPolicy | quote }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect

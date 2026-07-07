@@ -2,6 +2,9 @@
 # -----------------------------------------------------------
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 REGISTRY ?= gcr.io/run-ai-prod
+# Target platform for image builds. GPU clusters are amd64; override for others.
+# buildkit emulates (qemu) when the host arch differs.
+PLATFORM ?= linux/amd64
 
 # -----------------------------------------------------------
 # Build
@@ -100,27 +103,36 @@ deploy:
 # Docker
 # -----------------------------------------------------------
 
-.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-sharingd
-.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-sharingd
+.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-sharingd docker-build-metricsd
+.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-sharingd docker-push-metricsd
 
-docker-build: docker-build-operator docker-build-mpsd docker-build-sharingd
+docker-build: docker-build-operator docker-build-mpsd docker-build-sharingd docker-build-metricsd
 
 docker-build-operator:
-	$(MAKE) -C operator docker-build IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION)
+	$(MAKE) -C operator docker-build IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION) PLATFORM=$(PLATFORM)
 
 docker-build-mpsd:
-	docker build -f sharing-manager/mpsd/build/Dockerfile -t $(REGISTRY)/mpsd:$(VERSION) .
+	docker build --platform $(PLATFORM) -f sharing-manager/mpsd/build/Dockerfile -t $(REGISTRY)/mpsd:$(VERSION) .
 
 docker-build-sharingd:
-	docker build -f sharing-manager/sharingd/build/Dockerfile -t $(REGISTRY)/sharingd:$(VERSION) .
+	docker build --platform $(PLATFORM) -f sharing-manager/sharingd/build/Dockerfile -t $(REGISTRY)/sharingd:$(VERSION) .
 
-docker-push: docker-push-operator docker-push-mpsd docker-push-sharingd
+# metricsd links NVML (cgo) and is built from the repo root so its replace of the
+# shared sharingd module resolves. The build stage runs as the target platform so
+# cgo uses a native toolchain. GO_TAGS=e2e builds the fake-GPU test image.
+docker-build-metricsd:
+	docker build --platform $(PLATFORM) -f sharing-manager/metricsd/Dockerfile -t $(REGISTRY)/metricsd:$(VERSION) .
+
+docker-push: docker-push-operator docker-push-mpsd docker-push-sharingd docker-push-metricsd
 
 docker-push-operator:
 	$(MAKE) -C operator docker-push IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION)
 
 docker-push-mpsd:
 	docker push $(REGISTRY)/mpsd:$(VERSION)
+
+docker-push-metricsd:
+	docker push $(REGISTRY)/metricsd:$(VERSION)
 
 docker-push-sharingd:
 	docker push $(REGISTRY)/sharingd:$(VERSION)

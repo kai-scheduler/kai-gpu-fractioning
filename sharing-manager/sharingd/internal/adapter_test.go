@@ -181,8 +181,8 @@ func TestContainerAnnotationWithInvalidContainerNameIgnored(t *testing.T) {
 		Namespace: "default",
 		Uid:       "pod-uid",
 		Annotations: map[string]string{
-			"nvidia.com/container.Trainer.gpu-memory.limit":    "4096", // uppercase → invalid
-			"nvidia.com/container.trainer.v1.gpu-memory.limit": "4096", // dot in name → invalid
+			"nvidia.com/gpu-memory.container.Trainer.limit":    "4Gi", // uppercase → invalid
+			"nvidia.com/gpu-memory.container.trainer.v1.limit": "4Gi", // dot in name → invalid
 		},
 	}
 	_, ok := adapter{}.container(pod, &api.Container{Id: "c", Name: "Trainer", PodSandboxId: "pod-id"})

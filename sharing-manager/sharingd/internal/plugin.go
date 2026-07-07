@@ -97,23 +97,30 @@ func NewPlugin(cfg Config) *Plugin {
 		FailOpen:         cfg.FailOpen,
 		Log:              log,
 		events:           proc,
-		adapter:          adapter{gpuFractionAnnotation: cfg.GPUFractionAnnotation},
+		adapter:          adapter{gpuFractionAnnotation: cfg.GPUFractionAnnotation, log: log},
 	}
 }
 
 // Configure subscribes to every NRI event this plugin implements (returning a
 // zero event mask asks the runtime for all of them). The plugin does not consume
 // NRI-provided configuration.
-func (p *Plugin) Configure(_ context.Context, _, _, _ string) (api.EventMask, error) {
+func (p *Plugin) Configure(ctx context.Context, _, runtime, version string) (api.EventMask, error) {
+	p.Log.InfoContext(ctx, "configured NRI plugin", "runtime", runtime, "runtimeVersion", version)
 	return 0, nil
 }
 
 // Synchronize rebuilds the full container→pod mapping from the runtime's current
-// container set on (re)connect. The conversion runs on the events worker; the
-// handler returns no container updates (this plugin does not mutate on sync).
-func (p *Plugin) Synchronize(_ context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
+// container set on (re)connect. Pre-existing pods arrive here, not via
+// CreateContainer. The conversion runs on the events worker; the handler returns
+// no container updates (this plugin does not mutate on sync).
+func (p *Plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
+	p.Log.InfoContext(ctx, "synchronizing container mapping with runtime",
+		"pods", len(pods), "containers", len(containers))
 	p.events.Synchronize(func() []store.ContainerInfo {
-		return p.adapter.containers(pods, containers)
+		infos := p.adapter.containers(pods, containers)
+		p.Log.Info("rebuilt container mapping from runtime sync",
+			"recordedContainers", len(infos), "totalContainers", len(containers))
+		return infos
 	})
 	return nil, nil
 }

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,22 +11,24 @@ import (
 	"github.com/containerd/nri/pkg/api"
 )
 
-// Fractional GPU annotation format: nvidia.com/container.<containerName>.gpu-memory.{limit,request}.
-// The container name is embedded in the key, so each container in a pod is
-// addressed independently. The constants below document the structure; the
-// regex is what actually validates and parses keys at runtime.
+// Fractional GPU annotation format: nvidia.com/gpu-memory.container.<containerName>.{request,limit}.
+// This is the same key the mutation path enforces on (see common/configuration
+// DefaultAnnotationPrefix), so a container is recorded for metrics iff it is also
+// mutated. The container name is embedded in the key, so each container in a pod
+// is addressed independently. The constants below document the structure; the
+// regex is what actually validates keys at runtime.
 const (
-	annotationGPUMemoryPrefix        = "nvidia.com/container."
-	annotationGPUMemoryLimitSuffix   = ".gpu-memory.limit"
-	annotationGPUMemoryRequestSuffix = ".gpu-memory.request"
+	annotationGPUMemoryPrefix        = "nvidia.com/gpu-memory.container."
+	annotationGPUMemoryLimitSuffix   = ".limit"
+	annotationGPUMemoryRequestSuffix = ".request"
 )
 
-// annotationGPUMemoryRE matches a well-formed fractional GPU memory annotation
-// key. Capture group 1 is the container name (lowercase alphanumeric and
-// hyphens, matching the Kubernetes DNS-label character class); capture group 2
-// is the annotation type: "limit" or "request".
+// annotationGPUMemoryRE matches a well-formed GPU memory annotation key. Capture
+// group 1 is the container name (lowercase alphanumeric and hyphens, matching the
+// Kubernetes DNS-label character class); capture group 2 is the annotation type:
+// "request" or "limit".
 var annotationGPUMemoryRE = regexp.MustCompile(
-	`^nvidia\.com/container\.([a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)\.gpu-memory\.(limit|request)$`,
+	`^nvidia\.com/gpu-memory\.container\.([a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)\.(request|limit)$`,
 )
 
 // adapter converts NRI runtime objects (api.PodSandbox, api.Container) into the
@@ -41,12 +44,26 @@ type adapter struct {
 	// GPU fraction (e.g. "0.5"), used to normalize SM utilization. Empty disables
 	// fraction lookup (RequestedGPUFraction stays 0).
 	gpuFractionAnnotation string
+
+	// log records per-container mapping decisions at debug level. It runs on the
+	// events worker goroutine (off the NRI hot path). May be nil (falls back to
+	// slog.Default()).
+	log *slog.Logger
+}
+
+// logger returns the adapter's logger, or the default when unset (e.g. in tests
+// that construct the adapter directly).
+func (a adapter) logger() *slog.Logger {
+	if a.log != nil {
+		return a.log
+	}
+	return slog.Default()
 }
 
 // container builds the container→pod mapping for a single container. Only
 // fractional GPU containers are tracked: the pod must carry at least one of the
-// nvidia.com/container.trainer.gpu-memory.* annotations, returning ok=false
-// otherwise. Full-GPU (non-fractional) containers are intentionally excluded.
+// nvidia.com/gpu-memory.container.<name>.{request,limit} annotations, returning
+// ok=false otherwise. Full-GPU (non-fractional) containers are intentionally excluded.
 // GPU device nodes are still read when present (they supply the device index
 // for process-to-pod attribution), but their presence is not required.
 func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store.ContainerInfo, bool) {
@@ -54,6 +71,12 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 		return store.ContainerInfo{}, false
 	}
 	if !isFractionalGPUContainer(container.GetName(), pod.GetAnnotations()) {
+		a.logger().Debug("skipping container: no fractional GPU-memory annotation for it",
+			"container", container.GetName(),
+			"pod", pod.GetName(),
+			"namespace", pod.GetNamespace(),
+			"expectedAnnotation", annotationGPUMemoryPrefix+container.GetName()+annotationGPUMemoryLimitSuffix,
+		)
 		return store.ContainerInfo{}, false
 	}
 
@@ -69,6 +92,16 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 	if linux := container.GetLinux(); linux != nil {
 		info.CgroupPath = linux.GetCgroupsPath()
 	}
+
+	a.logger().Debug("recorded fractional GPU container mapping",
+		"container", info.Container,
+		"pod", info.Pod,
+		"namespace", info.Namespace,
+		"podUID", info.PodUID,
+		"containerID", info.ContainerID,
+		"gpuDevices", info.GPUDevices,
+		"requestedGpuFraction", info.RequestedGPUFraction,
+	)
 	return info, true
 }
 
