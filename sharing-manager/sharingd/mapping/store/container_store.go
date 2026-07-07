@@ -22,10 +22,11 @@ type ContainerInfo struct {
 	PodUID      string
 	CgroupPath  string
 	GPUDevices  []GPUDevice
-	// RequestedGPUFraction is the GPU fraction the container requested (e.g. 0.5),
-	// read from the configured GPU-fraction annotation. It is the divisor used to
-	// normalize SM utilization. Zero when the annotation is absent or unparseable.
-	RequestedGPUFraction float64
+	// RequestedMemoryMB is the GPU memory (decimal MB) the container was allocated
+	// via the gpu-memory annotation (the limit, else the request). The metrics
+	// sidecar divides this by the device's total memory to derive the GPU fraction
+	// used to normalize SM utilization. Zero when no memory request is known.
+	RequestedMemoryMB int64
 }
 
 // Writer is the write side of the container→pod mapping storage, used by the

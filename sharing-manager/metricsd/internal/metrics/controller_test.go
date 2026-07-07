@@ -8,6 +8,10 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
+// testDeviceMemMB is the total memory (decimal MB) of the simulated GPU used by
+// the fraction tests: a container requesting N MB on it holds N/testDeviceMemMB.
+const testDeviceMemMB = 10000
+
 type fakeCgroupResolver map[uint32][]string
 
 func (r fakeCgroupResolver) CgroupPaths(pid uint32) ([]string, error) {
@@ -139,22 +143,26 @@ func TestMetricsControllerNormalizesSMUtilByRequestedFraction(t *testing.T) {
 		{name: "unknown request falls back to raw utilization", fraction: 0, smUtil: 40, wantNormalized: 40},
 		{name: "unknown request still capped at 100", fraction: 0, smUtil: 150, wantNormalized: 100},
 	}
+	// The requested fraction is derived as requested memory ÷ device total memory.
+	// With a testDeviceMemMB-sized device, a container requesting fraction*device
+	// MB yields exactly that fraction.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			containerStore := store.FakeStore{Containers: []store.ContainerInfo{{
-				ContainerID:          "container-id",
-				Container:            "container",
-				Pod:                  "pod",
-				Namespace:            "default",
-				PodUID:               "pod-uid",
-				CgroupPath:           "/kubepods.slice/pod.slice/container.scope",
-				GPUDevices:           []store.GPUDevice{{Index: 0}},
-				RequestedGPUFraction: tt.fraction,
+				ContainerID:       "container-id",
+				Container:         "container",
+				Pod:               "pod",
+				Namespace:         "default",
+				PodUID:            "pod-uid",
+				CgroupPath:        "/kubepods.slice/pod.slice/container.scope",
+				GPUDevices:        []store.GPUDevice{{Index: 0}},
+				RequestedMemoryMB: int64(tt.fraction * testDeviceMemMB),
 			}}}
 
 			controller := newMetricsController(nil, fakeCgroupResolver{
 				1234: []string{"/kubepods.slice/pod.slice/container.scope/deeper"},
 			}, containerStore, 0, 0, slog.Default())
+			controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerDecimalMB})
 
 			metrics, unmatched := controller.enrich(context.Background(), []GPUProcessMetric{
 				{PID: 1234, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: tt.smUtil},
@@ -203,27 +211,31 @@ func TestNormalizedSMUtil(t *testing.T) {
 	}
 }
 
-// Two containers of the same pod share one GPU; their fractions sum, and each
-// container's fraction is counted once even when it has multiple GPU processes.
-func TestMetricsControllerSumsRequestedFractionAcrossContainers(t *testing.T) {
+// Two containers of the same pod share one GPU; their requested memory sums into
+// one fraction, and each container is counted once even when it has multiple GPU
+// processes.
+func TestMetricsControllerSumsRequestedMemoryAcrossContainers(t *testing.T) {
+	// Each container requests a quarter of the device (testDeviceMemMB/4 MB), so
+	// the pod's fraction on the GPU is 0.5.
+	quarterMB := int64(testDeviceMemMB / 4)
 	containerStore := store.FakeStore{Containers: []store.ContainerInfo{
 		{
-			ContainerID:          "container-a",
-			Pod:                  "pod",
-			Namespace:            "default",
-			PodUID:               "pod-uid",
-			CgroupPath:           "/kubepods.slice/pod.slice/container-a.scope",
-			GPUDevices:           []store.GPUDevice{{Index: 0}},
-			RequestedGPUFraction: 0.25,
+			ContainerID:       "container-a",
+			Pod:               "pod",
+			Namespace:         "default",
+			PodUID:            "pod-uid",
+			CgroupPath:        "/kubepods.slice/pod.slice/container-a.scope",
+			GPUDevices:        []store.GPUDevice{{Index: 0}},
+			RequestedMemoryMB: quarterMB,
 		},
 		{
-			ContainerID:          "container-b",
-			Pod:                  "pod",
-			Namespace:            "default",
-			PodUID:               "pod-uid",
-			CgroupPath:           "/kubepods.slice/pod.slice/container-b.scope",
-			GPUDevices:           []store.GPUDevice{{Index: 0}},
-			RequestedGPUFraction: 0.25,
+			ContainerID:       "container-b",
+			Pod:               "pod",
+			Namespace:         "default",
+			PodUID:            "pod-uid",
+			CgroupPath:        "/kubepods.slice/pod.slice/container-b.scope",
+			GPUDevices:        []store.GPUDevice{{Index: 0}},
+			RequestedMemoryMB: quarterMB,
 		},
 	}}
 
@@ -232,6 +244,7 @@ func TestMetricsControllerSumsRequestedFractionAcrossContainers(t *testing.T) {
 		1002: []string{"/kubepods.slice/pod.slice/container-a.scope/deeper"}, // second process, same container
 		1003: []string{"/kubepods.slice/pod.slice/container-b.scope/deeper"},
 	}, containerStore, 0, 0, slog.Default())
+	controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerDecimalMB})
 
 	metrics, _ := controller.enrich(context.Background(), []GPUProcessMetric{
 		{PID: 1001, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: 10},
@@ -242,7 +255,7 @@ func TestMetricsControllerSumsRequestedFractionAcrossContainers(t *testing.T) {
 	if len(metrics) != 1 {
 		t.Fatalf("expected one pod/device metric, got %d", len(metrics))
 	}
-	// container-a counted once (0.25) + container-b (0.25) = 0.5, not 0.75.
+	// container-a counted once (quarter) + container-b (quarter) = half the device.
 	if metrics[0].RequestedGPUFraction != 0.5 {
 		t.Fatalf("expected summed fraction 0.5, got %g", metrics[0].RequestedGPUFraction)
 	}
@@ -419,5 +432,71 @@ func TestWindowedSMUtilPrunesDeletedPodSeriesImmediately(t *testing.T) {
 
 	if len(controller.smUtilBuf) != 0 {
 		t.Fatalf("expected stale series to be pruned immediately, got %d entries", len(controller.smUtilBuf))
+	}
+}
+
+// TestGPUFraction pins the memory→fraction derivation and both fallbacks: an
+// unknown request and unknown device memory each yield 0, so normalizeSMUtil
+// treats the pod as holding the whole GPU (raw SM util) rather than dividing by
+// zero or reporting a misleading spike.
+func TestGPUFraction(t *testing.T) {
+	const totalBytes = uint64(testDeviceMemMB) * bytesPerDecimalMB // a testDeviceMemMB-sized device
+
+	tests := []struct {
+		name        string
+		requestedMB int64
+		deviceTotal map[int]uint64
+		want        float64
+	}{
+		{name: "half the device", requestedMB: testDeviceMemMB / 2, deviceTotal: map[int]uint64{0: totalBytes}, want: 0.5},
+		{name: "quarter the device", requestedMB: testDeviceMemMB / 4, deviceTotal: map[int]uint64{0: totalBytes}, want: 0.25},
+		{name: "no request yields zero", requestedMB: 0, deviceTotal: map[int]uint64{0: totalBytes}, want: 0},
+		{name: "unknown device memory yields zero", requestedMB: testDeviceMemMB / 2, deviceTotal: map[int]uint64{}, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &metricsController{deviceTotalMemoryBytes: tt.deviceTotal}
+			if got := s.gpuFraction(0, tt.requestedMB); got != tt.want {
+				t.Fatalf("gpuFraction(0, %d) = %g, want %g", tt.requestedMB, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRememberDeviceTotalMemoryPersistsAcrossPartialUpdates verifies a device's
+// learned total survives a later collect that omits it or reports 0 (a transient
+// NVML error), so the derived fraction does not flap to the whole-GPU fallback.
+func TestRememberDeviceTotalMemoryPersistsAcrossPartialUpdates(t *testing.T) {
+	s := &metricsController{deviceTotalMemoryBytes: map[int]uint64{}}
+
+	s.rememberDeviceTotalMemory(map[int]uint64{0: 100, 1: 200})
+	// Next collect: device 0 still reports; device 1 reports 0 (transient error).
+	s.rememberDeviceTotalMemory(map[int]uint64{0: 100, 1: 0})
+
+	if s.deviceTotalMemoryBytes[0] != 100 {
+		t.Fatalf("expected device 0 total 100, got %d", s.deviceTotalMemoryBytes[0])
+	}
+	if s.deviceTotalMemoryBytes[1] != 200 {
+		t.Fatalf("expected device 1 total to persist at 200 (0 must not overwrite), got %d", s.deviceTotalMemoryBytes[1])
+	}
+}
+
+// TestRecordAndSumRequestedMemory verifies per-container dedup (a container with
+// multiple GPU processes counts once) and that empty/zero entries are ignored.
+func TestRecordAndSumRequestedMemory(t *testing.T) {
+	memByKey := map[podGPUKey]map[string]int64{}
+	key := podGPUKey{PodUID: "pod-uid", GPUIndex: 0}
+
+	recordRequestedMemory(memByKey, key, "ctr-a", 2500)
+	recordRequestedMemory(memByKey, key, "ctr-a", 2500) // same container, second process → not double counted
+	recordRequestedMemory(memByKey, key, "ctr-b", 1000)
+	recordRequestedMemory(memByKey, key, "", 999)    // no container ID → ignored
+	recordRequestedMemory(memByKey, key, "ctr-c", 0) // zero request → ignored
+
+	if got := sumRequestedMemory(memByKey[key]); got != 3500 {
+		t.Fatalf("expected summed memory 3500 (2500 once + 1000), got %d", got)
+	}
+	if got := sumRequestedMemory(nil); got != 0 {
+		t.Fatalf("expected 0 for empty map, got %d", got)
 	}
 }

@@ -22,19 +22,24 @@ const (
 	// fullGPUFraction is the fallback used when a pod's requested fraction is
 	// unknown, treating it as if it requested the whole GPU.
 	fullGPUFraction = 1
+	// bytesPerDecimalMB converts the decimal-MB memory requests recorded by the
+	// sharingd mapper back to bytes so they can be divided by NVML's byte-valued
+	// device total memory. Matches sharingd's annotations.bytesPerDecimalMB.
+	bytesPerDecimalMB = 1_000_000
 )
 
 type metricsController struct {
-	mu               sync.RWMutex            // protects snapshot
-	collector        GPUProcessCollector     // NVML or noop source of per-process GPU metrics
-	pods             podSource               // resolves GPU processes to pod/container identity
-	interval         time.Duration           // how often collect() fires
-	smUtilWindow     time.Duration           // smoothing window duration for SM utilisation
-	smUtilWindowSize int                     // window in number of samples (derived: smUtilWindow/interval)
-	smUtilBuf        map[podGPUKey][]float64 // rolling sample buffer per pod×GPU; nil when windowSize == 1
-	log              *slog.Logger
-	deviceUUIDs      map[int]string // GPU index → UUID learned from NVML; fills UUID for NRI-sourced devices
-	snapshot         Snapshot       // latest published snapshot, read by Snapshot()
+	mu                     sync.RWMutex            // protects snapshot
+	collector              GPUProcessCollector     // NVML or noop source of per-process GPU metrics
+	pods                   podSource               // resolves GPU processes to pod/container identity
+	interval               time.Duration           // how often collect() fires
+	smUtilWindow           time.Duration           // smoothing window duration for SM utilisation
+	smUtilWindowSize       int                     // window in number of samples (derived: smUtilWindow/interval)
+	smUtilBuf              map[podGPUKey][]float64 // rolling sample buffer per pod×GPU; nil when windowSize == 1
+	log                    *slog.Logger
+	deviceUUIDs            map[int]string // GPU index → UUID learned from NVML; fills UUID for NRI-sourced devices
+	deviceTotalMemoryBytes map[int]uint64 // GPU index → total memory (bytes) learned from NVML; divisor for the GPU fraction
+	snapshot               Snapshot       // latest published snapshot, read by Snapshot()
 }
 
 func newMetricsController(collector GPUProcessCollector, resolver PIDCgroupResolver, reader store.Reader, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsController {
@@ -56,14 +61,15 @@ func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSo
 		smUtilBuf = map[podGPUKey][]float64{}
 	}
 	return &metricsController{
-		collector:        collector,
-		pods:             pods,
-		interval:         interval,
-		smUtilWindow:     smUtilWindow,
-		smUtilWindowSize: windowSize,
-		smUtilBuf:        smUtilBuf,
-		log:              logger,
-		deviceUUIDs:      map[int]string{},
+		collector:              collector,
+		pods:                   pods,
+		interval:               interval,
+		smUtilWindow:           smUtilWindow,
+		smUtilWindowSize:       windowSize,
+		smUtilBuf:              smUtilBuf,
+		log:                    logger,
+		deviceUUIDs:            map[int]string{},
+		deviceTotalMemoryBytes: map[int]uint64{},
 	}
 }
 
@@ -121,6 +127,7 @@ func (s *metricsController) collect(ctx context.Context) {
 		s.log.WarnContext(ctx, "publishing partial GPU metrics; some devices failed", "error", snapshot.DeviceErrors)
 	}
 	s.rememberDeviceUUIDs(snapshot.DeviceUUIDs)
+	s.rememberDeviceTotalMemory(snapshot.DeviceTotalMemoryBytes)
 
 	metrics, unmatched := s.enrich(ctx, snapshot.Processes, pods)
 	if s.smUtilWindow > s.interval {
@@ -152,10 +159,11 @@ func (s *metricsController) setSnapshot(metrics []PodGPUMetric, activePodUIDs ma
 func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
 	byPodGPU := map[podGPUKey]*PodGPUMetric{}
 	observedPodDevices := map[string]struct{}{}
-	// requestedByKey sums each pod×GPU's requested GPU fraction across its
+	// memByKey sums each pod×GPU's requested GPU memory (decimal MB) across its
 	// containers, deduped by container ID so multiple GPU processes of one
-	// container are not counted more than once.
-	requestedByKey := map[podGPUKey]map[string]float64{}
+	// container are not counted more than once. The per-GPU sum is divided by the
+	// device's total memory to derive the requested fraction.
+	memByKey := map[podGPUKey]map[string]int64{}
 	unmatched := 0
 
 	for _, process := range processes {
@@ -178,7 +186,7 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 			GPUIndex:  process.GPUIndex,
 		}
 		observePodDevice(observedPodDevices, key)
-		recordRequestedFraction(requestedByKey, key, container.ContainerID, container.RequestedGPUFraction)
+		recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMB)
 		metric := byPodGPU[key]
 		if metric == nil {
 			metric = &PodGPUMetric{
@@ -198,7 +206,7 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 	for _, container := range pods.ActiveContainers() {
 		for _, device := range container.GPUDevices {
 			key := s.idlePodGPUKey(container, device)
-			recordRequestedFraction(requestedByKey, key, container.ContainerID, container.RequestedGPUFraction)
+			recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMB)
 			if _, ok := byPodGPU[key]; ok {
 				continue
 			}
@@ -217,7 +225,7 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 		if metric.SMUtilizationPercent > maxSMUtilPercent {
 			metric.SMUtilizationPercent = maxSMUtilPercent
 		}
-		metric.RequestedGPUFraction = sumRequestedFraction(requestedByKey[key])
+		metric.RequestedGPUFraction = s.gpuFraction(key.GPUIndex, sumRequestedMemory(memByKey[key]))
 		out = append(out, *metric)
 	}
 	return out, unmatched
@@ -286,29 +294,56 @@ func normalizedSMUtil(smUtil, fraction float64) float64 {
 	return normalized
 }
 
-// recordRequestedFraction notes containerID's requested GPU fraction under key,
-// deduped by container ID so repeated observations of the same container (one
-// per GPU process) do not inflate the pod's requested total.
-func recordRequestedFraction(requestedByKey map[podGPUKey]map[string]float64, key podGPUKey, containerID string, fraction float64) {
-	if fraction <= 0 || containerID == "" {
+// recordRequestedMemory notes containerID's requested GPU memory (decimal MB)
+// under key, deduped by container ID so repeated observations of the same
+// container (one per GPU process) do not inflate the pod's requested total.
+func recordRequestedMemory(memByKey map[podGPUKey]map[string]int64, key podGPUKey, containerID string, memMB int64) {
+	if memMB <= 0 || containerID == "" {
 		return
 	}
-	byContainer := requestedByKey[key]
+	byContainer := memByKey[key]
 	if byContainer == nil {
-		byContainer = map[string]float64{}
-		requestedByKey[key] = byContainer
+		byContainer = map[string]int64{}
+		memByKey[key] = byContainer
 	}
-	byContainer[containerID] = fraction
+	byContainer[containerID] = memMB
 }
 
-// sumRequestedFraction totals the per-container requested GPU fraction recorded
-// for a pod×GPU key.
-func sumRequestedFraction(byContainer map[string]float64) float64 {
-	var sum float64
-	for _, fraction := range byContainer {
-		sum += fraction
+// sumRequestedMemory totals the per-container requested GPU memory (decimal MB)
+// recorded for a pod×GPU key.
+func sumRequestedMemory(byContainer map[string]int64) int64 {
+	var sum int64
+	for _, memMB := range byContainer {
+		sum += memMB
 	}
 	return sum
+}
+
+// gpuFraction derives the requested GPU fraction for a device as requested
+// memory ÷ device total memory. It returns 0 when the request is unknown or the
+// device's total memory has not been learned from NVML yet — in which case
+// normalizeSMUtil falls back to treating the pod as holding the whole GPU (so the
+// normalized value equals the raw SM utilization rather than a misleading spike).
+func (s *metricsController) gpuFraction(gpuIndex int, requestedMB int64) float64 {
+	if requestedMB <= 0 {
+		return 0
+	}
+	totalBytes := s.deviceTotalMemoryBytes[gpuIndex]
+	if totalBytes == 0 {
+		return 0
+	}
+	return (float64(requestedMB) * bytesPerDecimalMB) / float64(totalBytes)
+}
+
+// rememberDeviceTotalMemory records each device's total memory learned from an
+// NVML collect so it persists across cycles where a transient error omits it.
+func (s *metricsController) rememberDeviceTotalMemory(deviceTotalMemory map[int]uint64) {
+	for index, total := range deviceTotalMemory {
+		if total == 0 {
+			continue
+		}
+		s.deviceTotalMemoryBytes[index] = total
+	}
 }
 
 func (s *metricsController) rememberDeviceUUIDs(deviceUUIDs map[int]string) {

@@ -22,9 +22,6 @@ const (
 	DefaultMetricsPath     = "/metrics"
 	DefaultMetricsInterval = "5s"
 	DefaultMetricsProcRoot = "/proc"
-	// DefaultGPUFractionAnnotation is the pod annotation key whose value is the
-	// requested GPU fraction (e.g. "0.5") used to normalize SM utilization.
-	DefaultGPUFractionAnnotation = "gpu-fraction"
 )
 
 type Config struct {
@@ -33,9 +30,6 @@ type Config struct {
 	// NRI mapper writes one <containerID>.json file per container here and the
 	// metrics component reads them.
 	MapDir string `json:"mapDir"`
-	// GPUFractionAnnotation is the pod annotation key whose value is the requested
-	// GPU fraction used to normalize SM utilization. Empty disables normalization.
-	GPUFractionAnnotation string `json:"gpuFractionAnnotation"`
 	// Metrics configures the Prometheus GPU metrics exporter.
 	Metrics MetricsConfig `json:"metrics"`
 }
@@ -57,10 +51,9 @@ type MetricsConfig struct {
 
 func DefaultConfig() Config {
 	return Config{
-		LogPodEvents:          true,
-		MapDir:                fsstore.DefaultMapDir,
-		GPUFractionAnnotation: DefaultGPUFractionAnnotation,
-		Metrics:               DefaultMetricsConfig(),
+		LogPodEvents: true,
+		MapDir:       fsstore.DefaultMapDir,
+		Metrics:      DefaultMetricsConfig(),
 	}
 }
 
