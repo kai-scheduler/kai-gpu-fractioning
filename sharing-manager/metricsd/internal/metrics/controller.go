@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 const DefaultPath = "/metrics"

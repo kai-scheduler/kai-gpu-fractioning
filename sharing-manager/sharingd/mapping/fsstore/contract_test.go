@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 // goldenRecordV1 is the frozen on-disk wire contract for the container→pod

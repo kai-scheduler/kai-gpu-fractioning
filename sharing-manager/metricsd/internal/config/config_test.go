@@ -3,6 +3,8 @@ package config
 import (
 	"testing"
 	"time"
+
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
 )
 
 func TestParseConfigDefaults(t *testing.T) {
@@ -22,8 +24,8 @@ func TestParseConfigDefaults(t *testing.T) {
 	if cfg.Metrics.Interval != DefaultMetricsInterval {
 		t.Fatalf("expected metrics interval %q, got %q", DefaultMetricsInterval, cfg.Metrics.Interval)
 	}
-	if cfg.MapDir != DefaultMapDir {
-		t.Fatalf("expected map dir %q, got %q", DefaultMapDir, cfg.MapDir)
+	if cfg.MapDir != fsstore.DefaultMapDir {
+		t.Fatalf("expected map dir %q, got %q", fsstore.DefaultMapDir, cfg.MapDir)
 	}
 }
 

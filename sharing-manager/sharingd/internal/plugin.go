@@ -7,9 +7,9 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/events"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 const (
@@ -21,11 +21,6 @@ const (
 	// NRI plugin registration defaults.
 	DefaultPluginName = "gpu-sharing"
 	DefaultPluginIdx  = "10"
-
-	// DefaultMapDir is the shared-volume directory the plugin writes
-	// <containerID>.json container→pod mapping files to; the metricsd sidecar
-	// reads them back to attribute GPU processes to pods.
-	DefaultMapDir = "/var/run/gpu-sharing/map"
 
 	// DefaultGPUFractionAnnotation is the pod annotation key whose value is the
 	// requested GPU fraction (e.g. "0.5"), recorded in the mapping so the metrics
@@ -87,7 +82,7 @@ func NewPlugin(cfg Config) *Plugin {
 	}
 	mapDir := cfg.MapDir
 	if mapDir == "" {
-		mapDir = DefaultMapDir
+		mapDir = fsstore.DefaultMapDir
 	}
 
 	writer := fsstore.NewWriter(mapDir, log)

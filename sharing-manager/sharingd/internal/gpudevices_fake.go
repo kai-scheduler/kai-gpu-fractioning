@@ -4,7 +4,7 @@ package internal
 
 import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/fakegpu"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 
 	"github.com/containerd/nri/pkg/api"
 )

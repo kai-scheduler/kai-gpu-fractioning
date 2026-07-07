@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 // Reader is the read side of the filesystem handoff: it loads the

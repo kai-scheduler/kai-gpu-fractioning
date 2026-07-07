@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 func newTestWriterReader(t *testing.T) (*Writer, *Reader, string) {

@@ -18,7 +18,7 @@ package events
 import (
 	"log/slog"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 // defaultQueueDepth buffers events so the producer rarely hits the drop path.

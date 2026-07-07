@@ -12,8 +12,14 @@ package fsstore
 import (
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
+
+// DefaultMapDir is the shared-volume directory for the container→pod mapping
+// handoff: the sharingd NRI plugin writes one <containerID>.json file per
+// container here and the metricsd sidecar reads them. It is the single source of
+// truth for the path both sides must agree on.
+const DefaultMapDir = "/var/run/gpu-sharing/map"
 
 // schemaVersion is the on-disk record version. Bump it when the
 // record shape changes incompatibly; readers ignore files whose version they do

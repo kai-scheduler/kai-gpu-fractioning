@@ -23,10 +23,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/env"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/config"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/envutil"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
 )
 
 const defaultLogLevel = "info"
@@ -47,8 +47,8 @@ func main() {
 		logLevel   string
 	)
 
-	flag.StringVar(&configPath, "config", envutil.StringFromEnv("CONFIG_PATH", config.DefaultConfigPath), "path to the metrics configuration file")
-	flag.StringVar(&logLevel, "log-level", envutil.StringFromEnv("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
+	flag.StringVar(&configPath, "config", env.String("CONFIG_PATH", config.DefaultConfigPath), "path to the metrics configuration file")
+	flag.StringVar(&logLevel, "log-level", env.String("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
