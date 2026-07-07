@@ -179,7 +179,13 @@ func SetCondition(status *v1alpha1.GpuSharingConfigStatus, cond metav1.Condition
 
 // PatchNodeCondition sets or updates the gpu-sharing.nvidia.com/Ready condition
 // on a node using a strategic merge patch.
-func PatchNodeCondition(ctx context.Context, c client.Client, nodeName string, ready bool, reason, message string) error {
+//
+// reader serves the current-node read and is deliberately the uncached API
+// reader: node conditions are only touched in the rare unhealthy/recovery path,
+// so caching every Node cluster-wide (a cluster-scoped informer) would be pure
+// overhead. writer performs the status patch, which always goes to the API
+// server regardless of caching.
+func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, ready bool, reason, message string) error {
 	log := logf.FromContext(ctx).WithValues("node", nodeName)
 
 	condStatus := corev1.ConditionFalse
@@ -194,7 +200,7 @@ func PatchNodeCondition(ctx context.Context, c client.Client, nodeName string, r
 	// status has not changed
 	// Skip the patch entirely when status, reason, and message are all identical (no-op).
 	node := &corev1.Node{}
-	if err := c.Get(ctx, types.NamespacedName{Name: nodeName}, node); err == nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err == nil {
 		for _, existing := range node.Status.Conditions {
 			if string(existing.Type) != NodeConditionType {
 				continue
@@ -233,7 +239,7 @@ func PatchNodeCondition(ctx context.Context, c client.Client, nodeName string, r
 	patchNode := &corev1.Node{}
 	patchNode.Name = nodeName
 
-	if err := c.Status().Patch(ctx, patchNode, client.RawPatch(
+	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
 		"application/strategic-merge-patch+json", patchBytes,
 	)); err != nil {
 		return fmt.Errorf("patching node %s condition: %w", nodeName, err)

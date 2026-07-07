@@ -39,6 +39,55 @@ spec:
           spec:
             description: spec defines the desired state of GpuSharingConfig
             properties:
+              mpsDaemon:
+                description: mpsDaemon configures the MPS daemon supervisor (mpsd).
+                properties:
+                  backoff:
+                    description: |-
+                      backoff is the initial delay before restarting the MPS daemon after a crash.
+                      Doubles on each failure, capped at 60s. Default: 5s.
+                    type: string
+                  gracefulStopDelay:
+                    description: |-
+                      gracefulStopDelay is how long to wait after sending "quit" to the MPS daemon
+                      before force-killing it. Default: 60s.
+                    type: string
+                  image:
+                    description: image overrides the default mpsd container image
+                      set via Helm env vars (MPSD_IMAGE_*).
+                    properties:
+                      imagePullPolicy:
+                        description: |-
+                          imagePullPolicy controls when the kubelet pulls the image.
+                          One of Always, IfNotPresent, Never. Default: IfNotPresent.
+                        type: string
+                      repository:
+                        description: |-
+                          repository is the full image path including registry and image name
+                          (e.g. "gcr.io/run-ai-prod/sharingd").
+                        type: string
+                      tag:
+                        description: tag is the image tag (e.g. "v0.1.0"). Defaults
+                          to the chart appVersion.
+                        type: string
+                    type: object
+                  logLevel:
+                    description: |-
+                      logLevel controls the logging verbosity of the MPS daemon supervisor.
+                      One of debug, info, warn, error. Default: info.
+                    type: string
+                  maxRetries:
+                    description: |-
+                      maxRetries is the maximum number of MPS daemon restart attempts before giving up.
+                      0 means unlimited. Default: 0.
+                    format: int32
+                    type: integer
+                  stableThreshold:
+                    description: |-
+                      stableThreshold is how long the MPS daemon must run to be considered stable.
+                      Once stable, the retry budget and backoff reset. Default: 5m.
+                    type: string
+                type: object
               nodeSelector:
                 additionalProperties:
                   type: string

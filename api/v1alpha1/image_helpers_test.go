@@ -1,6 +1,54 @@
 package v1alpha1
 
-import "testing"
+import (
+	"testing"
+)
+
+func TestImageSpec_MergeWith(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     ImageSpec
+		override ImageSpec
+		want     ImageSpec
+	}{
+		{
+			name:     "override all fields",
+			base:     ImageSpec{Repository: "base/img", Tag: "v1", ImagePullPolicy: "IfNotPresent"},
+			override: ImageSpec{Repository: "new/img", Tag: "v2", ImagePullPolicy: "Always"},
+			want:     ImageSpec{Repository: "new/img", Tag: "v2", ImagePullPolicy: "Always"},
+		},
+		{
+			name:     "override partial",
+			base:     ImageSpec{Repository: "base/img", Tag: "v1", ImagePullPolicy: "IfNotPresent"},
+			override: ImageSpec{Tag: "v3"},
+			want:     ImageSpec{Repository: "base/img", Tag: "v3", ImagePullPolicy: "IfNotPresent"},
+		},
+		{
+			name:     "empty override keeps base",
+			base:     ImageSpec{Repository: "base/img", Tag: "v1"},
+			override: ImageSpec{},
+			want:     ImageSpec{Repository: "base/img", Tag: "v1"},
+		},
+		{
+			name:     "does not mutate receiver",
+			base:     ImageSpec{Repository: "base/img", Tag: "v1"},
+			override: ImageSpec{Repository: "new/img"},
+			want:     ImageSpec{Repository: "new/img", Tag: "v1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := tt.base
+			got := tt.base.MergeWith(tt.override)
+			if got != tt.want {
+				t.Errorf("MergeWith() = %+v, want %+v", got, tt.want)
+			}
+			if original != tt.base {
+				t.Errorf("MergeWith() mutated the receiver: was %+v, now %+v", original, tt.base)
+			}
+		})
+	}
+}
 
 func TestImageSpec_FullImage(t *testing.T) {
 	tests := []struct {

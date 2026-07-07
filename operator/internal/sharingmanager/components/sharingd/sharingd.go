@@ -1,7 +1,6 @@
 package sharingd
 
 import (
-	"fmt"
 	"path/filepath"
 	"strconv"
 
@@ -40,16 +39,7 @@ func (d *daemon) Name() string { return daemonName }
 //   - The NRI socket directory, so sharingd can connect to containerd's NRI endpoint.
 //   - The MPS pipe directory, shared with the mpsd daemon for GPU multiplexing control.
 func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
-	labels := map[string]string{
-		daemonmgr.LabelManagedBy: daemonmgr.ManagedByValue,
-		daemonmgr.LabelComponent: daemonName,
-	}
-
-	result := daemonmgr.BaseDaemonSet(
-		fmt.Sprintf("gpu-sharing-%s", daemonName),
-		opts.Namespace,
-		labels,
-	)
+	result := daemonmgr.BaseDaemonSet(daemonName, opts.Namespace)
 
 	// HostPID is required so sharingd can observe container lifecycle events on the node.
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
@@ -58,7 +48,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	// Merge the Helm default with any CRD-level image override.
 	image := opts.DefaultImages[daemonName]
 	if d.spec != nil && d.spec.Image != nil {
-		image = mergeImageSpec(image, *d.spec.Image)
+		image = image.MergeWith(*d.spec.Image)
 	}
 
 	container, volumes := d.buildSharingdContainer(image)
@@ -167,18 +157,4 @@ func (d *daemon) nriSocketDir() string {
 	}
 
 	return filepath.Dir(d.spec.NRISocketPath)
-}
-
-// mergeImageSpec returns base with any non-empty fields from override applied.
-func mergeImageSpec(base, override v1alpha1.ImageSpec) v1alpha1.ImageSpec {
-	if override.Repository != "" {
-		base.Repository = override.Repository
-	}
-	if override.Tag != "" {
-		base.Tag = override.Tag
-	}
-	if override.ImagePullPolicy != "" {
-		base.ImagePullPolicy = override.ImagePullPolicy
-	}
-	return base
 }

@@ -10,6 +10,10 @@ images:
     repository: gcr.io/run-ai-prod/sharingd
     tag: ""
     pullPolicy: IfNotPresent
+  mpsd:
+    repository: gcr.io/run-ai-prod/mpsd
+    tag: ""
+    pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 nameOverride: ""
