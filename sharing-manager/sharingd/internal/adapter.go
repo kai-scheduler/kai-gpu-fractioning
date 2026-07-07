@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"log/slog"
+
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 
 	"github.com/containerd/nri/pkg/api"
@@ -22,6 +24,20 @@ type adapter struct {
 	// "nvidia.com/gpu-memory.container."). It is the same prefix the mutation path
 	// uses, so mapping and mutation select the same containers.
 	annotationPrefix string
+
+	// log records per-container mapping decisions at debug level. It runs on the
+	// events worker goroutine (off the NRI hot path). May be nil (falls back to
+	// slog.Default()).
+	log *slog.Logger
+}
+
+// logger returns the adapter's logger, or the default when unset (e.g. in tests
+// that construct the adapter directly).
+func (a adapter) logger() *slog.Logger {
+	if a.log != nil {
+		return a.log
+	}
+	return slog.Default()
 }
 
 // container builds the container→pod mapping for a single container. Only
@@ -37,6 +53,12 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 	}
 	cfg, ok := a.isFractionalGPUContainer(pod, container.GetName())
 	if !ok {
+		a.logger().Debug("skipping container: no GPU-memory annotation for it",
+			"container", container.GetName(),
+			"pod", pod.GetName(),
+			"namespace", pod.GetNamespace(),
+			"expectedAnnotation", containerMemoryAnnotationKey(a.annotationPrefix, container.GetName(), annotationSuffixLimit),
+		)
 		return store.ContainerInfo{}, false
 	}
 
@@ -52,6 +74,16 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 	if linux := container.GetLinux(); linux != nil {
 		info.CgroupPath = linux.GetCgroupsPath()
 	}
+
+	a.logger().Debug("recorded GPU-sharing container mapping",
+		"container", info.Container,
+		"pod", info.Pod,
+		"namespace", info.Namespace,
+		"podUID", info.PodUID,
+		"containerID", info.ContainerID,
+		"gpuDevices", info.GPUDevices,
+		"requestedMemoryMB", info.RequestedMemoryMB,
+	)
 	return info, true
 }
 

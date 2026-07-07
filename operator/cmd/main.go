@@ -117,6 +117,8 @@ func main() {
 	// ── Component images (defaults from Helm, overridable via CRD) ──────
 	sharingdImage := controller.ReadImageFromEnv("SHARINGD_IMAGE")
 	setupLog.Info("sharingd default image", "image", sharingdImage.FullImage())
+	metricsdImage := controller.ReadImageFromEnv("METRICSD_IMAGE")
+	setupLog.Info("metricsd default image", "image", metricsdImage.FullImage())
 
 	// ── Register controllers ─────────────────────────────────────────────
 	if err := controller.NewGpuSharingConfigReconciler(
@@ -126,6 +128,7 @@ func main() {
 		podNamespace,
 		map[string]v1alpha1.ImageSpec{
 			"sharingd": sharingdImage,
+			"metricsd": metricsdImage,
 		},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")

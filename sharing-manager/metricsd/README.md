@@ -105,14 +105,14 @@ The annotation key includes the target container name:
 ```yaml
 metadata:
   annotations:
-    nvidia.com/container.cuda-vector-add.gpu-memory.request: 8Gi
-    nvidia.com/container.cuda-vector-add.gpu-memory.limit: 16Gi
+    nvidia.com/gpu-memory.container.cuda-vector-add.request: 8Gi
+    nvidia.com/gpu-memory.container.cuda-vector-add.limit: 16Gi
 ```
 
 A pod can include annotations for more than one container by adding additional
-`nvidia.com/container.<name>.gpu-memory.*` keys. Invalid target container-name
-syntax rejects container creation. If only request or limit is annotated for a
-container, the missing bound is deduced with the same value.
+`nvidia.com/gpu-memory.container.<name>.{request,limit}` keys. Invalid target
+container-name syntax rejects container creation. If only request or limit is
+annotated for a container, the missing bound is deduced with the same value.
 
 ## GPU Metrics
 
