@@ -1,7 +1,6 @@
 package sharingd
 
 import (
-	"fmt"
 	"path/filepath"
 	"strconv"
 
@@ -60,16 +59,7 @@ func (d *daemon) Name() string { return daemonName }
 // the two containers — a single pod owns both writer and reader, and the mapping
 // is rebuilt on every NRI (re)connect, so it need not survive a pod restart.
 func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
-	labels := map[string]string{
-		daemonmgr.LabelManagedBy: daemonmgr.ManagedByValue,
-		daemonmgr.LabelComponent: daemonName,
-	}
-
-	result := daemonmgr.BaseDaemonSet(
-		fmt.Sprintf("gpu-sharing-%s", daemonName),
-		opts.Namespace,
-		labels,
-	)
+	result := daemonmgr.BaseDaemonSet(daemonName, opts.Namespace)
 
 	podSpec := &result.Spec.Template.Spec
 	// HostPID is required so sharingd can observe container lifecycle events and
@@ -85,7 +75,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	sharingdImage := opts.DefaultImages[daemonName]
 	if d.spec != nil && d.spec.Image != nil {
-		sharingdImage = mergeImageSpec(sharingdImage, *d.spec.Image)
+		sharingdImage = sharingdImage.MergeWith(*d.spec.Image)
 	}
 	container, volumes := d.buildSharingdContainer(sharingdImage)
 	podSpec.Containers = append(podSpec.Containers, container)
@@ -95,7 +85,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	if d.metricsEnabled() {
 		metricsImage := opts.DefaultImages[metricsdName]
 		if d.metrics != nil && d.metrics.Image != nil {
-			metricsImage = mergeImageSpec(metricsImage, *d.metrics.Image)
+			metricsImage = metricsImage.MergeWith(*d.metrics.Image)
 		}
 		podSpec.Containers = append(podSpec.Containers, d.buildMetricsdContainer(metricsImage))
 
@@ -231,18 +221,4 @@ func pullPolicy(image v1alpha1.ImageSpec) corev1.PullPolicy {
 		return corev1.PullPolicy(image.ImagePullPolicy)
 	}
 	return corev1.PullIfNotPresent
-}
-
-// mergeImageSpec returns base with any non-empty fields from override applied.
-func mergeImageSpec(base, override v1alpha1.ImageSpec) v1alpha1.ImageSpec {
-	if override.Repository != "" {
-		base.Repository = override.Repository
-	}
-	if override.Tag != "" {
-		base.Tag = override.Tag
-	}
-	if override.ImagePullPolicy != "" {
-		base.ImagePullPolicy = override.ImagePullPolicy
-	}
-	return base
 }

@@ -32,14 +32,21 @@ const (
 // existing GPU-memory/MPS behaviour); the mapping fields drive the container→pod
 // mapping handoff consumed by the metricsd sidecar.
 type Config struct {
-	AnnotationPrefix string // annotation prefix for GPU memory config (mutation)
-	MPSPipeDirectory string // MPS pipe directory bind-mounted into GPU containers
-	FailOpen         bool   // skip container on parse error instead of blocking
+	// AnnotationPrefix is the annotation prefix for GPU memory config (mutation).
+	AnnotationPrefix string
+	// MPSPipeDirectory is the MPS pipe directory bind-mounted into GPU containers.
+	MPSPipeDirectory string
+	// FailOpen skips a container on parse error instead of blocking it.
+	FailOpen bool
 
-	MapDir                string // shared dir for the container→pod mapping handoff
-	GPUFractionAnnotation string // annotation key for the requested GPU fraction
-	LogPodEvents          bool   // log each recorded/removed mapping event
+	// MapDir is the shared dir for the container→pod mapping handoff.
+	MapDir string
+	// GPUFractionAnnotation is the annotation key for the requested GPU fraction.
+	GPUFractionAnnotation string
+	// LogPodEvents logs each recorded/removed mapping event.
+	LogPodEvents bool
 
+	// Log is the logger used by the plugin; defaults to slog.Default() when nil.
 	Log *slog.Logger
 }
 
