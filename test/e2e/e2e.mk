@@ -20,6 +20,14 @@ E2E_PLUGIN_IMAGE              ?= gpu-sharing-plugin:e2e
 E2E_FAKE_GPU_OPERATOR_VERSION ?=
 PYTHON                        ?= python3
 
+# Build the plugin image for the host arch so it runs natively on the local k3d
+# nodes (which are the host arch) with no qemu cross-compile. amd64 CI runners
+# get amd64; Apple Silicon gets arm64. TARGETARCH is passed as a build-arg (not
+# just --platform) because the Dockerfile's `ARG TARGETARCH=amd64` default
+# otherwise overrides the platform-provided value. Overridable, e.g. E2E_ARCH=amd64.
+E2E_ARCH                      ?= $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+E2E_PLATFORM                  ?= linux/$(E2E_ARCH)
+
 export E2E_CLUSTER_NAME
 export E2E_GPU_WORKER_NODES
 export E2E_NON_GPU_WORKER_NODES
@@ -43,7 +51,7 @@ e2e-cluster-down: e2e-cluster-deps
 	$(PYTHON) test/e2e/hack/create-cluster.py --delete
 
 e2e-build-plugin-image:
-	docker build --build-arg GO_TAGS=e2e -t $(E2E_PLUGIN_IMAGE) -f sharing-manager/metricsd/Dockerfile sharing-manager/metricsd
+	docker build --platform $(E2E_PLATFORM) --build-arg GO_TAGS=e2e --build-arg TARGETARCH=$(E2E_ARCH) -t $(E2E_PLUGIN_IMAGE) -f sharing-manager/metricsd/Dockerfile .
 
 e2e-load-plugin-image: e2e-build-plugin-image
 	k3d image import $(E2E_PLUGIN_IMAGE) --cluster $(E2E_CLUSTER_NAME)
