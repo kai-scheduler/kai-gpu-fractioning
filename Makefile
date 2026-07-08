@@ -24,15 +24,21 @@ build-sharingd:
 # Test
 # -----------------------------------------------------------
 
-.PHONY: test test-operator test-sharing-manager
+.PHONY: test test-operator test-sharing-manager test-metricsd
 
-test: test-operator test-sharing-manager
+test: test-operator test-sharing-manager test-metricsd
 
 test-operator:
 	$(MAKE) -C operator test
 
 test-sharing-manager:
 	go test ./sharing-manager/... -race -count=1
+
+# metricsd is a separate Go module (own go.mod), so `go test ./sharing-manager/...`
+# above does not descend into it. Delegate to its own Makefile, which handles the
+# cgo/NVML build the metrics collector needs.
+test-metricsd:
+	$(MAKE) -C sharing-manager/metricsd test
 
 # -----------------------------------------------------------
 # Code quality

@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 // Fixed identities for the two-pod fractional-GPU scenario.

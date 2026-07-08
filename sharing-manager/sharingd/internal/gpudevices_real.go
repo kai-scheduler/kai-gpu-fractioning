@@ -1,10 +1,10 @@
 //go:build !e2e
 
-package plugin
+package internal
 
 import (
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/plugin/realgpu"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/realgpu"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 
 	"github.com/containerd/nri/pkg/api"
 )

@@ -13,15 +13,23 @@ import (
 	"github.com/containerd/nri/pkg/stub"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/env"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
 )
+
+const defaultNRISocketPath = "/var/run/nri/nri.sock"
 
 type cliFlags struct {
 	pluginName       string        // NRI plugin registration name
 	pluginIdx        string        // NRI plugin index; controls hook invocation order
+	socketPath       string        // NRI runtime socket path
 	annotationPrefix string        // annotation prefix for GPU memory config
 	mpsPipeDir       string        // MPS pipe directory path
 	failOpen         bool          // skip container on parse error instead of blocking
+	mapDir           string        // shared dir for the container→pod mapping handoff
+	gpuFraction      string        // annotation key for the requested GPU fraction
+	logPodEvents     bool          // log each recorded/removed mapping event
 	logLevel         string        // log level (debug, info, warn, error)
 	retryInterval    time.Duration // initial wait between NRI connection retries
 	stableThreshold  time.Duration // how long a connection must last to be considered stable (resets retry budget)
@@ -32,9 +40,13 @@ func parseFlags() cliFlags {
 	var f cliFlags
 	flag.StringVar(&f.pluginName, "plugin-name", internal.DefaultPluginName, "NRI plugin registration name")
 	flag.StringVar(&f.pluginIdx, "plugin-idx", internal.DefaultPluginIdx, "NRI plugin index; controls hook invocation order")
+	flag.StringVar(&f.socketPath, "socket-path", env.String("NRI_SOCKET_PATH", defaultNRISocketPath), "path to the NRI runtime socket")
 	flag.StringVar(&f.annotationPrefix, "annotation-prefix", configuration.DefaultAnnotationPrefix, "annotation prefix for GPU memory config")
 	flag.StringVar(&f.mpsPipeDir, "pipe-dir", configuration.DefaultMPSPipeDirectory, "MPS pipe directory path")
 	flag.BoolVar(&f.failOpen, "fail-open", false, "if true, annotation parse errors skip the container instead of blocking it")
+	flag.StringVar(&f.mapDir, "map-dir", env.String("MAP_DIR", fsstore.DefaultMapDir), "shared directory for the container→pod mapping handoff read by the metrics sidecar")
+	flag.StringVar(&f.gpuFraction, "gpu-fraction-annotation", env.String("GPU_FRACTION_ANNOTATION", internal.DefaultGPUFractionAnnotation), "pod annotation key whose value is the requested GPU fraction (empty disables)")
+	flag.BoolVar(&f.logPodEvents, "log-pod-events", env.Bool("LOG_POD_EVENTS", false), "log each recorded/removed container→pod mapping event")
 	flag.StringVar(&f.logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 	flag.DurationVar(&f.retryInterval, "retry-interval", 5*time.Second, "initial wait between NRI connection retries")
 	flag.DurationVar(&f.stableThreshold, "stable-threshold", 5*time.Minute, "connection duration considered stable (resets retry budget)")
@@ -48,12 +60,28 @@ func main() {
 
 	logger := configuration.NewLogger(flags.logLevel)
 
-	plugin := internal.NewPlugin(flags.annotationPrefix, flags.mpsPipeDir, flags.failOpen, logger)
+	plugin := internal.NewPlugin(internal.Config{
+		AnnotationPrefix:      flags.annotationPrefix,
+		MPSPipeDirectory:      flags.mpsPipeDir,
+		FailOpen:              flags.failOpen,
+		MapDir:                flags.mapDir,
+		GPUFractionAnnotation: flags.gpuFraction,
+		LogPodEvents:          flags.logPodEvents,
+		Log:                   logger,
+	})
+
+	logger.Info("container→pod mapping handoff directory", "mapDir", flags.mapDir)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	if err := runWithRetry(ctx, logger, plugin, flags); err != nil {
+	err := runWithRetry(ctx, logger, plugin, flags)
+
+	// Drain any queued mapping writes before exiting so the last events reach the
+	// shared directory.
+	plugin.Flush()
+
+	if err != nil {
 		logger.Error("sharingd exiting with error", "error", err)
 		os.Exit(1)
 	}
@@ -78,11 +106,12 @@ func runWithRetry(ctx context.Context, logger *slog.Logger, plugin *internal.Plu
 
 	for {
 		attempt++
-		logger.Info("connecting to NRI runtime", "attempt", attempt, "plugin", flags.pluginName, "idx", flags.pluginIdx)
+		logger.Info("connecting to NRI runtime", "attempt", attempt, "plugin", flags.pluginName, "idx", flags.pluginIdx, "socket", flags.socketPath)
 
 		s, err := stub.New(plugin,
 			stub.WithPluginName(flags.pluginName),
 			stub.WithPluginIdx(flags.pluginIdx),
+			stub.WithSocketPath(flags.socketPath),
 		)
 		if err != nil {
 			return fmt.Errorf("creating NRI stub: %w", err)

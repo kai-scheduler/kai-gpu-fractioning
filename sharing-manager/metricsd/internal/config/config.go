@@ -1,8 +1,8 @@
-// Package plugin TODO: NRI-specific config constants (DefaultNRISocketPath, DefaultPluginName,
-// DefaultPluginIndex) will be removed when this package is deleted. Only the
-// metrics-related config (MapDir, Metrics) survives and moves to a standalone
-// config package for the sidecar binary.
-package plugin
+// Package config holds the metricsd exporter's on-disk configuration. The NRI
+// mapper now lives in sharingd, so metricsd only reads the container→pod mapping
+// (from MapDir) and exports metrics; the NRI-specific config lives with the
+// plugin in sharingd.
+package config
 
 import (
 	"fmt"
@@ -11,22 +11,17 @@ import (
 	"time"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
 
 	"sigs.k8s.io/yaml"
 )
 
 const (
-	DefaultPluginName      = "gpu-sharing-plugin"
-	DefaultPluginIndex     = "10"
-	DefaultNRISocketPath   = "/var/run/nri/nri.sock"
 	DefaultConfigPath      = "/etc/gpu-sharing-plugin/config.yaml"
 	DefaultMetricsAddress  = ":2112"
 	DefaultMetricsPath     = "/metrics"
 	DefaultMetricsInterval = "5s"
 	DefaultMetricsProcRoot = "/proc"
-	// DefaultMapDir is the shared-volume directory the NRI mapper writes
-	// <containerID>.json files to and the metrics component reads.
-	DefaultMapDir = "/var/run/gpu-sharing/map"
 	// DefaultGPUFractionAnnotation is the pod annotation key whose value is the
 	// requested GPU fraction (e.g. "0.5") used to normalize SM utilization.
 	DefaultGPUFractionAnnotation = "gpu-fraction"
@@ -63,7 +58,7 @@ type MetricsConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		LogPodEvents:          true,
-		MapDir:                DefaultMapDir,
+		MapDir:                fsstore.DefaultMapDir,
 		GPUFractionAnnotation: DefaultGPUFractionAnnotation,
 		Metrics:               DefaultMetricsConfig(),
 	}
@@ -113,7 +108,7 @@ func ParseConfig(data []byte) (Config, error) {
 
 func (c Config) withDefaults() Config {
 	if strings.TrimSpace(c.MapDir) == "" {
-		c.MapDir = DefaultMapDir
+		c.MapDir = fsstore.DefaultMapDir
 	}
 	c.Metrics = c.Metrics.withDefaults()
 	return c
