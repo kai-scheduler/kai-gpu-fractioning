@@ -14,3 +14,18 @@ func (s ImageSpec) FullImage() string {
 	}
 	return s.Repository
 }
+
+// MergeWith returns a copy of s with any non-empty fields from override applied.
+// Used to layer CRD-level image overrides on top of Helm-injected defaults.
+func (s ImageSpec) MergeWith(override ImageSpec) ImageSpec {
+	if override.Repository != "" {
+		s.Repository = override.Repository
+	}
+	if override.Tag != "" {
+		s.Tag = override.Tag
+	}
+	if override.ImagePullPolicy != "" {
+		s.ImagePullPolicy = override.ImagePullPolicy
+	}
+	return s
+}

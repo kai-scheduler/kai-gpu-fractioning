@@ -58,7 +58,9 @@ rules:
       - patch
       - update
       - watch
-  # Read node to preserve LastTransitionTime when patching conditions.
+  # Read individual nodes to preserve LastTransitionTime when patching
+  # conditions. Only "get" is needed: nodes are read via the uncached API
+  # reader (a targeted Get), not a cached list/watch informer.
   - apiGroups:
       - ""
     resources:
@@ -74,6 +76,7 @@ rules:
       - get
       - patch
   # List pods to determine per-node health for node condition patching.
+  # Read via the uncached API reader (no pod informer), so no "watch" verb.
   - apiGroups:
       - ""
     resources:
@@ -81,7 +84,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   # Emit Kubernetes Events to surface reconciliation activity
   # (e.g. "GpuSharingConfig reconciled successfully").
   - apiGroups:

@@ -22,21 +22,16 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/config"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
 	// +kubebuilder:scaffold:imports
@@ -90,24 +85,18 @@ func main() {
 	setupLog.Info("operator namespace", "namespace", podNamespace)
 
 	// ── Controller manager ───────────────────────────────────────────────
+	// We do not configure a Pod (or Node) cache. The controller reads Pods and
+	// Nodes only in the rare unhealthy/recovery path (node-condition patching)
+	// and does so via the manager's uncached API reader, so it never maintains
+	// cluster-scale Pod/Node informers. Reconciles are driven by GpuSharingConfig
+	// and DaemonSet events, not pod events. Only DaemonSets and the CR — small,
+	// bounded object sets — are served from the default cache.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
 		LeaderElection:         cfg.EnableLeaderElect,
 		LeaderElectionID:       "gpu-sharing-operator.run.ai",
-		Cache: cache.Options{
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}: {
-					Namespaces: map[string]cache.Config{
-						podNamespace: {},
-					},
-					Label: labels.SelectorFromSet(labels.Set{
-						daemonmgr.LabelManagedBy: daemonmgr.ManagedByValue,
-					}),
-				},
-			},
-		},
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
@@ -120,15 +109,20 @@ func main() {
 	metricsdImage := controller.ReadImageFromEnv("METRICSD_IMAGE")
 	setupLog.Info("metricsd default image", "image", metricsdImage.FullImage())
 
+	mpsdImage := controller.ReadImageFromEnv("MPSD_IMAGE")
+	setupLog.Info("mpsd default image", "image", mpsdImage.FullImage())
+
 	// ── Register controllers ─────────────────────────────────────────────
 	if err := controller.NewGpuSharingConfigReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		mgr.GetScheme(),
 		mgr.GetEventRecorderFor("gpusharingconfig-controller"),
 		podNamespace,
 		map[string]v1alpha1.ImageSpec{
 			"sharingd": sharingdImage,
 			"metricsd": metricsdImage,
+			"mpsd":     mpsdImage,
 		},
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")

@@ -43,6 +43,10 @@ type GpuSharingConfigSpec struct {
 	// container→pod mapping sharingd writes to a shared volume.
 	// +optional
 	MetricsAgent *MetricsAgentSpec `json:"metricsAgent,omitempty"`
+
+	// mpsDaemon configures the MPS daemon supervisor (mpsd).
+	// +optional
+	MpsDaemon *MpsDaemonSpec `json:"mpsDaemon,omitempty"`
 }
 
 // ImageSpec defines a container image reference.
@@ -117,6 +121,40 @@ type MetricsAgentSpec struct {
 	// When false, no metrics container is deployed. Default: true.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// MpsDaemonSpec configures the mpsd DaemonSet managed by the controller.
+// mpsd supervises nvidia-cuda-mps-control, providing GPU multi-process
+// service to containers sharing a GPU.
+type MpsDaemonSpec struct {
+	// image overrides the default mpsd container image set via Helm env vars (MPSD_IMAGE_*).
+	// +optional
+	Image *ImageSpec `json:"image,omitempty"`
+
+	// logLevel controls the logging verbosity of the MPS daemon supervisor.
+	// One of debug, info, warn, error. Default: info.
+	// +optional
+	LogLevel string `json:"logLevel,omitempty"`
+
+	// backoff is the initial delay before restarting the MPS daemon after a crash.
+	// Doubles on each failure, capped at 60s. Default: 5s.
+	// +optional
+	Backoff *metav1.Duration `json:"backoff,omitempty"`
+
+	// maxRetries is the maximum number of MPS daemon restart attempts before giving up.
+	// 0 means unlimited. Default: 0.
+	// +optional
+	MaxRetries *int32 `json:"maxRetries,omitempty"`
+
+	// stableThreshold is how long the MPS daemon must run to be considered stable.
+	// Once stable, the retry budget and backoff reset. Default: 5m.
+	// +optional
+	StableThreshold *metav1.Duration `json:"stableThreshold,omitempty"`
+
+	// gracefulStopDelay is how long to wait after sending "quit" to the MPS daemon
+	// before force-killing it. Default: 60s.
+	// +optional
+	GracefulStopDelay *metav1.Duration `json:"gracefulStopDelay,omitempty"`
 }
 
 // GpuSharingConfigStatus defines the observed state of GpuSharingConfig.

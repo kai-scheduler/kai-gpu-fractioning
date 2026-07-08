@@ -31,7 +31,7 @@ const (
 	DefaultMPSBinary       = "/usr/bin/nvidia-cuda-mps-control"
 	DefaultLogDir          = "/var/log/nvidia-mps"
 	DefaultBackoff         = 5 * time.Second  // initial wait before first restart
-	DefaultMaxRetries      = 0                // 0 means unlimited restart attempts
+	DefaultMaxRetries      = 5                // after 5 consecutive restarts, the supervisor exits the process. 0 means unlimited restart attempts
 	DefaultStableThreshold = 5 * time.Minute  // uptime required to reset the retry budget
 	maxBackoff             = 60 * time.Second // upper bound for exponential backoff
 	dirPerm                = 0o755            // rwxr-xr-x — used for runtime directories (pipe, log)
