@@ -16,10 +16,10 @@ const (
 	metricsdName        = "metricsd"
 	defaultMPSPipeDir   = "/run/nvidia-mps"
 	defaultNRISocketDir = "/var/run/nri"
-	// defaultMapDir is the shared handoff directory: sharingd writes the
+	// containerPodMapDir is the shared handoff directory: sharingd writes the
 	// container→pod mapping here and the metricsd sidecar reads it. Must match
 	// sharingd's and metricsd's built-in default (fsstore.DefaultMapDir).
-	defaultMapDir = "/var/run/gpu-sharing/map"
+	containerPodMapDir = "/var/run/gpu-sharing/map"
 	// metricsPort is the Prometheus exporter port served by the metricsd sidecar.
 	metricsPort = 2112
 
@@ -81,7 +81,6 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	podSpec.Containers = append(podSpec.Containers, container)
 	podSpec.Volumes = append(podSpec.Volumes, volumes...)
 
-	// metricsd sidecar (enabled by default).
 	if d.metricsEnabled() {
 		metricsImage := opts.DefaultImages[metricsdName]
 		if d.metrics != nil && d.metrics.Image != nil {
@@ -122,7 +121,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeNRISocket, MountPath: d.nriSocketDir()},
 			{Name: volumeMPSPipe, MountPath: defaultMPSPipeDir},
-			{Name: volumeMapDir, MountPath: defaultMapDir},
+			{Name: volumeMapDir, MountPath: containerPodMapDir},
 		},
 	}
 
@@ -160,7 +159,7 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 			{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP},
 		},
 		VolumeMounts: []corev1.VolumeMount{
-			{Name: volumeMapDir, MountPath: defaultMapDir, ReadOnly: true},
+			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},
 		},
 	}
 }
