@@ -1,7 +1,6 @@
 package sharingd
 
 import (
-	"fmt"
 	"path/filepath"
 	"strconv"
 
@@ -17,10 +16,10 @@ const (
 	metricsdName        = "metricsd"
 	defaultMPSPipeDir   = "/run/nvidia-mps"
 	defaultNRISocketDir = "/var/run/nri"
-	// defaultMapDir is the shared handoff directory: sharingd writes the
+	// containerPodMapDir is the shared handoff directory: sharingd writes the
 	// container→pod mapping here and the metricsd sidecar reads it. Must match
 	// sharingd's and metricsd's built-in default (fsstore.DefaultMapDir).
-	defaultMapDir = "/var/run/gpu-sharing/map"
+	containerPodMapDir = "/var/run/gpu-sharing/map"
 	// metricsPort is the Prometheus exporter port served by the metricsd sidecar.
 	metricsPort = 2112
 
@@ -60,16 +59,7 @@ func (d *daemon) Name() string { return daemonName }
 // the two containers — a single pod owns both writer and reader, and the mapping
 // is rebuilt on every NRI (re)connect, so it need not survive a pod restart.
 func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
-	labels := map[string]string{
-		daemonmgr.LabelManagedBy: daemonmgr.ManagedByValue,
-		daemonmgr.LabelComponent: daemonName,
-	}
-
-	result := daemonmgr.BaseDaemonSet(
-		fmt.Sprintf("gpu-sharing-%s", daemonName),
-		opts.Namespace,
-		labels,
-	)
+	result := daemonmgr.BaseDaemonSet(daemonName, opts.Namespace)
 
 	podSpec := &result.Spec.Template.Spec
 	// HostPID is required so sharingd can observe container lifecycle events and
@@ -85,17 +75,16 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	sharingdImage := opts.DefaultImages[daemonName]
 	if d.spec != nil && d.spec.Image != nil {
-		sharingdImage = mergeImageSpec(sharingdImage, *d.spec.Image)
+		sharingdImage = sharingdImage.MergeWith(*d.spec.Image)
 	}
 	container, volumes := d.buildSharingdContainer(sharingdImage)
 	podSpec.Containers = append(podSpec.Containers, container)
 	podSpec.Volumes = append(podSpec.Volumes, volumes...)
 
-	// metricsd sidecar (enabled by default).
 	if d.metricsEnabled() {
 		metricsImage := opts.DefaultImages[metricsdName]
 		if d.metrics != nil && d.metrics.Image != nil {
-			metricsImage = mergeImageSpec(metricsImage, *d.metrics.Image)
+			metricsImage = metricsImage.MergeWith(*d.metrics.Image)
 		}
 		podSpec.Containers = append(podSpec.Containers, d.buildMetricsdContainer(metricsImage))
 
@@ -132,7 +121,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeNRISocket, MountPath: d.nriSocketDir()},
 			{Name: volumeMPSPipe, MountPath: defaultMPSPipeDir},
-			{Name: volumeMapDir, MountPath: defaultMapDir},
+			{Name: volumeMapDir, MountPath: containerPodMapDir},
 		},
 	}
 
@@ -170,7 +159,7 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 			{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP},
 		},
 		VolumeMounts: []corev1.VolumeMount{
-			{Name: volumeMapDir, MountPath: defaultMapDir, ReadOnly: true},
+			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},
 		},
 	}
 }
@@ -231,18 +220,4 @@ func pullPolicy(image v1alpha1.ImageSpec) corev1.PullPolicy {
 		return corev1.PullPolicy(image.ImagePullPolicy)
 	}
 	return corev1.PullIfNotPresent
-}
-
-// mergeImageSpec returns base with any non-empty fields from override applied.
-func mergeImageSpec(base, override v1alpha1.ImageSpec) v1alpha1.ImageSpec {
-	if override.Repository != "" {
-		base.Repository = override.Repository
-	}
-	if override.Tag != "" {
-		base.Tag = override.Tag
-	}
-	if override.ImagePullPolicy != "" {
-		base.ImagePullPolicy = override.ImagePullPolicy
-	}
-	return base
 }

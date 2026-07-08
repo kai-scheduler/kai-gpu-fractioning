@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 type Config struct {

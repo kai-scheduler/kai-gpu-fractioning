@@ -12,24 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command metricsd is the GPU metrics sidecar. It reads the container->pod
+// mapping the sharingd NRI plugin writes to the shared map directory and exports
+// per-pod GPU metrics on a Prometheus endpoint. It runs no NRI plugin of its own;
+// the mapping is produced by the sharingd container it is co-scheduled with.
+//
+// Configuration is entirely flags/env with defaults (no config file), so it can
+// be overridden just-in-time by editing the DaemonSet. See flags.go.
 package main
 
 import (
 	"context"
-	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/env"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/config"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
 )
-
-const defaultLogLevel = "info"
 
 var (
 	version = "dev"
@@ -37,73 +38,49 @@ var (
 	date    = "unknown"
 )
 
-// metricsd is the metrics-only sidecar: it reads the container→pod mapping
-// written by the sharingd NRI plugin (via the shared MapDir handoff) and exports
-// per-pod GPU metrics. It contains no NRI plugin — the mapping is produced by the
-// sharingd container it is co-scheduled with in the same DaemonSet pod.
 func main() {
-	var (
-		configPath string
-		logLevel   string
-	)
-
-	flag.StringVar(&configPath, "config", env.String("CONFIG_PATH", config.DefaultConfigPath), "path to the metrics configuration file")
-	flag.StringVar(&logLevel, "log-level", env.String("LOG_LEVEL", defaultLogLevel), "log level: debug, info, warn, or error")
-	flag.Parse()
+	flags := parseFlags()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(logLevel),
+		Level: parseLogLevel(flags.logLevel),
 	}))
 
 	logger.Info("starting gpu-sharing-metrics",
 		"version", version,
 		"commit", commit,
 		"date", date,
-		"config", configPath,
 	)
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		logger.Error("failed to load configuration", "error", err)
-		os.Exit(1)
-	}
-
-	logger.Info("container→pod mapping handoff directory", "mapDir", cfg.MapDir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if !cfg.Metrics.Enabled {
+	if !flags.metricsEnabled {
 		logger.Info("GPU metrics exporter disabled; nothing to do")
 		return
 	}
 
-	// The sharingd NRI plugin writes the container→pod mapping to cfg.MapDir (a
-	// shared volume); this sidecar reads it back from the same directory to
-	// attribute NVML-reported GPU processes to Kubernetes pods.
-	mappingReader := fsstore.NewReader(cfg.MapDir, logger)
+	logger.Info("container->pod mapping handoff directory", "mapDir", flags.mapDir)
 
-	metricsRuntime, err := metrics.New(ctx, cfg.Metrics.RuntimeConfig(), mappingReader, logger)
+	// sharingd writes the container->pod mapping to mapDir (a shared volume); this
+	// sidecar reads it back to attribute NVML-reported GPU processes to pods.
+	reader := fsstore.NewReader(flags.mapDir, logger)
+
+	runtime, err := metrics.New(ctx, metrics.Config{
+		Enabled:             true,
+		Address:             flags.address,
+		Path:                flags.path,
+		ProcRoot:            flags.procRoot,
+		Interval:            flags.interval,
+		SMUtilizationWindow: flags.smUtilWindow,
+		Names:               metrics.DefaultMetricNames(),
+	}, reader, logger)
 	if err != nil {
 		logger.Error("failed to build metrics exporter", "error", err)
 		os.Exit(1)
 	}
-	metricsRuntime.Start(ctx)
-	defer metricsRuntime.Stop(context.Background(), logger)
+	runtime.Start(ctx)
+	defer runtime.Stop(context.Background(), logger)
 
 	<-ctx.Done()
 	logger.Info("stopped gpu-sharing-metrics")
-}
-
-func parseLogLevel(level string) slog.Level {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "debug":
-		return slog.LevelDebug
-	case "warn", "warning":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
 }

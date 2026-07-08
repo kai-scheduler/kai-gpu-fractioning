@@ -1,6 +1,8 @@
 package daemonmgr
 
 import (
+	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -9,12 +11,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// BaseDaemonSet returns a DaemonSet skeleton with common metadata, selector,
-// and RollingUpdate strategy. Callers layer on their own container spec, volumes, etc.
-func BaseDaemonSet(name, namespace string, labels map[string]string) *appsv1.DaemonSet {
+const daemonSetPrefix = "gpu-sharing"
+
+// BaseDaemonSet returns a DaemonSet skeleton with standard naming, labels,
+// selector, and RollingUpdate strategy. The DaemonSet is named
+// "gpu-sharing-<component>" and labelled with the managed-by and component
+// labels that the controller uses for pod listing and condition patching.
+// Callers layer on their own container spec, volumes, etc.
+func BaseDaemonSet(component, namespace string) *appsv1.DaemonSet {
+	labels := map[string]string{
+		LabelManagedBy: ManagedByValue,
+		LabelComponent: component,
+	}
+
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
+			Name:      fmt.Sprintf("%s-%s", daemonSetPrefix, component),
 			Namespace: namespace,
 			Labels:    labels,
 		},

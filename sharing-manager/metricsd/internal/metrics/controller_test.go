@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 // testDeviceMemMB is the total memory (decimal MB) of the simulated GPU used by
