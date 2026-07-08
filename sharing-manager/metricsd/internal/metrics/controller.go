@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 const DefaultPath = "/metrics"
@@ -29,17 +29,28 @@ const (
 )
 
 type metricsController struct {
-	mu                     sync.RWMutex            // protects snapshot
-	collector              GPUProcessCollector     // NVML or noop source of per-process GPU metrics
-	pods                   podSource               // resolves GPU processes to pod/container identity
-	interval               time.Duration           // how often collect() fires
-	smUtilWindow           time.Duration           // smoothing window duration for SM utilisation
-	smUtilWindowSize       int                     // window in number of samples (derived: smUtilWindow/interval)
-	smUtilBuf              map[podGPUKey][]float64 // rolling sample buffer per pod×GPU; nil when windowSize == 1
-	log                    *slog.Logger
-	deviceUUIDs            map[int]string // GPU index → UUID learned from NVML; fills UUID for NRI-sourced devices
-	deviceTotalMemoryBytes map[int]uint64 // GPU index → total memory (bytes) learned from NVML; divisor for the GPU fraction
-	snapshot               Snapshot       // latest published snapshot, read by Snapshot()
+	// mu protects snapshot.
+	mu sync.RWMutex
+	// collector is the NVML or noop source of per-process GPU metrics.
+	collector GPUProcessCollector
+	// pods resolves GPU processes to pod/container identity.
+	pods podSource
+	// interval is how often collect() fires.
+	interval time.Duration
+	// smUtilWindow is the smoothing window duration for SM utilisation.
+	smUtilWindow time.Duration
+	// smUtilWindowSize is the window in number of samples (derived: smUtilWindow/interval).
+	smUtilWindowSize int
+	// smUtilBuf is the rolling sample buffer per pod x GPU; nil when windowSize == 1.
+	smUtilBuf map[podGPUKey][]float64
+	// log is the controller's logger.
+	log *slog.Logger
+	// deviceUUIDs maps GPU index -> UUID learned from NVML; fills UUID for NRI-sourced devices.
+	deviceUUIDs map[int]string
+	// deviceTotalMemoryBytes maps GPU index -> total memory (bytes) learned from NVML; the divisor for the GPU fraction.
+	deviceTotalMemoryBytes map[int]uint64
+	// snapshot is the latest published snapshot, read by Snapshot().
+	snapshot Snapshot
 }
 
 func newMetricsController(collector GPUProcessCollector, resolver PIDCgroupResolver, reader store.Reader, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsController {

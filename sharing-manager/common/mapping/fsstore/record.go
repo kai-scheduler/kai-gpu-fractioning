@@ -1,4 +1,4 @@
-// Package fsstore is the filesystem handoff for the container→pod mapping
+// Package fsstore is the filesystem handoff for the container->pod mapping
 // The NRI mapper component writes one <containerID>.json file per container under a shared directory; the metrics
 // component reads those files read-only. The two sides live in separate
 // containers (and may be separate processes), so the mapping crosses a process
@@ -12,10 +12,10 @@ package fsstore
 import (
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
-// DefaultMapDir is the shared-volume directory for the container→pod mapping
+// DefaultMapDir is the shared-volume directory for the container->pod mapping
 // handoff: the sharingd NRI plugin writes one <containerID>.json file per
 // container here and the metricsd sidecar reads them. It is the single source of
 // truth for the path both sides must agree on.
@@ -30,7 +30,7 @@ const schemaVersion = 1
 // fileExtension is the suffix of every mapping file: <containerID>.json.
 const fileExtension = ".json"
 
-// record is the on-disk container→pod mapping: pod identity plus assigned GPU
+// record is the on-disk container->pod mapping: pod identity plus assigned GPU
 // devices, nothing else. The container ID is the file name, not a field.
 type record struct {
 	SchemaVersion int               `json:"schemaVersion"`

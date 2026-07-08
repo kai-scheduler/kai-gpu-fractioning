@@ -5,8 +5,8 @@
 // -tags e2e; require a fake-GPU cluster.
 package metrics
 
-// End-to-end metrics pipeline tests: fake GPU collector → controller → Prometheus
-// exporter → HTTP scrape. No real GPU, NVML, or /proc access required.
+// End-to-end metrics pipeline tests: fake GPU collector -> controller -> Prometheus
+// exporter -> HTTP scrape. No real GPU, NVML, or /proc access required.
 //
 // Scenario: two pods (pod-a "trainer", pod-b "worker") each request 0.5 of the
 // same physical GPU (fractional sharing). Both have live processes that allocate
@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 // Fixed identities for the two-pod fractional-GPU scenario.
@@ -50,7 +50,7 @@ const (
 	e2eRequestedMemoryMB int64 = e2eDeviceTotalMemMB / 2
 
 	// Each pod requested half of the shared GPU, so normalized SM utilization is
-	// SMUtil ÷ 0.5: pod-a → 60, pod-b → 100 (capped).
+	// SMUtil ÷ 0.5: pod-a -> 60, pod-b -> 100 (capped).
 	e2eRequestedFraction = 0.5
 )
 
@@ -230,7 +230,7 @@ func TestE2EFractionalGPUSharingSMUtilization(t *testing.T) {
 
 // TestE2EFractionalGPUSharingSMUtilizationNormalized validates that SM
 // utilization is normalized per-pod by the requested GPU fraction (0.5 each) and
-// capped at 100: pod-a (30% used) → 60, pod-b (50% used) → 100.
+// capped at 100: pod-a (30% used) -> 60, pod-b (50% used) -> 100.
 func TestE2EFractionalGPUSharingSMUtilizationNormalized(t *testing.T) {
 	exporter := twoFractionalPodsFixture(t)
 

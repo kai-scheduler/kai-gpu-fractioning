@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,45 +12,8 @@ import (
 	"github.com/containerd/nri/pkg/stub"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/env"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
 )
-
-const defaultNRISocketPath = "/var/run/nri/nri.sock"
-
-type cliFlags struct {
-	pluginName       string        // NRI plugin registration name
-	pluginIdx        string        // NRI plugin index; controls hook invocation order
-	socketPath       string        // NRI runtime socket path
-	annotationPrefix string        // annotation prefix for GPU memory config
-	mpsPipeDir       string        // MPS pipe directory path
-	failOpen         bool          // skip container on parse error instead of blocking
-	mapDir           string        // shared dir for the container→pod mapping handoff
-	logPodEvents     bool          // log each recorded/removed mapping event
-	logLevel         string        // log level (debug, info, warn, error)
-	retryInterval    time.Duration // initial wait between NRI connection retries
-	stableThreshold  time.Duration // how long a connection must last to be considered stable (resets retry budget)
-	maxRetries       int           // max NRI connection retries (0 = unlimited)
-}
-
-func parseFlags() cliFlags {
-	var f cliFlags
-	flag.StringVar(&f.pluginName, "plugin-name", internal.DefaultPluginName, "NRI plugin registration name")
-	flag.StringVar(&f.pluginIdx, "plugin-idx", internal.DefaultPluginIdx, "NRI plugin index; controls hook invocation order")
-	flag.StringVar(&f.socketPath, "socket-path", env.String("NRI_SOCKET_PATH", defaultNRISocketPath), "path to the NRI runtime socket")
-	flag.StringVar(&f.annotationPrefix, "annotation-prefix", configuration.DefaultAnnotationPrefix, "annotation prefix for GPU memory config")
-	flag.StringVar(&f.mpsPipeDir, "pipe-dir", configuration.DefaultMPSPipeDirectory, "MPS pipe directory path")
-	flag.BoolVar(&f.failOpen, "fail-open", false, "if true, annotation parse errors skip the container instead of blocking it")
-	flag.StringVar(&f.mapDir, "map-dir", env.String("MAP_DIR", fsstore.DefaultMapDir), "shared directory for the container→pod mapping handoff read by the metrics sidecar")
-	flag.BoolVar(&f.logPodEvents, "log-pod-events", env.Bool("LOG_POD_EVENTS", false), "log each recorded/removed container→pod mapping event")
-	flag.StringVar(&f.logLevel, "log-level", "info", "log level (debug, info, warn, error)")
-	flag.DurationVar(&f.retryInterval, "retry-interval", 5*time.Second, "initial wait between NRI connection retries")
-	flag.DurationVar(&f.stableThreshold, "stable-threshold", 5*time.Minute, "connection duration considered stable (resets retry budget)")
-	flag.IntVar(&f.maxRetries, "max-retries", 0, "max NRI connection retries (0 = unlimited)")
-	flag.Parse()
-	return f
-}
 
 func main() {
 	flags := parseFlags()
