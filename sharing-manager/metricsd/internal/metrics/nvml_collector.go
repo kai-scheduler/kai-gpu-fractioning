@@ -88,6 +88,7 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 
 	joined := map[gpuProcessKey]GPUProcessMetric{}
 	deviceUUIDs := map[int]string{}
+	deviceTotalMemory := map[int]uint64{}
 	var errs []error
 
 	for index := 0; index < count; index++ {
@@ -103,6 +104,12 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 		}
 		deviceUUIDs[index] = uuid
 
+		if total, err := deviceTotalMemoryBytes(device); err != nil {
+			errs = append(errs, fmt.Errorf("get memory info for GPU %s: %w", uuid, err))
+		} else {
+			deviceTotalMemory[index] = total
+		}
+
 		if err := collectProcessUtilization(joined, uuid, index, lastSeenTimestamp, device, c.log); err != nil {
 			errs = append(errs, err)
 		}
@@ -117,10 +124,23 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 	}
 
 	c.setSnapshot(GPUProcessSnapshot{
-		Processes:    processes,
-		DeviceUUIDs:  deviceUUIDs,
-		DeviceErrors: errors.Join(errs...),
+		Processes:              processes,
+		DeviceUUIDs:            deviceUUIDs,
+		DeviceTotalMemoryBytes: deviceTotalMemory,
+		DeviceErrors:           errors.Join(errs...),
 	})
+}
+
+// deviceTotalMemoryBytes returns the device's total GPU memory in bytes. It uses
+// the v2 memory info call, which reports the full device memory (matching what
+// the driver advertises), so the derived GPU fraction is stable across MIG and
+// non-MIG devices.
+func deviceTotalMemoryBytes(device nvml.Device) (uint64, error) {
+	mem, ret := device.GetMemoryInfo()
+	if !errors.Is(ret, nvml.SUCCESS) {
+		return 0, errors.New(ret.Error())
+	}
+	return mem.Total, nil
 }
 
 func (c *nvmlProcessCollector) setSnapshot(s GPUProcessSnapshot) {
@@ -217,9 +237,14 @@ func cloneGPUProcessSnapshot(in GPUProcessSnapshot) GPUProcessSnapshot {
 	for k, v := range in.DeviceUUIDs {
 		deviceUUIDs[k] = v
 	}
+	deviceTotalMemory := map[int]uint64{}
+	for k, v := range in.DeviceTotalMemoryBytes {
+		deviceTotalMemory[k] = v
+	}
 	return GPUProcessSnapshot{
-		Processes:    append([]GPUProcessMetric(nil), in.Processes...),
-		DeviceUUIDs:  deviceUUIDs,
-		DeviceErrors: in.DeviceErrors,
+		Processes:              append([]GPUProcessMetric(nil), in.Processes...),
+		DeviceUUIDs:            deviceUUIDs,
+		DeviceTotalMemoryBytes: deviceTotalMemory,
+		DeviceErrors:           in.DeviceErrors,
 	}
 }

@@ -12,12 +12,19 @@ package fsstore
 import (
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
+
+// DefaultMapDir is the shared-volume directory for the container→pod mapping
+// handoff: the sharingd NRI plugin writes one <containerID>.json file per
+// container here and the metricsd sidecar reads them. It is the single source of
+// truth for the path both sides must agree on.
+const DefaultMapDir = "/var/run/gpu-sharing/map"
 
 // schemaVersion is the on-disk record version. Bump it when the
 // record shape changes incompatibly; readers ignore files whose version they do
-// not recognize rather than misinterpreting them.
+// not recognize rather than misinterpreting them. The project is pre-release, so
+// the schema is still at its initial version.
 const schemaVersion = 1
 
 // fileExtension is the suffix of every mapping file: <containerID>.json.
@@ -31,8 +38,9 @@ type record struct {
 	Namespace     string            `json:"namespace"`
 	PodUID        string            `json:"podUID"`
 	GPUDevices    []store.GPUDevice `json:"gpuDevices"`
-	// RequestedGPUFraction is the requested GPU fraction, used to normalize SM utilization.
-	RequestedGPUFraction float64 `json:"requestedGpuFraction,omitempty"`
+	// RequestedMemoryMB is the container's allocated GPU memory (decimal MB),
+	// used by the metrics sidecar to derive the GPU fraction for SM-util normalization.
+	RequestedMemoryMB int64 `json:"requestedMemoryMB,omitempty"`
 }
 
 // newRecord projects a store.ContainerInfo onto the minimal on-disk schema. The
@@ -41,12 +49,12 @@ type record struct {
 // extracted from /proc/<pid>/cgroup.
 func newRecord(info store.ContainerInfo) record {
 	return record{
-		SchemaVersion:        schemaVersion,
-		Pod:                  info.Pod,
-		Namespace:            info.Namespace,
-		PodUID:               info.PodUID,
-		GPUDevices:           info.GPUDevices,
-		RequestedGPUFraction: info.RequestedGPUFraction,
+		SchemaVersion:     schemaVersion,
+		Pod:               info.Pod,
+		Namespace:         info.Namespace,
+		PodUID:            info.PodUID,
+		GPUDevices:        info.GPUDevices,
+		RequestedMemoryMB: info.RequestedMemoryMB,
 	}
 }
 
@@ -56,12 +64,12 @@ func newRecord(info store.ContainerInfo) record {
 // does not need the mapper's cgroup string.
 func (r record) toContainer(containerID string) store.ContainerInfo {
 	return store.ContainerInfo{
-		ContainerID:          containerID,
-		Pod:                  r.Pod,
-		Namespace:            r.Namespace,
-		PodUID:               r.PodUID,
-		GPUDevices:           r.GPUDevices,
-		RequestedGPUFraction: r.RequestedGPUFraction,
+		ContainerID:       containerID,
+		Pod:               r.Pod,
+		Namespace:         r.Namespace,
+		PodUID:            r.PodUID,
+		GPUDevices:        r.GPUDevices,
+		RequestedMemoryMB: r.RequestedMemoryMB,
 	}
 }
 

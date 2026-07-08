@@ -79,7 +79,7 @@ func NewGpuSharingConfigReconciler(
 // so each reconcile sees the latest configuration.
 func buildDaemons(spec *v1alpha1.GpuSharingConfigSpec) []daemonmgr.ManagedDaemon {
 	return []daemonmgr.ManagedDaemon{
-		sharingd.NewSharingdDaemon(spec.SharingAgent),
+		sharingd.NewSharingdDaemon(spec.SharingAgent, spec.MetricsAgent),
 	}
 }
 

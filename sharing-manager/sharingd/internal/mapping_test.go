@@ -1,4 +1,4 @@
-package plugin
+package internal
 
 import (
 	"context"
@@ -8,26 +8,41 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
-
 	"github.com/containerd/nri/pkg/api"
+
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
-// testPlugin builds a plugin whose mapping handoff goes through a throwaway
-// directory, plus a reader over the same directory so a test can observe what the
-// metrics component would read back.
-func testPlugin(t *testing.T) (*Plugin, *fsstore.Reader) {
+// testMemPrefix is the GPU-memory annotation prefix used by the mapping tests. A
+// container is recorded for metrics iff it carries a well-formed annotation under
+// this prefix — the same signal the mutation path enforces on.
+const testMemPrefix = "nvidia.com/gpu-memory.container."
+
+// memAnnotations builds the pod annotations granting the named container a GPU
+// memory limit (a Kubernetes quantity such as "4Gi").
+func memAnnotations(container, limit string) map[string]string {
+	return map[string]string{testMemPrefix + container + ".limit": limit}
+}
+
+// testMappingPlugin builds a plugin whose mapping handoff goes through a
+// throwaway directory, plus a reader over the same directory so a test can
+// observe what the metrics sidecar would read back.
+func testMappingPlugin(t *testing.T) (*Plugin, *fsstore.Reader) {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := DefaultConfig()
-	cfg.MapDir = dir
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return New(cfg, logger), fsstore.NewReader(dir, logger)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := NewPlugin(Config{
+		AnnotationPrefix: testMemPrefix,
+		MPSPipeDirectory: "/run/nvidia-mps",
+		MapDir:           dir,
+		Log:              log,
+	})
+	return p, fsstore.NewReader(dir, log)
 }
 
 // activeContainers drains queued events and returns the containers the metrics
-// component would attribute processes to.
+// sidecar would attribute processes to.
 func activeContainers(t *testing.T, p *Plugin, r *fsstore.Reader) []store.ContainerInfo {
 	t.Helper()
 	p.Flush()
@@ -56,41 +71,13 @@ func gpuContainer(id, name, podSandboxID string, minors ...int64) *api.Container
 	}
 }
 
-func TestCreateContainerDoesNotMutateContainer(t *testing.T) {
-	plugin, _ := testPlugin(t)
-
-	adjust, updates, err := plugin.CreateContainer(context.Background(),
-		&api.PodSandbox{
-			Name:      "pod",
-			Namespace: "default",
-			Uid:       "pod-uid",
-			// Annotations are intentionally ignored now — the plugin does not mutate.
-			Annotations: map[string]string{
-				"nvidia.com/container.container.gpu-memory.limit": "2Gi",
-			},
-		},
-		gpuContainer("container-id", "container", "", 0),
-	)
-	if err != nil {
-		t.Fatalf("CreateContainer returned error: %v", err)
-	}
-	if adjust != nil {
-		t.Fatalf("expected no container adjustment (no mutation), got %#v", adjust)
-	}
-	if len(updates) != 0 {
-		t.Fatalf("expected no container updates, got %d", len(updates))
-	}
-}
-
 func TestCreateContainerRecordsGPUMapping(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
 			Name: "pod", Namespace: "default", Uid: "pod-uid",
-			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4096",
-			},
+			Annotations: memAnnotations("container", "4Gi"),
 		},
 		gpuContainer("container-id", "container", "", 0, 1),
 	); err != nil {
@@ -108,10 +95,14 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 	if len(info.GPUDevices) != 2 {
 		t.Fatalf("expected two GPU devices recorded, got %#v", info.GPUDevices)
 	}
+	// 4Gi = 4294967296 bytes → 4294 decimal MB.
+	if info.RequestedMemoryMB != 4294 {
+		t.Fatalf("expected RequestedMemoryMB 4294, got %d", info.RequestedMemoryMB)
+	}
 }
 
-func TestCreateContainerIgnoresNonFractionalContainer(t *testing.T) {
-	plugin, reader := testPlugin(t)
+func TestCreateContainerIgnoresNonGPUContainer(t *testing.T) {
+	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{Name: "pod"},
@@ -121,19 +112,37 @@ func TestCreateContainerIgnoresNonFractionalContainer(t *testing.T) {
 	}
 
 	if n := len(activeContainers(t, plugin, reader)); n != 0 {
-		t.Fatalf("expected non-fractional container to be ignored, got %d mappings", n)
+		t.Fatalf("expected non-GPU container to be ignored, got %d mappings", n)
+	}
+}
+
+// A fail-closed annotation parse error must block the container AND skip the
+// mapping: the container will not exist, so recording it would be stale.
+func TestCreateContainerFailClosedDoesNotRecordMapping(t *testing.T) {
+	plugin, reader := testMappingPlugin(t)
+
+	_, _, err := plugin.CreateContainer(context.Background(),
+		&api.PodSandbox{
+			Name: "pod", Uid: "pod-uid",
+			Annotations: memAnnotations("container", "not-a-quantity"),
+		},
+		gpuContainer("container-id", "container", "", 0),
+	)
+	if err == nil {
+		t.Fatal("expected fail-closed error for malformed annotation")
+	}
+	if n := len(activeContainers(t, plugin, reader)); n != 0 {
+		t.Fatalf("expected no mapping recorded on fail-closed, got %d", n)
 	}
 }
 
 func TestRemoveContainerDeletesMapping(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
 			Name: "pod", Uid: "pod-uid",
-			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4096",
-			},
+			Annotations: memAnnotations("container", "4Gi"),
 		},
 		gpuContainer("container-id", "container", "", 0),
 	); err != nil {
@@ -153,14 +162,12 @@ func TestRemoveContainerDeletesMapping(t *testing.T) {
 }
 
 func TestSynchronizeReplacesMappings(t *testing.T) {
-	plugin, reader := testPlugin(t)
+	plugin, reader := testMappingPlugin(t)
 
 	updates, err := plugin.Synchronize(context.Background(),
 		[]*api.PodSandbox{{
 			Id: "pod-id", Name: "pod", Namespace: "default", Uid: "pod-uid",
-			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "gpu" + annotationGPUMemoryLimitSuffix: "4096",
-			},
+			Annotations: memAnnotations("gpu", "4Gi"),
 		}},
 		[]*api.Container{
 			gpuContainer("gpu-container", "gpu", "pod-id", 0),

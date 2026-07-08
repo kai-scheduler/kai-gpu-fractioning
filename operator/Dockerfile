@@ -1,4 +1,7 @@
-FROM golang:1.26.2 AS builder
+# Build on the native BUILDPLATFORM and cross-compile to the target arch. The
+# operator is CGO_ENABLED=0, so cross-compilation is pure Go (no emulation) —
+# much faster than running the whole build under qemu for a foreign --platform.
+FROM --platform=$BUILDPLATFORM golang:1.26.2 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -16,7 +19,7 @@ RUN cd operator && go mod download
 COPY operator/cmd/       operator/cmd/
 COPY operator/internal/  operator/internal/
 
-RUN cd operator && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+RUN cd operator && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o manager cmd/main.go
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /

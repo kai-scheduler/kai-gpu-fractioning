@@ -37,6 +37,12 @@ type GpuSharingConfigSpec struct {
 	// sharingAgent configures the NRI-based sharing agent (sharingd).
 	// +optional
 	SharingAgent *SharingAgentSpec `json:"sharingAgent,omitempty"`
+
+	// metricsAgent configures the GPU metrics exporter (metricsd), which runs as
+	// a sidecar container in the same DaemonSet as sharingd and reads the
+	// container→pod mapping sharingd writes to a shared volume.
+	// +optional
+	MetricsAgent *MetricsAgentSpec `json:"metricsAgent,omitempty"`
 }
 
 // ImageSpec defines a container image reference.
@@ -98,6 +104,19 @@ type SharingAgentSpec struct {
 	// 0 means unlimited. Default: 0.
 	// +optional
 	MaxRetries *int32 `json:"maxRetries,omitempty"`
+}
+
+// MetricsAgentSpec configures the metricsd sidecar in the sharingd DaemonSet.
+type MetricsAgentSpec struct {
+	// image overrides the default metricsd container image set via Helm env vars
+	// (METRICSD_IMAGE_*).
+	// +optional
+	Image *ImageSpec `json:"image,omitempty"`
+
+	// enabled controls whether the metricsd sidecar is added to the DaemonSet.
+	// When false, no metrics container is deployed. Default: true.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // GpuSharingConfigStatus defines the observed state of GpuSharingConfig.
