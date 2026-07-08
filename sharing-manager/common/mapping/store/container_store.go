@@ -28,7 +28,7 @@ type ContainerInfo struct {
 	RequestedGPUFraction float64
 }
 
-// Writer is the write side of the container→pod mapping storage, used by the
+// Writer is the write side of the container->pod mapping storage, used by the
 // component that ingests runtime events (the NRI mapper). Implementations must
 // be safe for concurrent use.
 type Writer interface {

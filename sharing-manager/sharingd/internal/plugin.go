@@ -7,9 +7,9 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
 )
 
 const (

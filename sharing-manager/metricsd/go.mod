@@ -7,7 +7,6 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/run-ai/gpu-sharing-operator v0.0.0
-	sigs.k8s.io/yaml v1.6.0
 )
 
 require (

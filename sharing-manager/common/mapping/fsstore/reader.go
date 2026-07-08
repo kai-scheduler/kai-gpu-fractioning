@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 // Reader is the read side of the filesystem handoff: it loads the
 // <containerID>.json files the Writer persists and answers the metrics
-// component's container→pod queries. It satisfies store.Reader.
+// component's container->pod queries. It satisfies store.Reader.
 //
 // Each query method scans the mapping directory on demand. Because a container
 // removal also terminates its GPU processes, the directory is always consistent
