@@ -229,6 +229,8 @@ func (r *GpuSharingConfigReconciler) reconcileDelete(ctx context.Context, config
 // informer would be pure overhead. Per-node failures are joined rather than
 // aborting the sweep, so one bad node does not prevent cleaning the rest.
 func (r *GpuSharingConfigReconciler) cleanupNodeConditions(ctx context.Context, nodeSelector map[string]string) error {
+	log := logf.FromContext(ctx)
+
 	var errs []error
 
 	listOpts := []client.ListOption{
@@ -248,6 +250,10 @@ func (r *GpuSharingConfigReconciler) cleanupNodeConditions(ctx context.Context, 
 				continue
 			}
 			if err := daemonmgr.RemoveNodeCondition(ctx, r.Client, node.Name); err != nil {
+				// Name the failing node explicitly: a persistent failure here
+				// keeps the finalizer in place and wedges CR deletion, so it
+				// must be diagnosable from the logs.
+				log.Error(err, "failed to remove node condition", "node", node.Name)
 				errs = append(errs, err)
 			}
 		}
