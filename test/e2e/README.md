@@ -1,8 +1,12 @@
 # gpu-sharing-operator e2e tests
 
-Stage 1: metrics-only e2e tests for `gpu-sharing-plugin` (the metricsd NRI
-plugin), running against a real k3d cluster with
-[fake-gpu-operator](https://github.com/run-ai/fake-gpu-operator) installed.
+Stage 1: metrics-only e2e tests for the metricsd metrics endpoint, running
+against a real k3d cluster with
+[fake-gpu-operator](https://github.com/run-ai/fake-gpu-operator) installed. The
+gpu-sharing stack is installed the way it ships — via the operator Helm chart
+(`operator/charts`) — and the operator creates the `sharingd` DaemonSet, which
+hosts the **metricsd sidecar** under test. (metricsd is no longer a standalone
+DaemonSet; it runs as a container in the sharingd pods.)
 
 ## Quick start
 
@@ -12,8 +16,9 @@ make e2e
 ```
 
 This creates a k3d cluster, installs fake-gpu-operator, builds and loads the
-`:e2e`-tagged `gpu-sharing-plugin` image into the cluster, and runs the test
-suite. Tear the cluster down afterwards with:
+four `:e2e`-tagged images (operator, sharingd, metricsd, mpsd), installs the
+operator Helm chart pointing at those images, and runs the test suite. Tear the
+cluster down afterwards with:
 
 ```sh
 make e2e-cluster-down
@@ -21,15 +26,24 @@ make e2e-cluster-down
 
 ## How it's split
 
-Cluster lifecycle and the Go test suite are deliberately separate concerns:
+Cluster lifecycle, deployment, and the Go test suite are deliberately separate
+concerns — the suite only connects and asserts, it deploys nothing:
 
 | Step | Owner | What |
 |---|---|---|
-| Create k3d cluster (N worker nodes) | `test/e2e/hack/create-cluster.py` | `k3d cluster create` with retry-on-failure |
+| Create k3d cluster (N worker nodes, NRI enabled) | `test/e2e/hack/create-cluster.py` | `k3d cluster create` with retry-on-failure |
 | Install fake-gpu-operator | `test/e2e/hack/create-cluster.py` | `helm upgrade -i` with per-pool GPU count/product/memory |
+| Build + load the 4 images | `make e2e-load-images` | host-arch `:e2e` images imported into k3d |
+| Install the operator + create DaemonSets | `make e2e-deploy` (`helm` + operator) | `helm upgrade -i operator/charts`; the operator reconciles the CR and creates the sharingd (+ metricsd sidecar) and mpsd DaemonSets |
 | Verify GPU nodes | `test/e2e/suite` (`nodes.VerifyGPUNodes`) | precondition check, no mutation |
-| Deploy `gpu-sharing-plugin` DaemonSet | `test/e2e/suite` (`plugin.Deploy`) | the one thing the Go suite deploys — it's what's under test |
-| Run test assertions | `test/e2e/tests` | metrics scrape/assert |
+| Run test assertions | `test/e2e/tests` | scrape the metricsd sidecar `/metrics`, assert |
+
+> **mpsd on k3d:** the operator always creates an `mpsd` DaemonSet too, and its
+> pods set `runtimeClassName: nvidia`, which a plain k3d cluster has no runtime
+> for — so mpsd stays unschedulable and the operator's aggregate `Ready`
+> condition is `False`. That's expected and out of scope for the metrics suite:
+> `e2e-deploy` waits on the **sharingd DaemonSet** rollout, not the CR's
+> aggregate readiness.
 
 a standalone script (`create-cluster.py`) provisions the cluster and
 cluster-level dependencies, while the Go suite only connects, verifies
@@ -80,63 +94,63 @@ cluster.
 
 | Target | What |
 |---|---|
-| `make e2e` | cluster up → build+load plugin image → run tests |
+| `make e2e` | cluster up → build+load images → helm deploy → run tests |
 | `make e2e-cluster-up` | create the k3d cluster + install fake-gpu-operator |
 | `make e2e-cluster-down` | delete the k3d cluster |
 | `make e2e-cluster-deps` | `pip install -r test/e2e/hack/requirements.txt` |
-| `make e2e-build-plugin-image` | `docker build --build-arg GO_TAGS=e2e` |
-| `make e2e-load-plugin-image` | build + `k3d image import` into `E2E_CLUSTER_NAME` |
-| `make test-e2e` | run all Go suites (cluster + image assumed already up/loaded) |
+| `make e2e-build-images` | build all four `:e2e` images (operator, sharingd, metricsd, mpsd) for the host arch |
+| `make e2e-load-images` | build + `k3d image import` all four into `E2E_CLUSTER_NAME` |
+| `make e2e-deploy` | `helm upgrade -i operator/charts` with the loaded images, then wait for the sharingd DaemonSet rollout |
+| `make e2e-undeploy` | `helm uninstall` the operator release |
+| `make test-e2e` | run all Go suites (cluster deployed already) |
 | `make test-e2e-metrics` | run only the metrics suite (`./tests/metrics/...`) |
-| `make run-e2e` | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created |
+| `make run-e2e` | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created/deployed |
 
-`E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_PLUGIN_IMAGE`,
-`E2E_FAKE_GPU_OPERATOR_VERSION` are overridable `make` variables mirroring the
-script's env vars. `PYTHON` overrides the Python interpreter (default
-`python3`).
+`E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_OPERATOR_NAMESPACE`,
+`E2E_IMAGE_PREFIX`, `E2E_IMAGE_TAG`, `E2E_ARCH`, `E2E_FAKE_GPU_OPERATOR_VERSION`
+are overridable `make` variables. `PYTHON` overrides the Python interpreter
+(default `python3`).
 
 ## Go test suite configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `E2E_KUBECONFIG` / `KUBECONFIG` | `~/.kube/config` | cluster to connect to |
-| `E2E_TEST_NAMESPACE` | `runai-proj-1` | namespace for test workload pods |
-| `E2E_PLUGIN_NAMESPACE` | `gpu-sharing` | namespace the plugin DaemonSet is deployed into |
+| `E2E_OPERATOR_NAMESPACE` | `gpu-sharing-operator` | namespace the operator is installed into (and where it creates the sharingd/mpsd DaemonSets) |
 | `E2E_GPU_NODE_SELECTOR` | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes |
 | `E2E_GPU_NODE_COUNT` | `0` (unchecked) | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES` |
-| `E2E_PLUGIN_IMAGE` | *(manifest default)* | override the plugin image, e.g. a locally built `:e2e` tag |
-| `E2E_PLUGIN_IMAGE_PULL_POLICY` | `Never` if `E2E_PLUGIN_IMAGE` is set, else unset | pull policy for the overridden image (k3d-imported images have no registry to pull from) |
-| `E2E_DAEMONSET_READY_TIMEOUT` | `3m` | timeout waiting for the plugin DaemonSet rollout |
-| `E2E_POLL_INTERVAL` | `2s` | poll interval used by all wait helpers |
 
 ## What's covered
 
-- `TestE2E_GPUSharingPluginMetricsEndpointHealthy` — smoke test: the plugin's
-  `/metrics` endpoint is reachable and returns valid Prometheus output.
+- `TestE2E_GPUSharingPluginMetricsEndpointHealthy` — smoke test: the metricsd
+  sidecar's `/metrics` endpoint (port 2112) in the operator-created sharingd
+  pods is reachable and returns valid Prometheus output.
 
 ## CI
 
-`.github/workflows/e2e.yaml` runs `make e2e` on PRs touching
-`sharing-manager/metricsd/**` or `test/e2e/**`: it installs `k3d` (official
-install script) and Helm, then runs the same `make e2e-cluster-up` /
-`make e2e-load-plugin-image` / `make test-e2e` targets used locally, and tears
-the cluster down in an `if: always()` step. On failure it dumps node/pod state
-and plugin/status-updater logs before tearing down.
+`.github/workflows/e2e.yaml` runs the pipeline on PRs touching
+`sharing-manager/**` or `test/e2e/**`: it installs `k3d` (official install
+script) and Helm via the `e2e-setup` composite action, then runs
+`make e2e-load-images` → `make e2e-deploy` (helm-installs the operator, as grove
+deployed its operator in-workflow) → `make test-e2e-metrics`, and tears the
+cluster down in an `if: always()` step. On failure it dumps node/pod state, the
+`GpuSharingConfig` status, and sharingd/operator/status-updater logs before
+tearing down.
 
 ## Package layout
 
-Each Go package is single-purpose, so dependencies only point one way (leaf
-packages like `waiter`/`metrics` have
-no dependency on the rest of the framework, so future additions — e.g. a
-diagnostics collector — can depend on them without an import cycle):
+Each Go package is single-purpose, so dependencies only point one way (the
+`metrics` leaf has no dependency on the rest of the framework, so future
+additions can depend on it without an import cycle). The k8s-touching helpers
+live under `k8s/`; deployment is not a Go package — it's `helm` (see
+`e2e.mk`'s `e2e-deploy`):
 
 - `config/` — env-driven `Config` (no deps)
-- `cluster/` — kubeconfig → `Client` (clientset + rest.Config); depends on `config`
-- `waiter/` — generic poll-until-condition helper (no deps)
-- `nodes/` — GPU node count/label precondition check; depends on `cluster`
-- `plugin/` — deploys the plugin DaemonSet manifest, waits for rollout; depends on `cluster`, `waiter`
-- `pods/` — list helpers for pods running in the cluster; depends on `cluster`
-- `portforward/` — SPDY port-forward to a pod (like `kubectl port-forward`); depends on `cluster`
+- `k8s/cluster/` — kubeconfig → `Client` (controller-runtime client + rest.Config); depends on `config`
+- `k8s/nodes/` — GPU node count/label precondition check; depends on `cluster`
+- `k8s/pods/` — list helpers for pods running in the cluster; depends on `cluster`
+- `k8s/portforward/` — SPDY port-forward to a pod (like `kubectl port-forward`); depends on `cluster`
 - `metrics/` — scrape + parse Prometheus text format (no deps)
-- `suite/` — ties `config`+`cluster`+`nodes`+`plugin` together; used by `tests/main_test.go`
+- `suite/` — ties `config`+`cluster`+`nodes` together; used by `tests/*/main_test.go`
+- `tests/metrics/` — the metrics suite: scrapes the metricsd sidecar `/metrics`
 - `hack/` — `create-cluster.py` + `requirements.txt`, the k3d + fake-gpu-operator provisioning script (Python, not Go — see above for why)

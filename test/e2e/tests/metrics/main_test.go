@@ -13,8 +13,9 @@
 // Each e2e suite lives in its own tests/<suite> package with its own TestMain,
 // so a CI job can target exactly one suite (e.g. the Metrics e2e job runs only
 // ./tests/metrics/...). See test/e2e/README.md for the full workflow. This
-// suite does not create or destroy clusters — it runs an ordered setup
-// (connect → preflight → deploy) against an existing cluster.
+// suite does not create clusters or deploy the stack — the operator Helm chart
+// (make e2e-deploy) does that; the suite runs an ordered setup
+// (connect → preflight) against an already-deployed cluster and asserts.
 package metrics
 
 import (
@@ -38,16 +39,12 @@ func TestMain(m *testing.M) {
 	}
 	s = created
 
-	// Preflight is an explicit, fast-fail precondition step run before the
-	// (slower) deploy, so a misconfigured cluster fails immediately with a
-	// clear message instead of a rollout timeout.
+	// Preflight is an explicit, fast-fail precondition check, so a misconfigured
+	// cluster fails immediately with a clear message instead of an opaque
+	// assertion failure. The stack itself is deployed out-of-band by the
+	// operator Helm chart (make e2e-deploy) before the suite runs.
 	if err := s.Preflight(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e preflight failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := s.Deploy(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "e2e deploy failed: %v\n", err)
 		os.Exit(1)
 	}
 
