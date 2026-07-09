@@ -8,6 +8,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -246,6 +247,47 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 	}
 
 	log.V(1).Info("patched node condition", "condition", NodeConditionType, "status", condStatus, "reason", reason)
+	return nil
+}
+
+// RemoveNodeCondition deletes the gpu-sharing.nvidia.com/Ready condition from
+// a node's status. Node conditions use patchMergeKey "type", so a plain
+// strategic merge patch can only upsert entries; deletion needs the
+// $patch:delete directive, which is why the patch is built as raw maps rather
+// than typed NodeConditions.
+//
+// The call is idempotent: deleting an absent condition is a server-side no-op,
+// and a missing node is treated as success.
+func RemoveNodeCondition(ctx context.Context, writer client.Client, nodeName string) error {
+	patch := map[string]interface{}{
+		"status": map[string]interface{}{
+			"conditions": []map[string]interface{}{
+				{
+					"type":   NodeConditionType,
+					"$patch": "delete",
+				},
+			},
+		},
+	}
+
+	patchBytes, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("marshaling node condition removal patch: %w", err)
+	}
+
+	patchNode := &corev1.Node{}
+	patchNode.Name = nodeName
+
+	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
+		"application/strategic-merge-patch+json", patchBytes,
+	)); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("removing condition from node %s: %w", nodeName, err)
+	}
+
+	logf.FromContext(ctx).V(1).Info("removed node condition", "node", nodeName, "condition", NodeConditionType)
 	return nil
 }
 

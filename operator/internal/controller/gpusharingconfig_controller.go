@@ -18,18 +18,20 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
@@ -39,8 +41,15 @@ import (
 )
 
 const (
-	requeueInterval = 30 * time.Second
-	podListPageSize = 500
+	requeueInterval  = 30 * time.Second
+	podListPageSize  = 500
+	nodeListPageSize = 500
+
+	// NodeConditionCleanupFinalizer blocks GpuSharingConfig deletion until the
+	// gpu-sharing.nvidia.com/Ready conditions the controller patched onto nodes
+	// are removed. Without it, DaemonSets are garbage-collected via owner
+	// references but nodes keep advertising a stale Ready condition.
+	NodeConditionCleanupFinalizer = "gpu-sharing.nvidia.com/cleanup-node-conditions"
 )
 
 // GpuSharingConfigReconciler reconciles a GpuSharingConfig object
@@ -98,11 +107,23 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	var config v1alpha1.GpuSharingConfig
 	if err := r.Get(ctx, req.NamespacedName, &config); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.Info("GpuSharingConfig resource deleted")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to fetch GpuSharingConfig: %w", err)
+	}
+
+	if !config.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, &config)
+	}
+
+	// Register the cleanup finalizer before any DaemonSets are created or node
+	// conditions patched, so deletion can never race past the cleanup logic.
+	if controllerutil.AddFinalizer(&config, NodeConditionCleanupFinalizer) {
+		if err := r.Update(ctx, &config); err != nil {
+			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
+		}
 	}
 
 	log.Info("reconciling GpuSharingConfig", "generation", config.Generation)
@@ -172,6 +193,85 @@ func (r *GpuSharingConfigReconciler) buildOptions(config *v1alpha1.GpuSharingCon
 		NodeSelector:  config.Spec.NodeSelector,
 		DefaultImages: r.DefaultImages,
 	}
+}
+
+// reconcileDelete handles a GpuSharingConfig with a non-zero deletionTimestamp:
+// it removes the gpu-sharing.nvidia.com/Ready condition from the nodes the CR
+// targets, then releases the finalizer so deletion can complete. Any cleanup
+// error is returned with the finalizer still in place, so controller-runtime
+// requeues with backoff until cleanup converges — deletion is never unblocked
+// prematurely, but also never blocked forever by a transient failure.
+func (r *GpuSharingConfigReconciler) reconcileDelete(ctx context.Context, config *v1alpha1.GpuSharingConfig) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	if !controllerutil.ContainsFinalizer(config, NodeConditionCleanupFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	if err := r.cleanupNodeConditions(ctx, config.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cleaning up node conditions: %w", err)
+	}
+
+	controllerutil.RemoveFinalizer(config, NodeConditionCleanupFinalizer)
+	if err := r.Update(ctx, config); err != nil {
+		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+	}
+
+	log.Info("removed node conditions and finalizer, deletion can complete")
+	return ctrl.Result{}, nil
+}
+
+// cleanupNodeConditions removes the gpu-sharing.nvidia.com/Ready condition
+// from all nodes matching the CR's nodeSelector (the selector is reliable here
+// because editing it on a live CR is unsupported). Nodes are listed via the
+// uncached API reader with pagination, for the same reason patchNodeConditions
+// pages pods: cleanup runs once per CR lifetime, so a cluster-scoped Node
+// informer would be pure overhead. Per-node failures are joined rather than
+// aborting the sweep, so one bad node does not prevent cleaning the rest.
+func (r *GpuSharingConfigReconciler) cleanupNodeConditions(ctx context.Context, nodeSelector map[string]string) error {
+	var errs []error
+
+	listOpts := []client.ListOption{
+		client.MatchingLabels(nodeSelector),
+		client.Limit(nodeListPageSize),
+	}
+
+	var nodeList corev1.NodeList
+	for {
+		if err := r.APIReader.List(ctx, &nodeList, listOpts...); err != nil {
+			return fmt.Errorf("listing nodes: %w", err)
+		}
+
+		for i := range nodeList.Items {
+			node := &nodeList.Items[i]
+			if !hasGpuSharingCondition(node) {
+				continue
+			}
+			if err := daemonmgr.RemoveNodeCondition(ctx, r.Client, node.Name); err != nil {
+				errs = append(errs, err)
+			}
+		}
+
+		if nodeList.Continue == "" {
+			break
+		}
+		listOpts = []client.ListOption{
+			client.MatchingLabels(nodeSelector),
+			client.Limit(nodeListPageSize),
+			client.Continue(nodeList.Continue),
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func hasGpuSharingCondition(node *corev1.Node) bool {
+	for _, cond := range node.Status.Conditions {
+		if string(cond.Type) == daemonmgr.NodeConditionType {
+			return true
+		}
+	}
+	return false
 }
 
 // patchNodeConditions lists all managed daemon pods (across all daemons) and
