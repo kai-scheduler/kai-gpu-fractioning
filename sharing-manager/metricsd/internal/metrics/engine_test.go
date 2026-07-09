@@ -384,7 +384,7 @@ func TestWindowedSMUtilAveragesWithinWindow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &metricsController{
+			s := &metricsEngine{
 				smUtilWindowSize: tt.windowSize,
 				smUtilBuf:        map[podGPUKey][]float64{},
 				deviceUUIDs:      map[int]string{},
@@ -400,7 +400,7 @@ func TestWindowedSMUtilAveragesWithinWindow(t *testing.T) {
 }
 
 func TestWindowedSMUtilPrunesDeletedPodSeriesImmediately(t *testing.T) {
-	controller := &metricsController{
+	controller := &metricsEngine{
 		smUtilWindowSize: 3,
 		smUtilBuf:        map[podGPUKey][]float64{},
 		deviceUUIDs:      map[int]string{},

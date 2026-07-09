@@ -94,7 +94,7 @@ type Runtime struct {
 	cancel                  context.CancelFunc
 	server                  *http.Server
 	coll                    collector
-	controller              *metricsController
+	engine                  *metricsEngine
 	wg                      sync.WaitGroup
 	provider                SnapshotProvider
 	log                     *slog.Logger
@@ -126,7 +126,7 @@ func New(ctx context.Context, cfg Config, reader store.Reader, logger *slog.Logg
 	runtime := newRuntime(controller, cfg.Names)
 	runtime.log = logger
 	runtime.coll = gpuCollector
-	runtime.controller = controller
+	runtime.engine = controller
 
 	mux := http.NewServeMux()
 	mux.Handle(cfg.metricsPath(), runtime.handler())
@@ -158,7 +158,7 @@ func (r *Runtime) Start(ctx context.Context) {
 		r.coll.Run(metricsCtx)
 	}()
 	go func() {
-		if err := r.controller.Run(metricsCtx); err != nil {
+		if err := r.engine.Run(metricsCtx); err != nil {
 			r.log.ErrorContext(metricsCtx, "metrics controller stopped", "error", err)
 		}
 	}()

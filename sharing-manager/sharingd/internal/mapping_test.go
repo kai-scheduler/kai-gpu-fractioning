@@ -68,7 +68,7 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 		&api.PodSandbox{
 			Name: "pod", Namespace: "default", Uid: "pod-uid",
 			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4Gi",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "4Gi",
 			},
 		},
 		gpuContainer("container-id", "container", "", 0, 1),
@@ -115,7 +115,7 @@ func TestCreateContainerFailClosedDoesNotRecordMapping(t *testing.T) {
 			Annotations: map[string]string{
 				// Malformed value → mutation fail-closes; the same key drives the
 				// mapping, so the container must not be recorded either.
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "not-a-quantity",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "not-a-quantity",
 			},
 		},
 		gpuContainer("container-id", "container", "", 0),
@@ -135,7 +135,7 @@ func TestRemoveContainerDeletesMapping(t *testing.T) {
 		&api.PodSandbox{
 			Name: "pod", Uid: "pod-uid",
 			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4Gi",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "4Gi",
 			},
 		},
 		gpuContainer("container-id", "container", "", 0),
@@ -162,7 +162,7 @@ func TestSynchronizeReplacesMappings(t *testing.T) {
 		[]*api.PodSandbox{{
 			Id: "pod-id", Name: "pod", Namespace: "default", Uid: "pod-uid",
 			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "gpu" + annotationGPUMemoryLimitSuffix: "4Gi",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "gpu", annotationSuffixLimit): "4Gi",
 			},
 		}},
 		[]*api.Container{

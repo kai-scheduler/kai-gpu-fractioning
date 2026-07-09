@@ -2,33 +2,12 @@ package internal
 
 import (
 	"log/slog"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 
 	"github.com/containerd/nri/pkg/api"
-)
-
-// Fractional GPU annotation format: nvidia.com/gpu-memory.container.<containerName>.{request,limit}.
-// This is the same key the mutation path enforces on (see common/configuration
-// DefaultAnnotationPrefix), so a container is recorded for metrics iff it is also
-// mutated. The container name is embedded in the key, so each container in a pod
-// is addressed independently. The constants below document the structure; the
-// regex is what actually validates keys at runtime.
-const (
-	annotationGPUMemoryPrefix        = "nvidia.com/gpu-memory.container."
-	annotationGPUMemoryLimitSuffix   = ".limit"
-	annotationGPUMemoryRequestSuffix = ".request"
-)
-
-// annotationGPUMemoryRE matches a well-formed GPU memory annotation key. Capture
-// group 1 is the container name (lowercase alphanumeric and hyphens, matching the
-// Kubernetes DNS-label character class); capture group 2 is the annotation type:
-// "request" or "limit".
-var annotationGPUMemoryRE = regexp.MustCompile(
-	`^nvidia\.com/gpu-memory\.container\.([a-z0-9](?:[a-z0-9\-]*[a-z0-9])?)\.(request|limit)$`,
 )
 
 // adapter converts NRI runtime objects (api.PodSandbox, api.Container) into the
@@ -75,7 +54,7 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 			"container", container.GetName(),
 			"pod", pod.GetName(),
 			"namespace", pod.GetNamespace(),
-			"expectedAnnotation", annotationGPUMemoryPrefix+container.GetName()+annotationGPUMemoryLimitSuffix,
+			"expectedAnnotation", containerMemoryAnnotationKey(annotationGPUMemoryPrefix, container.GetName(), annotationSuffixLimit),
 		)
 		return store.ContainerInfo{}, false
 	}
@@ -106,17 +85,11 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 }
 
 // isFractionalGPUContainer reports whether the pod annotations contain a
-// fractional GPU memory annotation for the named container. The annotation key
-// is validated against annotationGPUMemoryRE so only well-formed keys (with a
-// lowercase-alphanumeric container name segment) are recognised.
+// fractional GPU memory annotation for the named container.
 func isFractionalGPUContainer(containerName string, annotations map[string]string) bool {
-	for key := range annotations {
-		m := annotationGPUMemoryRE.FindStringSubmatch(key)
-		if m != nil && m[1] == containerName {
-			return true
-		}
-	}
-	return false
+	_, hasRequest := annotations[containerMemoryAnnotationKey(annotationGPUMemoryPrefix, containerName, annotationSuffixRequest)]
+	_, hasLimit := annotations[containerMemoryAnnotationKey(annotationGPUMemoryPrefix, containerName, annotationSuffixLimit)]
+	return hasRequest || hasLimit
 }
 
 // requestedGPUFraction returns the requested GPU fraction read from the

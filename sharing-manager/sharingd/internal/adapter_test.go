@@ -11,10 +11,10 @@ import (
 func fractionalPod(containerName, memLimitMB, memRequestMB string) *api.PodSandbox {
 	annotations := map[string]string{}
 	if memLimitMB != "" {
-		annotations[annotationGPUMemoryPrefix+containerName+annotationGPUMemoryLimitSuffix] = memLimitMB
+		annotations[containerMemoryAnnotationKey(annotationGPUMemoryPrefix, containerName, annotationSuffixLimit)] = memLimitMB
 	}
 	if memRequestMB != "" {
-		annotations[annotationGPUMemoryPrefix+containerName+annotationGPUMemoryRequestSuffix] = memRequestMB
+		annotations[containerMemoryAnnotationKey(annotationGPUMemoryPrefix, containerName, annotationSuffixRequest)] = memRequestMB
 	}
 	return &api.PodSandbox{
 		Id:          "pod-id",
@@ -171,26 +171,6 @@ func TestContainerFractionalWithDeviceNodePopulatesDevices(t *testing.T) {
 	}
 }
 
-func TestContainerAnnotationWithInvalidContainerNameIgnored(t *testing.T) {
-	// Annotation keys whose embedded container-name segment contains invalid
-	// characters (uppercase, dots, etc.) must be rejected by the regex and not
-	// match any container.
-	pod := &api.PodSandbox{
-		Id:        "pod-id",
-		Name:      "pod",
-		Namespace: "default",
-		Uid:       "pod-uid",
-		Annotations: map[string]string{
-			"nvidia.com/gpu-memory.container.Trainer.limit":    "4Gi", // uppercase → invalid
-			"nvidia.com/gpu-memory.container.trainer.v1.limit": "4Gi", // dot in name → invalid
-		},
-	}
-	_, ok := adapter{}.container(pod, &api.Container{Id: "c", Name: "Trainer", PodSandboxId: "pod-id"})
-	if ok {
-		t.Fatalf("expected container with invalid annotation key to be skipped")
-	}
-}
-
 func TestContainerSiblingWithoutAnnotationDropped(t *testing.T) {
 	// A sidecar on a fractional GPU pod has no annotation for its own name and
 	// must be dropped even though the pod carries a fractional annotation for the
@@ -210,7 +190,7 @@ func TestContainersDropsNonFractionalAndSiblingContainers(t *testing.T) {
 		[]*api.PodSandbox{
 			{Id: "frac-pod-id", Name: "frac-pod", Namespace: "default", Uid: "frac-uid",
 				Annotations: map[string]string{
-					annotationGPUMemoryPrefix + "trainer" + annotationGPUMemoryLimitSuffix: "4096",
+					containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "trainer", annotationSuffixLimit): "4096",
 				}},
 			{Id: "full-pod-id", Name: "full-pod", Namespace: "default", Uid: "full-uid"},
 		},
