@@ -34,6 +34,7 @@ import (
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
+	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/mpsd"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/sharingd"
 )
 
@@ -48,6 +49,12 @@ type GpuSharingConfigReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 
+	// APIReader is the manager's uncached reader (direct API server reads).
+	// Pods and Nodes are read through it — never through the cached Client —
+	// so the operator never maintains cluster-scale Pod/Node informers. See
+	// patchNodeConditions for the rationale.
+	APIReader client.Reader
+
 	// Namespace is the namespace where DaemonSets and their pods are created.
 	// Since GpuSharingConfig is cluster-scoped, the DaemonSets use the
 	// operator's own namespace (injected via POD_NAMESPACE).
@@ -61,6 +68,7 @@ type GpuSharingConfigReconciler struct {
 // NewGpuSharingConfigReconciler creates a reconciler with safe defaults.
 func NewGpuSharingConfigReconciler(
 	c client.Client,
+	apiReader client.Reader,
 	scheme *runtime.Scheme,
 	recorder record.EventRecorder,
 	namespace string,
@@ -68,6 +76,7 @@ func NewGpuSharingConfigReconciler(
 ) *GpuSharingConfigReconciler {
 	return &GpuSharingConfigReconciler{
 		Client:        c,
+		APIReader:     apiReader,
 		Scheme:        scheme,
 		Recorder:      recorder,
 		Namespace:     namespace,
@@ -79,7 +88,8 @@ func NewGpuSharingConfigReconciler(
 // so each reconcile sees the latest configuration.
 func buildDaemons(spec *v1alpha1.GpuSharingConfigSpec) []daemonmgr.ManagedDaemon {
 	return []daemonmgr.ManagedDaemon{
-		sharingd.NewSharingdDaemon(spec.SharingAgent),
+		sharingd.NewSharingdDaemon(spec.SharingAgent, spec.MetricsAgent),
+		mpsd.NewMpsdDaemon(spec.MpsDaemon),
 	}
 }
 
@@ -168,11 +178,21 @@ func (r *GpuSharingConfigReconciler) buildOptions(config *v1alpha1.GpuSharingCon
 // patches the gpu-sharing.nvidia.com/Ready condition on each node.
 // A node is marked Ready only when every daemon pod on it is ready.
 //
-// To avoid holding the full cluster in memory, nodes are patched inline as
-// pods are streamed in pages. Only nodes with at least one unhealthy pod are
-// tracked (the "unhealthy" set); in steady state this set is empty.
-// If a node was already patched True and a later pod reveals it unhealthy,
-// the condition is overwritten to False — correctness over patch count.
+// Pods are listed via the uncached API reader (r.APIReader), NOT the cached
+// client, and are intentionally never cached. Rationale: this function only
+// runs in the rare unhealthy/recovery path (see Reconcile's
+// `needsRequeue || wasUnhealthy` guard), and reconciles are driven by DaemonSet
+// status via Owns(DaemonSet) — not by pod events. Maintaining a cluster-scale
+// Pod informer (O(nodes*daemons) objects resident, plus watch traffic) purely
+// to serve a ~0.1%-of-the-time read is wasteful at large node counts, so we
+// read on demand instead. Because the API reader supports server-side
+// pagination, we page the list to bound peak memory during an incident.
+//
+// To avoid holding the full result in memory, nodes are patched inline as pods
+// are streamed in pages. Only nodes with at least one unhealthy pod are tracked
+// (the "unhealthy" set); in steady state this set is empty. If a node was
+// already patched True and a later pod reveals it unhealthy, the condition is
+// overwritten to False — correctness over patch count.
 func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, namespace string) (bool, error) {
 	log := logf.FromContext(ctx)
 
@@ -193,7 +213,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 
 	var podList corev1.PodList
 	for {
-		if err := r.List(ctx, &podList, listOpts...); err != nil {
+		if err := r.APIReader.List(ctx, &podList, listOpts...); err != nil {
 			return false, fmt.Errorf("listing pods for node condition patching: %w", err)
 		}
 
@@ -216,7 +236,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			}
 
 			reason, msg := nodeConditionArgs(ready, pod)
-			if err := daemonmgr.PatchNodeCondition(ctx, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
+			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
 				log.Error(err, "failed to patch node condition", "node", pod.Spec.NodeName)
 			}
 		}

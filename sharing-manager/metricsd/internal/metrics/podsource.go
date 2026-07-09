@@ -3,7 +3,7 @@ package metrics
 import (
 	"log/slog"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 // podSource resolves GPU processes to the Kubernetes pod that owns them and

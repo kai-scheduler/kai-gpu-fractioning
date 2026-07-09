@@ -2,6 +2,9 @@
 # -----------------------------------------------------------
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 REGISTRY ?= gcr.io/run-ai-prod
+# Target platform for image builds. GPU clusters are amd64; override for others.
+# buildkit emulates (qemu) when the host arch differs.
+PLATFORM ?= linux/amd64
 
 # -----------------------------------------------------------
 # Build
@@ -24,9 +27,9 @@ build-sharingd:
 # Test
 # -----------------------------------------------------------
 
-.PHONY: test test-operator test-sharing-manager
+.PHONY: test test-operator test-sharing-manager test-metricsd
 
-test: test-operator test-sharing-manager
+test: test-operator test-sharing-manager test-metricsd
 
 test-operator:
 	$(MAKE) -C operator test
@@ -34,66 +37,18 @@ test-operator:
 test-sharing-manager:
 	go test ./sharing-manager/... -race -count=1
 
+# metricsd is a separate Go module (own go.mod), so `go test ./sharing-manager/...`
+# above does not descend into it. Delegate to its own Makefile, which handles the
+# cgo/NVML build the metrics collector needs.
+test-metricsd:
+	$(MAKE) -C sharing-manager/metricsd test
+
 # -----------------------------------------------------------
-# E2E (metrics-only, stage 1). Requires k3d, kubectl, helm, docker, python3
-# (see test/e2e/hack/requirements.txt).
-#
-#   make e2e                         # cluster up + load plugin image + run tests
-#   make e2e-cluster-down             # tear down the k3d cluster
-#
-# All knobs are E2E_* env vars — see test/e2e/README.md and
-# test/e2e/hack/create-cluster.py for the full list (node count, fake-gpu-operator
-# version, GPUs per node, etc).
+# E2E — see test/e2e/e2e.mk (targets: e2e, e2e-cluster-up/down,
+# e2e-deploy/undeploy, test-e2e, test-e2e-metrics).
 # -----------------------------------------------------------
 
-E2E_CLUSTER_NAME              ?= gpu-sharing-e2e
-E2E_WORKER_NODES              ?= 2
-E2E_PLUGIN_IMAGE              ?= gpu-sharing-plugin:e2e
-# Workload image used by the attribution test pods (workload.DefaultImage).
-# Pre-imported into the cluster so the pods never do a live, anonymous
-# Docker Hub pull at test time — those get 429-rate-limited and the pods
-# sit in ImagePullBackOff past the test's Running timeout.
-E2E_WORKLOAD_IMAGE            ?= busybox:1.37
-# Platform to load the workload image for — must match the cluster nodes' arch.
-# Defaults to the Docker daemon's arch (the k3d nodes run on the same daemon).
-E2E_WORKLOAD_IMAGE_PLATFORM   ?= linux/$(shell docker version --format '{{.Server.Arch}}')
-E2E_FAKE_GPU_OPERATOR_VERSION ?=
-PYTHON                        ?= python3
-
-export E2E_CLUSTER_NAME
-export E2E_WORKER_NODES
-export E2E_FAKE_GPU_OPERATOR_VERSION
-
-.PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps e2e-build-plugin-image e2e-load-plugin-image e2e-load-workload-image test-e2e
-
-e2e: e2e-cluster-up e2e-load-plugin-image e2e-load-workload-image test-e2e
-
-e2e-cluster-deps:
-	$(PYTHON) -m pip install -q -r test/e2e/hack/requirements.txt
-
-e2e-cluster-up: e2e-cluster-deps
-	$(PYTHON) test/e2e/hack/create-cluster.py
-
-e2e-cluster-down: e2e-cluster-deps
-	$(PYTHON) test/e2e/hack/create-cluster.py --delete
-
-e2e-build-plugin-image:
-	docker build --build-arg GO_TAGS=e2e -t $(E2E_PLUGIN_IMAGE) -f sharing-manager/metricsd/Dockerfile sharing-manager/metricsd
-
-e2e-load-plugin-image: e2e-build-plugin-image
-	k3d image import $(E2E_PLUGIN_IMAGE) --cluster $(E2E_CLUSTER_NAME)
-
-# Docker Desktop's containerd image store exports multi-arch manifest lists that
-# `k3d image import <name>` can't unpack ("content digest ... not found"), so
-# save a single-platform tarball matching the nodes' arch and import that.
-e2e-load-workload-image:
-	docker pull --platform $(E2E_WORKLOAD_IMAGE_PLATFORM) $(E2E_WORKLOAD_IMAGE)
-	docker save --platform $(E2E_WORKLOAD_IMAGE_PLATFORM) $(E2E_WORKLOAD_IMAGE) -o $(TMPDIR)e2e-workload-image.tar
-	k3d image import $(TMPDIR)e2e-workload-image.tar --cluster $(E2E_CLUSTER_NAME)
-	rm -f $(TMPDIR)e2e-workload-image.tar
-
-test-e2e:
-	cd test/e2e && E2E_PLUGIN_IMAGE=$(E2E_PLUGIN_IMAGE) E2E_EXPECTED_GPU_NODES=$(E2E_WORKER_NODES) go test -tags e2e ./tests/... -v -timeout 20m
+include test/e2e/e2e.mk
 
 # -----------------------------------------------------------
 # Code quality
@@ -155,27 +110,36 @@ deploy:
 # Docker
 # -----------------------------------------------------------
 
-.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-sharingd
-.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-sharingd
+.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-sharingd docker-build-metricsd
+.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-sharingd docker-push-metricsd
 
-docker-build: docker-build-operator docker-build-mpsd docker-build-sharingd
+docker-build: docker-build-operator docker-build-mpsd docker-build-sharingd docker-build-metricsd
 
 docker-build-operator:
-	$(MAKE) -C operator docker-build IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION)
+	$(MAKE) -C operator docker-build IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION) PLATFORM=$(PLATFORM)
 
 docker-build-mpsd:
-	docker build -f sharing-manager/mpsd/build/Dockerfile -t $(REGISTRY)/mpsd:$(VERSION) .
+	docker build --platform $(PLATFORM) -f sharing-manager/mpsd/build/Dockerfile -t $(REGISTRY)/mpsd:$(VERSION) .
 
 docker-build-sharingd:
-	docker build -f sharing-manager/sharingd/build/Dockerfile -t $(REGISTRY)/sharingd:$(VERSION) .
+	docker build --platform $(PLATFORM) -f sharing-manager/sharingd/build/Dockerfile -t $(REGISTRY)/sharingd:$(VERSION) .
 
-docker-push: docker-push-operator docker-push-mpsd docker-push-sharingd
+# metricsd links NVML (cgo) and is built from the repo root so its replace of the
+# shared sharingd module resolves. The build stage runs as the target platform so
+# cgo uses a native toolchain. GO_TAGS=e2e builds the fake-GPU test image.
+docker-build-metricsd:
+	docker build --platform $(PLATFORM) -f sharing-manager/metricsd/Dockerfile -t $(REGISTRY)/metricsd:$(VERSION) .
+
+docker-push: docker-push-operator docker-push-mpsd docker-push-sharingd docker-push-metricsd
 
 docker-push-operator:
 	$(MAKE) -C operator docker-push IMG=$(REGISTRY)/gpu-sharing-operator:$(VERSION)
 
 docker-push-mpsd:
 	docker push $(REGISTRY)/mpsd:$(VERSION)
+
+docker-push-metricsd:
+	docker push $(REGISTRY)/metricsd:$(VERSION)
 
 docker-push-sharingd:
 	docker push $(REGISTRY)/sharingd:$(VERSION)

@@ -1,0 +1,87 @@
+# Skaffold builds all four component images and deploys them through the operator
+# Helm chart (operator/charts) in one flow — the "4 images, use Skaffold + Helm"
+# direction from PR review.
+#
+#   skaffold run -p e2e          # build + load into the local (k3d) cluster + helm install
+#   skaffold dev -p e2e          # same, with rebuild/redeploy on file changes
+#   skaffold delete -p e2e       # uninstall
+#
+# The default profile builds prod-style images (no e2e build tag). The `e2e`
+# profile adds metricsd's GO_TAGS=e2e (fake-GPU detection — never ship to prod)
+# and forces pullPolicy=Never so nodes use the locally loaded images.
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: gpu-sharing-operator
+
+build:
+  # push:false keeps images local; Skaffold auto-loads them into a k3d/kind
+  # cluster when the current kube-context is one. All Dockerfiles build from the
+  # repo root so their cross-module COPYs resolve.
+  #
+  # useBuildkit: BuildKit populates the $TARGETPLATFORM/$BUILDPLATFORM build args
+  # that every Dockerfile's `FROM --platform=...` relies on. The legacy docker
+  # builder (the GitHub runner's default) leaves them empty, which breaks
+  # metricsd's `FROM --platform=$TARGETPLATFORM` with an "invalid platform" error.
+  local:
+    push: false
+    useBuildkit: true
+  artifacts:
+    # operator/sharingd/mpsd are CGO_ENABLED=0 and build FROM $BUILDPLATFORM,
+    # cross-compiling via the buildkit-provided TARGETARCH — no build args needed.
+    - image: gpu-sharing-operator
+      context: .
+      docker:
+        dockerfile: operator/Dockerfile
+    - image: sharingd
+      context: .
+      docker:
+        dockerfile: sharing-manager/sharingd/build/Dockerfile
+    - image: mpsd
+      context: .
+      docker:
+        dockerfile: sharing-manager/mpsd/build/Dockerfile
+    # metricsd links NVML (CGO=1) and builds FROM $TARGETPLATFORM. Its Dockerfile
+    # hardcodes `ARG TARGETARCH=amd64`, which overrides buildkit's platform value,
+    # so the e2e profile passes TARGETARCH explicitly to build for the host arch.
+    - image: metricsd
+      context: .
+      docker:
+        dockerfile: sharing-manager/metricsd/Dockerfile
+
+deploy:
+  helm:
+    releases:
+      - name: gso
+        chartPath: operator/charts
+        namespace: gpu-sharing-operator
+        createNamespace: true
+        # Map each built image into the chart's images.<name>.{repository,tag}
+        # structure. Tag only (no digest): images are loaded into k3d by tag.
+        setValueTemplates:
+          images.operator.repository: "{{.IMAGE_REPO_gpu_sharing_operator}}"
+          images.operator.tag: "{{.IMAGE_TAG_gpu_sharing_operator}}"
+          images.sharingd.repository: "{{.IMAGE_REPO_sharingd}}"
+          images.sharingd.tag: "{{.IMAGE_TAG_sharingd}}"
+          images.mpsd.repository: "{{.IMAGE_REPO_mpsd}}"
+          images.mpsd.tag: "{{.IMAGE_TAG_mpsd}}"
+          images.metricsd.repository: "{{.IMAGE_REPO_metricsd}}"
+          images.metricsd.tag: "{{.IMAGE_TAG_metricsd}}"
+
+profiles:
+  - name: e2e
+    patches:
+      # metricsd: build the fake-GPU-aware binary for the host arch (E2E_ARCH env).
+      - op: add
+        path: /build/artifacts/3/docker/buildArgs
+        value:
+          GO_TAGS: e2e
+          TARGETARCH: "{{.E2E_ARCH}}"
+      # Locally loaded images have no registry to pull from.
+      - op: add
+        path: /deploy/helm/releases/0/setValues
+        value:
+          images.operator.pullPolicy: Never
+          images.sharingd.pullPolicy: Never
+          images.mpsd.pullPolicy: Never
+          images.metricsd.pullPolicy: Never

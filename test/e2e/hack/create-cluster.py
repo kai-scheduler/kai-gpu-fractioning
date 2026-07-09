@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """create-cluster.py - k3d cluster + fake-gpu-operator for gpu-sharing-operator e2e tests.
 
-Uses the env-driven pydantic-settings config / typer CLI / retry-on-create-failure
-pattern from grove's create-e2e-cluster.py, scoped down to what this project
-needs: a k3d cluster with a single fake-GPU node pool and fake-gpu-operator
-installed. No other cluster-level components are deployed here.
+Uses an env-driven pydantic-settings config, a typer CLI, and
+retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
+single fake-GPU node pool and fake-gpu-operator installed. No other
+cluster-level components are deployed here.
 
 Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
@@ -12,23 +12,30 @@ stdout is enough for CI logs).
 
 Environment variables (all optional, E2E_ prefix, see ClusterConfig):
     E2E_CLUSTER_NAME               (default: gpu-sharing-e2e)
-    E2E_WORKER_NODES               (default: 2)
+    E2E_GPU_WORKER_NODES               (default: 2)   # GPU worker nodes
+    E2E_NON_GPU_WORKER_NODES       (default: 1)   # plain (no-GPU) worker nodes
     E2E_K3S_IMAGE                  (default: rancher/k3s:v1.31.5-k3s1)
     E2E_GPU_NODE_POOL              (default: default)
     E2E_GPUS_PER_NODE              (default: 2)
     E2E_GPU_PRODUCT                (default: NVIDIA A100-SXM4-40GB)
     E2E_GPU_MEMORY_MIB             (default: 40960)
     E2E_MAX_RETRIES                (default: 3)
+    E2E_KUBECONFIG                 (default: ~/.kube/<cluster_name>.yaml)
+
+The cluster's kubeconfig is written to E2E_KUBECONFIG (not ~/.kube/config) via
+docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
+own `k3d kubeconfig` retrieval. Every downstream e2e step reads that file.
 
 Usage:
     ./create-cluster.py
-    E2E_WORKER_NODES=4 ./create-cluster.py
+    E2E_GPU_WORKER_NODES=4 ./create-cluster.py
     ./create-cluster.py --skip-gpu-mock
     ./create-cluster.py --delete
 
 Requires: k3d, kubectl.
 """
 
+import os
 import shutil
 import tempfile
 import time
@@ -78,7 +85,11 @@ class ClusterConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="E2E_", extra="ignore")
 
     cluster_name: str = "gpu-sharing-e2e"
-    worker_nodes: int = Field(default=2, ge=1, le=50)
+    # GPU worker nodes (carry the fake-gpu-operator node-pool label; get
+    # nvidia.com/gpu.present=true). Non-GPU workers below are plain agents with
+    # no GPU label, so the cluster mirrors a real mixed GPU/CPU topology.
+    gpu_worker_nodes: int = Field(default=2, ge=1, le=50)
+    non_gpu_worker_nodes: int = Field(default=1, ge=0, le=50)
     k3s_image: str = "rancher/k3s:v1.31.5-k3s1"
     gpu_node_pool: str = "default"
     gpus_per_node: int = Field(default=2, ge=1, le=16)
@@ -87,6 +98,10 @@ class ClusterConfig(BaseSettings):
     fake_gpu_operator_version: str = ""
     cluster_timeout: str = "120s"
     max_retries: int = Field(default=3, ge=1, le=10)
+    # Where to write the cluster's kubeconfig (E2E_KUBECONFIG). Empty -> a
+    # default derived from cluster_name (see main). This file — not ~/.kube/config
+    # — is what every downstream e2e step uses.
+    kubeconfig: str = ""
 
 
 def log(msg: str) -> None:
@@ -110,6 +125,17 @@ def create_cluster(config: ClusterConfig) -> bool:
         log(f"  {key:26s}: {value}")
 
     nri_template_path = write_containerd_nri_template()
+
+    # k3d indexes agents 0..(total-1). GPU agents come first and carry the
+    # nvidia.com/gpu.present=true label; the remaining agents stay unlabeled
+    # (non-GPU workers). This label is what everything downstream selects on: the
+    # nvml-mock DaemonSet's nodeSelector (which must match before it can schedule
+    # and patch the node), the operator's default-CR nodeSelector, and the
+    # sharingd/mpsd DaemonSets.
+    total_agents = config.gpu_worker_nodes + config.non_gpu_worker_nodes
+    gpu_node_filter = ";".join(f"agent:{i}" for i in range(config.gpu_worker_nodes))
+    gpu_node_label = f"nvidia.com/gpu.present=true@{gpu_node_filter}"
+
     try:
         for attempt in range(1, config.max_retries + 1):
             log(f"Cluster creation attempt {attempt}/{config.max_retries}...")
@@ -120,12 +146,18 @@ def create_cluster(config: ClusterConfig) -> bool:
                 sh.k3d(
                     "cluster", "create", config.cluster_name,
                     "--servers", "1",
-                    "--agents", str(config.worker_nodes),
+                    "--agents", str(total_agents),
                     "--image", config.k3s_image,
-                    "--k3s-node-label", "nvidia.com/gpu.present=true@agent:*",
+                    "--k3s-node-label", gpu_node_label,
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
                     "--timeout", config.cluster_timeout,
                     "--wait",
+                    # Don't touch the user's default kubeconfig. The NRI config.toml.tmpl
+                    # volume above breaks `k3d kubeconfig get/merge` (the tools node fails
+                    # to copy over the mounted file), so we extract the kubeconfig
+                    # ourselves via docker in write_kubeconfig() instead.
+                    "--kubeconfig-update-default=false",
+                    "--kubeconfig-switch-context=false",
                 )
                 log(f"Cluster created successfully on attempt {attempt}.")
                 return True
@@ -139,6 +171,46 @@ def create_cluster(config: ClusterConfig) -> bool:
         return False
     finally:
         Path(nri_template_path).unlink(missing_ok=True)
+
+
+def write_kubeconfig(config: ClusterConfig) -> str:
+    """Extract the cluster's kubeconfig via docker and write it to config.kubeconfig.
+
+    We can't use `k3d kubeconfig get`: the NRI config.toml.tmpl volume mount makes
+    k3d's tools node fail to copy the kubeconfig out. Instead we read k3s's own
+    kubeconfig from the server container and rewrite:
+      - the API server URL to the host-published serverlb port, and
+      - the "default" context/cluster/user names to `k3d-<cluster>`, so Skaffold
+        recognises it as a k3d cluster and auto-loads built images into it.
+
+    The path is also set as KUBECONFIG for the rest of this process (so the
+    fake-gpu-operator install runs against it).
+    """
+    server = f"k3d-{config.cluster_name}-server-0"
+    serverlb = f"k3d-{config.cluster_name}-serverlb"
+    ctx = f"k3d-{config.cluster_name}"
+
+    port = str(sh.docker("port", serverlb, "6443/tcp")).strip().splitlines()[0].rsplit(":", 1)[-1]
+    raw = str(sh.docker("exec", server, "cat", "/etc/rancher/k3s/k3s.yaml"))
+
+    out = []
+    for line in raw.splitlines():
+        line = line.replace("https://127.0.0.1:6443", f"https://127.0.0.1:{port}")
+        line = line.replace("https://0.0.0.0:6443", f"https://127.0.0.1:{port}")
+        stripped = line.strip()
+        # k3s.yaml names the context/cluster/user all "default"; rename to k3d-<cluster>.
+        if stripped in ("name: default", "cluster: default", "user: default", "- name: default"):
+            line = line.replace("default", ctx)
+        elif stripped == "current-context: default":
+            line = f"current-context: {ctx}"
+        out.append(line)
+
+    path = Path(config.kubeconfig).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + "\n")
+    os.environ["KUBECONFIG"] = str(path)
+    log(f"Wrote kubeconfig to {path} (context {ctx})")
+    return str(path)
 
 
 def wait_for_nodes(config: ClusterConfig) -> None:
@@ -166,8 +238,8 @@ def install_nvml_mock(config: ClusterConfig) -> None:
         "get", "daemonset/nvml-mock", "-n", "gpu-operator",
         "-o", "jsonpath={.status.desiredNumberScheduled}",
     )).strip() or "0")
-    if desired < config.worker_nodes:
-        log(f"nvml-mock scheduled onto {desired} node(s), expected {config.worker_nodes} "
+    if desired < config.gpu_worker_nodes:
+        log(f"nvml-mock scheduled onto {desired} node(s), expected {config.gpu_worker_nodes} "
             f"— check the DaemonSet nodeSelector matches the GPU nodes' labels.")
         raise typer.Exit(1)
 
@@ -188,11 +260,11 @@ def wait_for_gpu_node_labels(config: ClusterConfig, max_retries: int = 30, inter
             "--no-headers", _ok_code=[0, 1],
         )).strip()
         count = len(out.splitlines()) if out else 0
-        if count >= config.worker_nodes:
+        if count >= config.gpu_worker_nodes:
             log(f"{count} node(s) labeled.")
             return
         if attempt == max_retries:
-            log(f"timed out waiting for GPU node labels (found {count}/{config.worker_nodes})")
+            log(f"timed out waiting for GPU node labels (found {count}/{config.gpu_worker_nodes})")
             raise typer.Exit(1)
         time.sleep(interval_seconds)
 
@@ -206,30 +278,39 @@ def main(
 ) -> None:
     """Create (or delete) a k3d cluster with nvml-mock for gpu-sharing-operator e2e tests."""
     config = ClusterConfig()
+    if not config.kubeconfig:
+        config.kubeconfig = str(Path.home() / ".kube" / f"{config.cluster_name}.yaml")
 
     require_command("k3d")
     require_command("kubectl")
+    require_command("docker")
 
     if delete:
         delete_cluster(config)
+        Path(config.kubeconfig).expanduser().unlink(missing_ok=True)
         return
 
     if not create_cluster(config):
         raise typer.Exit(1)
+
+    # Extract the kubeconfig (and point this process at it) before any kubectl/helm.
+    write_kubeconfig(config)
 
     wait_for_nodes(config)
 
     if skip_gpu_mock:
         log("Skipping nvml-mock installation (--skip-gpu-mock).")
         log(f"Cluster '{config.cluster_name}' is ready.")
+        log(f"  export KUBECONFIG={config.kubeconfig}")
         return
 
     install_nvml_mock(config)
 
     log(f"Cluster '{config.cluster_name}' is ready for e2e tests.")
-    log("Next steps:")
-    log(f"  make e2e-load-plugin-image E2E_CLUSTER_NAME={config.cluster_name}")
-    log(f"  make test-e2e E2E_EXPECTED_GPU_NODES={config.worker_nodes}")
+    log("Next steps (make targets set KUBECONFIG for you):")
+    log(f"  make e2e-deploy         # build + load images + install operator")
+    log(f"  make test-e2e-metrics   # run the metrics suite")
+    log(f"Or point your shell at it directly: export KUBECONFIG={config.kubeconfig}")
 
 
 if __name__ == "__main__":
