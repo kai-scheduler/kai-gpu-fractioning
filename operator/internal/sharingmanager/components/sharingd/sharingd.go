@@ -1,6 +1,7 @@
 package sharingd
 
 import (
+	"net"
 	"path/filepath"
 	"strconv"
 
@@ -93,8 +94,8 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 			result.Spec.Template.Annotations = map[string]string{}
 		}
 		result.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
-		result.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(metricsPort)
-		result.Spec.Template.Annotations["prometheus.io/path"] = "/metrics"
+		result.Spec.Template.Annotations["prometheus.io/port"] = d.metricsAnnotationPort()
+		result.Spec.Template.Annotations["prometheus.io/path"] = d.metricsAnnotationPath()
 	}
 
 	return result
@@ -107,6 +108,25 @@ func (d *daemon) metricsEnabled() bool {
 		return *d.metrics.Enabled
 	}
 	return true
+}
+
+// metricsAnnotationPort returns the port string for the prometheus.io/port
+// annotation, derived from the configured address or falling back to the default.
+func (d *daemon) metricsAnnotationPort() string {
+	if d.metrics != nil && d.metrics.Address != "" {
+		if _, port, err := net.SplitHostPort(d.metrics.Address); err == nil && port != "" {
+			return port
+		}
+	}
+	return strconv.Itoa(metricsPort)
+}
+
+// metricsAnnotationPath returns the path for the prometheus.io/path annotation.
+func (d *daemon) metricsAnnotationPath() string {
+	if d.metrics != nil && d.metrics.Path != "" {
+		return d.metrics.Path
+	}
+	return "/metrics"
 }
 
 // buildSharingdContainer returns the main sharingd container and its required
@@ -146,15 +166,15 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 }
 
 // buildMetricsdContainer returns the metricsd sidecar. It reads the shared map
-// directory (read-only) and exports GPU metrics on metricsPort. All of metricsd's
-// defaults (map dir, :2112, /proc) already match this deployment, so it needs no
-// arguments; PID→pod attribution works via the pod's host PID namespace.
+// directory (read-only) and exports GPU metrics on metricsPort. PID→pod
+// attribution works via the pod's host PID namespace.
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
 	return corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
+		Args:            d.buildMetricsdArgs(),
 		Ports: []corev1.ContainerPort{
 			{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP},
 		},
@@ -162,6 +182,23 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},
 		},
 	}
+}
+
+func (d *daemon) buildMetricsdArgs() []string {
+	if d.metrics == nil {
+		return nil
+	}
+	var args []string
+	if d.metrics.LogLevel != "" {
+		args = append(args, "--log-level", d.metrics.LogLevel)
+	}
+	if d.metrics.Address != "" {
+		args = append(args, "--metrics-address", d.metrics.Address)
+	}
+	if d.metrics.Path != "" {
+		args = append(args, "--metrics-path", d.metrics.Path)
+	}
+	return args
 }
 
 func (d *daemon) buildArgs() []string {

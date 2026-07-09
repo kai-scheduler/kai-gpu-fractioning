@@ -121,6 +121,19 @@ type MetricsAgentSpec struct {
 	// When false, no metrics container is deployed. Default: true.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+
+	// logLevel controls the logging verbosity of the metrics agent.
+	// One of debug, info, warn, error. Default: info.
+	// +optional
+	LogLevel string `json:"logLevel,omitempty"`
+
+	// address is the Prometheus exporter listen address. Default: :2112.
+	// +optional
+	Address string `json:"address,omitempty"`
+
+	// path is the HTTP path on which metrics are served. Default: /metrics.
+	// +optional
+	Path string `json:"path,omitempty"`
 }
 
 // MpsDaemonSpec configures the mpsd DaemonSet managed by the controller.
