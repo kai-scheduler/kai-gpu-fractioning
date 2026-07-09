@@ -40,6 +40,13 @@ runs:
     - name: Install Helm
       uses: azure/setup-helm@v4
 
+    - name: Install Skaffold
+      shell: bash
+      run: |
+        curl -fsSL -o skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+        install skaffold /usr/local/bin/ && rm skaffold
+        skaffold version
+
     - name: Create e2e cluster (k3d + fake-gpu-operator)
       shell: bash
       env:

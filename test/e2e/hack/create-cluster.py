@@ -21,6 +21,11 @@ Environment variables (all optional, E2E_ prefix, see ClusterConfig):
     E2E_GPU_MEMORY_MIB             (default: 40960)
     E2E_FAKE_GPU_OPERATOR_VERSION  (required unless --skip-fake-gpu-operator)
     E2E_MAX_RETRIES                (default: 3)
+    E2E_KUBECONFIG                 (default: ~/.kube/<cluster_name>.yaml)
+
+The cluster's kubeconfig is written to E2E_KUBECONFIG (not ~/.kube/config) via
+docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
+own `k3d kubeconfig` retrieval. Every downstream e2e step reads that file.
 
 Usage:
     ./create-cluster.py
@@ -28,9 +33,10 @@ Usage:
     ./create-cluster.py --skip-fake-gpu-operator
     ./create-cluster.py --delete
 
-Requires: k3d, kubectl, helm (unless --skip-fake-gpu-operator).
+Requires: k3d, kubectl, docker, helm (unless --skip-fake-gpu-operator).
 """
 
+import os
 import shutil
 import tempfile
 import time
@@ -85,6 +91,10 @@ class ClusterConfig(BaseSettings):
     fake_gpu_operator_version: str = ""
     cluster_timeout: str = "120s"
     max_retries: int = Field(default=3, ge=1, le=10)
+    # Where to write the cluster's kubeconfig (E2E_KUBECONFIG). Empty -> a
+    # default derived from cluster_name (see main). This file — not ~/.kube/config
+    # — is what every downstream e2e step uses.
+    kubeconfig: str = ""
 
 
 def log(msg: str) -> None:
@@ -131,6 +141,12 @@ def create_cluster(config: ClusterConfig) -> bool:
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
                     "--timeout", config.cluster_timeout,
                     "--wait",
+                    # Don't touch the user's default kubeconfig. The NRI config.toml.tmpl
+                    # volume above breaks `k3d kubeconfig get/merge` (the tools node fails
+                    # to copy over the mounted file), so we extract the kubeconfig
+                    # ourselves via docker in write_kubeconfig() instead.
+                    "--kubeconfig-update-default=false",
+                    "--kubeconfig-switch-context=false",
                 )
                 log(f"Cluster created successfully on attempt {attempt}.")
                 return True
@@ -144,6 +160,46 @@ def create_cluster(config: ClusterConfig) -> bool:
         return False
     finally:
         Path(nri_template_path).unlink(missing_ok=True)
+
+
+def write_kubeconfig(config: ClusterConfig) -> str:
+    """Extract the cluster's kubeconfig via docker and write it to config.kubeconfig.
+
+    We can't use `k3d kubeconfig get`: the NRI config.toml.tmpl volume mount makes
+    k3d's tools node fail to copy the kubeconfig out. Instead we read k3s's own
+    kubeconfig from the server container and rewrite:
+      - the API server URL to the host-published serverlb port, and
+      - the "default" context/cluster/user names to `k3d-<cluster>`, so Skaffold
+        recognises it as a k3d cluster and auto-loads built images into it.
+
+    The path is also set as KUBECONFIG for the rest of this process (so the
+    fake-gpu-operator install runs against it).
+    """
+    server = f"k3d-{config.cluster_name}-server-0"
+    serverlb = f"k3d-{config.cluster_name}-serverlb"
+    ctx = f"k3d-{config.cluster_name}"
+
+    port = str(sh.docker("port", serverlb, "6443/tcp")).strip().splitlines()[0].rsplit(":", 1)[-1]
+    raw = str(sh.docker("exec", server, "cat", "/etc/rancher/k3s/k3s.yaml"))
+
+    out = []
+    for line in raw.splitlines():
+        line = line.replace("https://127.0.0.1:6443", f"https://127.0.0.1:{port}")
+        line = line.replace("https://0.0.0.0:6443", f"https://127.0.0.1:{port}")
+        stripped = line.strip()
+        # k3s.yaml names the context/cluster/user all "default"; rename to k3d-<cluster>.
+        if stripped in ("name: default", "cluster: default", "user: default", "- name: default"):
+            line = line.replace("default", ctx)
+        elif stripped == "current-context: default":
+            line = f"current-context: {ctx}"
+        out.append(line)
+
+    path = Path(config.kubeconfig).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + "\n")
+    os.environ["KUBECONFIG"] = str(path)
+    log(f"Wrote kubeconfig to {path} (context {ctx})")
+    return str(path)
 
 
 def wait_for_nodes(config: ClusterConfig) -> None:
@@ -251,12 +307,16 @@ def main(
 ) -> None:
     """Create (or delete) a k3d cluster with fake-gpu-operator for gpu-sharing-operator e2e tests."""
     config = ClusterConfig()
+    if not config.kubeconfig:
+        config.kubeconfig = str(Path.home() / ".kube" / f"{config.cluster_name}.yaml")
 
     require_command("k3d")
     require_command("kubectl")
+    require_command("docker")
 
     if delete:
         delete_cluster(config)
+        Path(config.kubeconfig).expanduser().unlink(missing_ok=True)
         return
 
     if not skip_fake_gpu_operator:
@@ -269,19 +329,24 @@ def main(
     if not create_cluster(config):
         raise typer.Exit(1)
 
+    # Extract the kubeconfig (and point this process at it) before any kubectl/helm.
+    write_kubeconfig(config)
+
     wait_for_nodes(config)
 
     if skip_fake_gpu_operator:
         log("Skipping fake-gpu-operator installation (--skip-fake-gpu-operator).")
         log(f"Cluster '{config.cluster_name}' is ready.")
+        log(f"  export KUBECONFIG={config.kubeconfig}")
         return
 
     install_fake_gpu_operator(config)
 
     log(f"Cluster '{config.cluster_name}' is ready for e2e tests.")
-    log("Next steps:")
-    log(f"  make e2e-load-plugin-image E2E_CLUSTER_NAME={config.cluster_name}")
-    log(f"  make test-e2e E2E_EXPECTED_GPU_NODES={config.gpu_worker_nodes}")
+    log("Next steps (make targets set KUBECONFIG for you):")
+    log(f"  make e2e-deploy         # build + load images + install operator")
+    log(f"  make test-e2e-metrics   # run the metrics suite")
+    log(f"Or point your shell at it directly: export KUBECONFIG={config.kubeconfig}")
 
 
 if __name__ == "__main__":

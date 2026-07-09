@@ -45,7 +45,7 @@ test-metricsd:
 
 # -----------------------------------------------------------
 # E2E — see test/e2e/e2e.mk (targets: e2e, e2e-cluster-up/down,
-# e2e-load-plugin-image, test-e2e, test-e2e-metrics).
+# e2e-deploy/undeploy, test-e2e, test-e2e-metrics).
 # -----------------------------------------------------------
 
 include test/e2e/e2e.mk

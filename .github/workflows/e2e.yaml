@@ -39,14 +39,12 @@ jobs:
           cluster-name: ${{ env.E2E_CLUSTER_NAME }}
           fake-gpu-operator-version: ${{ env.E2E_FAKE_GPU_OPERATOR_VERSION }}
 
-      - name: Build and load images (operator, sharingd, metricsd, mpsd)
-        run: make e2e-load-images
-
-      # Install the operator via its Helm chart; the operator then creates the
-      # sharingd DaemonSet (with the metricsd sidecar under test). Waits on the
-      # sharingd DaemonSet rollout, not the operator's aggregate Ready (mpsd
-      # can't schedule on k3d — no "nvidia" RuntimeClass — and is out of scope).
-      - name: Deploy gpu-sharing-operator (helm)
+      # Skaffold builds the four images, loads them into k3d, and helm-installs
+      # the operator chart; the operator then creates the sharingd DaemonSet
+      # (with the metricsd sidecar under test). Waits on the sharingd DaemonSet
+      # rollout, not the operator's aggregate Ready (mpsd can't schedule on k3d —
+      # no "nvidia" RuntimeClass — and is out of scope).
+      - name: Build, load and deploy the stack (skaffold + helm)
         run: make e2e-deploy
 
       - name: Run metrics e2e tests
