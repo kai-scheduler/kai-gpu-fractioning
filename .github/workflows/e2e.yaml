@@ -53,6 +53,7 @@ jobs:
       - name: Collect diagnostics on failure
         if: failure()
         run: |
+          export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
           kubectl get nodes -o wide || true
           kubectl get pods -A -o wide || true
           kubectl -n gpu-sharing-operator get gpusharingconfig -o yaml || true

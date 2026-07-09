@@ -140,6 +140,8 @@ cluster.
 | `make e2e-cluster-deps` | `pip install -r test/e2e/hack/requirements.txt` |
 | `make e2e-deploy` | `skaffold run -p e2e` (build 4 images + load + helm install), then wait for the sharingd DaemonSet rollout |
 | `make e2e-undeploy` | `skaffold delete -p e2e` (helm uninstall) |
+| `make e2e-kubeconfig-merge` | opt-in: add the cluster to `~/.kube/config` as context `k3d-<cluster>` (current-context preserved, prior file backed up), so `kubectl config use-context k3d-<cluster>` works without setting `KUBECONFIG` |
+| `make e2e-kubeconfig-unmerge` | remove that context from `~/.kube/config` (run automatically by `e2e-cluster-down`) |
 | `make test-e2e` | run all Go suites (cluster deployed already) |
 | `make test-e2e-metrics` | run only the metrics suite (`./tests/metrics/...`) |
 | `make run-e2e` | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created/deployed |

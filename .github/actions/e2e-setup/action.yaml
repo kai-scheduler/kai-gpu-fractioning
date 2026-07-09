@@ -62,6 +62,8 @@ runs:
         E2E_CLUSTER_NAME: ${{ inputs.cluster-name }}
         E2E_GPU_WORKER_NODES: ${{ inputs.gpu-worker-nodes }}
       run: |
+        # create-cluster.py writes the kubeconfig here, not ~/.kube/config.
+        export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
         echo "## Nodes"
         kubectl get nodes -o wide
         echo "## gpu-operator pods"
