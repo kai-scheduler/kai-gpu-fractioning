@@ -23,6 +23,16 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# metricsAgent exposes advanced pass-through knobs for the metricsd sidecar in
+# the operator-managed default GpuSharingConfig. Empty by default (prod
+# unaffected); a non-standard deployment (e.g. the e2e fake-GPU cluster) can
+# supply extra env/mounts/volumes via a values override to point the collector
+# at an alternate driver library.
+metricsAgent:
+  extraEnv: []
+  extraVolumeMounts: []
+  extraVolumes: []
+
 serviceAccount:
   create: true
   name: ""

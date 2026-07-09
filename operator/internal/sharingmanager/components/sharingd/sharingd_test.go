@@ -131,6 +131,43 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	}
 }
 
+func TestDaemon_BuildDaemonSet_MetricsExtraPassThrough(t *testing.T) {
+	// The advanced pass-through wires extra env/mounts onto the metricsd
+	// container and extra volumes onto the pod (used by the e2e overlay to mount
+	// the nvml-mock driver). Empty by default; here we assert they propagate.
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{
+		ExtraEnv: []corev1.EnvVar{
+			{Name: "LD_LIBRARY_PATH", Value: "/opt/driver/lib64"},
+		},
+		ExtraVolumeMounts: []corev1.VolumeMount{
+			{Name: "driver", MountPath: "/opt/driver"},
+		},
+		ExtraVolumes: []corev1.Volume{
+			{Name: "driver", VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: "/opt/driver"},
+			}},
+		},
+	})
+
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+
+	if !hasEnv(metricsd.Env, "LD_LIBRARY_PATH", "/opt/driver/lib64") {
+		t.Errorf("expected metricsd to carry the extra env, got %v", metricsd.Env)
+	}
+	if !hasMount(metricsd.VolumeMounts, "driver", "/opt/driver", false) {
+		t.Errorf("expected metricsd to mount the extra volume, got %v", metricsd.VolumeMounts)
+	}
+	// The pass-through volume must be added to the pod alongside the built-ins.
+	if !hasVolume(spec.Volumes, "driver") {
+		t.Errorf("expected the pod to declare the extra volume, got %v", spec.Volumes)
+	}
+	// The shared map-dir volume/mount must still be present (pass-through appends).
+	if !hasMount(metricsd.VolumeMounts, "map-dir", "/var/run/gpu-sharing/map", true) {
+		t.Errorf("expected map-dir mount to remain, got %v", metricsd.VolumeMounts)
+	}
+}
+
 func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
 		AnnotationPrefix: "custom.prefix.",
@@ -196,6 +233,24 @@ func containerByName(t *testing.T, containers []corev1.Container, name string) c
 func hasMount(mounts []corev1.VolumeMount, name, path string, readOnly bool) bool {
 	for _, m := range mounts {
 		if m.Name == name && m.MountPath == path && m.ReadOnly == readOnly {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEnv(env []corev1.EnvVar, name, value string) bool {
+	for _, e := range env {
+		if e.Name == name && e.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+func hasVolume(volumes []corev1.Volume, name string) bool {
+	for _, v := range volumes {
+		if v.Name == name {
 			return true
 		}
 	}

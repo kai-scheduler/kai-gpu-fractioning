@@ -85,3 +85,10 @@ profiles:
           images.sharingd.pullPolicy: Never
           images.mpsd.pullPolicy: Never
           images.metricsd.pullPolicy: Never
+      # e2e-only overlay: wire the metricsd sidecar to the nvml-mock driver so
+      # NVML resolves against the mock lib on the fake-GPU cluster. Path is
+      # relative to this skaffold.yaml (repo root).
+      - op: add
+        path: /deploy/helm/releases/0/valuesFiles
+        value:
+          - test/e2e/hack/values-e2e.yaml

@@ -10,3 +10,20 @@ metadata:
 spec:
   nodeSelector:
     nvidia.com/gpu.present: "true"
+  {{- with .Values.metricsAgent }}
+  {{- if or .extraEnv .extraVolumeMounts .extraVolumes }}
+  metricsAgent:
+    {{- with .extraEnv }}
+    extraEnv:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .extraVolumeMounts }}
+    extraVolumeMounts:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .extraVolumes }}
+    extraVolumes:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  {{- end }}

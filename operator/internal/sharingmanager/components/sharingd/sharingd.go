@@ -88,6 +88,12 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 		}
 		podSpec.Containers = append(podSpec.Containers, d.buildMetricsdContainer(metricsImage))
 
+		// Advanced pass-through volumes for the metricsd container's extra mounts
+		// (empty by default).
+		if d.metrics != nil {
+			podSpec.Volumes = append(podSpec.Volumes, d.metrics.ExtraVolumes...)
+		}
+
 		// Prometheus pod-scrape discovery for the metrics port.
 		if result.Spec.Template.Annotations == nil {
 			result.Spec.Template.Annotations = map[string]string{}
@@ -150,7 +156,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 // defaults (map dir, :2112, /proc) already match this deployment, so it needs no
 // arguments; PID→pod attribution works via the pod's host PID namespace.
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
-	return corev1.Container{
+	container := corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
@@ -162,6 +168,16 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},
 		},
 	}
+
+	// Advanced pass-through: append caller-supplied env and mounts (empty by
+	// default). Used by non-standard deployments to point the collector at an
+	// alternate driver library; the matching volumes are added in BuildDaemonSet.
+	if d.metrics != nil {
+		container.Env = append(container.Env, d.metrics.ExtraEnv...)
+		container.VolumeMounts = append(container.VolumeMounts, d.metrics.ExtraVolumeMounts...)
+	}
+
+	return container
 }
 
 func (d *daemon) buildArgs() []string {

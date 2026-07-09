@@ -1,6 +1,6 @@
 //go:build e2e
 
-package tests
+package metrics
 
 import (
 	"context"

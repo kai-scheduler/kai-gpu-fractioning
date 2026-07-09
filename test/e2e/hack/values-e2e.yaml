@@ -1,0 +1,30 @@
+# e2e-only Helm values overlay for the operator chart, applied by Skaffold's
+# `e2e` profile (see skaffold.yaml). It wires the metricsd sidecar to NVIDIA's
+# nvml-mock driver so NVML calls resolve against the mock libnvidia-ml.so the
+# nvml-mock DaemonSet writes to the host — making per-pod GPU metrics
+# deterministic on a fake-GPU cluster.
+#
+# This is deliberately NOT in the main chart defaults (operator/charts/values.yaml
+# keeps metricsAgent.* empty): the operator and CRD stay fake-GPU-agnostic, and
+# the concrete mock wiring lives only in the e2e overlay.
+#
+# Wiring mirrors the old sharing-manager/metricsd/deploy/daemonset.yaml:
+#   - hostPath volume  /var/lib/nvml-mock/driver  (populated by nvml-mock's setup.sh)
+#   - mount it into the metricsd container at the same path
+#   - LD_LIBRARY_PATH points the loader at the mock's usr/lib64
+metricsAgent:
+  extraEnv:
+    - name: LD_LIBRARY_PATH
+      value: /var/lib/nvml-mock/driver/usr/lib64
+    # Verbose logging on the e2e cluster so attribution/collection steps are
+    # observable when a metrics test fails.
+    - name: LOG_LEVEL
+      value: debug
+  extraVolumeMounts:
+    - name: nvml-mock-driver
+      mountPath: /var/lib/nvml-mock/driver
+  extraVolumes:
+    - name: nvml-mock-driver
+      hostPath:
+        path: /var/lib/nvml-mock/driver
+        type: DirectoryOrCreate

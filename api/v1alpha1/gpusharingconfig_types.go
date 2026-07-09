@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -121,6 +122,27 @@ type MetricsAgentSpec struct {
 	// When false, no metrics container is deployed. Default: true.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+
+	// extraEnv is an advanced pass-through: additional environment variables
+	// appended to the metricsd container. Empty by default. Intended for
+	// non-standard deployments (e.g. pointing the metrics collector at an
+	// alternate driver library); leave unset for normal use.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+
+	// extraVolumeMounts is an advanced pass-through: additional volume mounts
+	// appended to the metricsd container. Empty by default. Must reference a
+	// volume declared in extraVolumes. Intended for non-standard deployments;
+	// leave unset for normal use.
+	// +optional
+	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+
+	// extraVolumes is an advanced pass-through: additional volumes appended to
+	// the sharingd DaemonSet pod so the metricsd container can mount them via
+	// extraVolumeMounts. Empty by default. Intended for non-standard
+	// deployments; leave unset for normal use.
+	// +optional
+	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty"`
 }
 
 // MpsDaemonSpec configures the mpsd DaemonSet managed by the controller.

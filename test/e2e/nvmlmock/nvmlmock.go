@@ -26,8 +26,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/pods"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/waiter"
 )
 
@@ -43,10 +43,10 @@ const (
 	// privileged, so an exec into it sees the whole node's process table.
 	Container = "nvml-mock"
 
-	// PluginNamespace / PluginDaemonSet identify the gpu-sharing-plugin under
-	// test, restarted after a config change so its loaded NVML .so re-reads it.
-	PluginNamespace = "gpu-sharing"
-	PluginDaemonSet = "gpu-sharing-plugin"
+	// SharingdDaemonSet is the operator-managed DaemonSet that hosts the metricsd
+	// sidecar under test. It's restarted after a config change so the sidecar's
+	// loaded NVML .so re-reads it. Its namespace is c.Config.OperatorNamespace.
+	SharingdDaemonSet = "gpu-sharing-sharingd"
 )
 
 // Device UUIDs baked into the nvml-mock config. Callers pin a Proc to one of
@@ -82,8 +82,12 @@ func HostPID(ctx context.Context, c *cluster.Client, nodeName, marker string) (u
 
 	// -l: list matching files, -a: treat NUL-separated cmdline as text,
 	// -F: fixed string (the marker), -f /dev/stdin: read the pattern from stdin.
+	// `|| true`: a short-lived process can exit mid-scan, leaving grep unable to
+	// read its /proc/<pid>/cmdline; grep then exits 2 (error) even though it
+	// printed the real match. Swallow that so the exec succeeds — the match-count
+	// check below is the real validation.
 	out, err := pods.ExecStdin(ctx, c, Namespace, mockPod, Container,
-		[]string{"sh", "-c", "grep -laF -f /dev/stdin /proc/[0-9]*/cmdline 2>/dev/null"}, marker)
+		[]string{"sh", "-c", "grep -laF -f /dev/stdin /proc/[0-9]*/cmdline 2>/dev/null || true"}, marker)
 	if err != nil {
 		return 0, fmt.Errorf("scan /proc for marker %q in %s/%s: %w", marker, Namespace, mockPod, err)
 	}
@@ -127,13 +131,13 @@ func SetProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []Pr
 		return fmt.Errorf("update configmap %s/%s: %w", Namespace, ConfigMapName, err)
 	}
 
-	// nvml-mock first (rewrites the on-disk config the plugin's .so reads),
-	// then the plugin (reloads the .so). Order matters.
+	// nvml-mock first (rewrites the on-disk config the sidecar's .so reads),
+	// then sharingd (reloads the .so). Order matters.
 	if err := restartNVMLMock(ctx, c); err != nil {
 		return fmt.Errorf("restart %s/%s: %w", Namespace, DaemonSet, err)
 	}
-	if err := rolloutRestart(ctx, c, PluginNamespace, PluginDaemonSet); err != nil {
-		return fmt.Errorf("restart %s/%s: %w", PluginNamespace, PluginDaemonSet, err)
+	if err := rolloutRestart(ctx, c, c.Config.OperatorNamespace, SharingdDaemonSet); err != nil {
+		return fmt.Errorf("restart %s/%s: %w", c.Config.OperatorNamespace, SharingdDaemonSet, err)
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 //go:build e2e
 
-package tests
+package metrics
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/pods"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/waiter"
 )
 
@@ -121,7 +121,7 @@ func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricNa
 // time out," since a crashed pod still gets recreated and can pass a
 // later scrape once it's back up.
 func pluginPodRestartCounts(ctx context.Context, c *cluster.Client) (map[string]int32, error) {
-	pluginPods, err := pods.ListByLabel(ctx, c, c.Config.PluginNamespace, plugin.LabelSelector)
+	pluginPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
 	if err != nil {
 		return nil, fmt.Errorf("list gpu-sharing-plugin pods: %w", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // Config is read entirely from the environment.
@@ -29,15 +30,29 @@ type Config struct {
 	// Set it to the number of GPU nodes the target cluster is expected to have,
 	// to catch a misconfigured/partially-up cluster before any test runs.
 	GPUNodeCount int
+
+	// PodReadyTimeout bounds how long workload.Apply waits for a test pod to
+	// reach Running.
+	PodReadyTimeout time.Duration
+
+	// PollInterval is the poll cadence shared by the workload/nvmlmock waiters.
+	PollInterval time.Duration
+
+	// DaemonSetReadyTimeout bounds how long nvmlmock waits for a DaemonSet
+	// rollout (nvml-mock or sharingd) to complete after a config change.
+	DaemonSetReadyTimeout time.Duration
 }
 
 // Load builds a Config from environment variables.
 func Load() Config {
 	return Config{
-		Kubeconfig:        envOr("E2E_KUBECONFIG", defaultKubeconfig()),
-		OperatorNamespace: envOr("E2E_OPERATOR_NAMESPACE", "gpu-sharing-operator"),
-		GPUNodeSelector:   envOr("E2E_GPU_NODE_SELECTOR", "nvidia.com/gpu.present=true"),
-		GPUNodeCount:      envIntOr("E2E_GPU_NODE_COUNT", 0),
+		Kubeconfig:            envOr("E2E_KUBECONFIG", defaultKubeconfig()),
+		OperatorNamespace:     envOr("E2E_OPERATOR_NAMESPACE", "gpu-sharing-operator"),
+		GPUNodeSelector:       envOr("E2E_GPU_NODE_SELECTOR", "nvidia.com/gpu.present=true"),
+		GPUNodeCount:          envIntOr("E2E_GPU_NODE_COUNT", 0),
+		PodReadyTimeout:       envDurationOr("E2E_POD_READY_TIMEOUT", 2*time.Minute),
+		PollInterval:          envDurationOr("E2E_POLL_INTERVAL", 2*time.Second),
+		DaemonSetReadyTimeout: envDurationOr("E2E_DAEMONSET_READY_TIMEOUT", 3*time.Minute),
 	}
 }
 
@@ -72,4 +87,16 @@ func envIntOr(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func envDurationOr(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }

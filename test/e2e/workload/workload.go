@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/cluster"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/waiter"
 )
 
@@ -24,7 +24,7 @@ import (
 const DefaultImage = "busybox:1.37"
 
 // FractionalPod describes a single-container pod carrying the
-// nvidia.com/container.<name>.gpu-memory.{limit,request} annotation that
+// nvidia.com/gpu-memory.container.<name>.{limit,request} annotation that
 // makes the gpu-sharing-plugin NRI plugin track it — see
 // sharing-manager/metricsd/internal/plugin/adapter.go. Values/format mirror
 // sharing-manager/metricsd/test/workloads/test-fractional-gpu-pods.yaml.
@@ -34,7 +34,7 @@ type FractionalPod struct {
 	ContainerName string
 
 	// GPUMemoryLimitMiB/RequestMiB are written verbatim into the derived
-	// nvidia.com/container.<name>.gpu-memory.{limit,request} annotation
+	// nvidia.com/gpu-memory.container.<name>.{limit,request} annotation
 	// values (e.g. "2048"). Ignored when Annotations is non-nil.
 	GPUMemoryLimitMiB   string
 	GPUMemoryRequestMiB string
@@ -85,9 +85,15 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 
 	annotations := spec.Annotations
 	if annotations == nil {
+		// Key format must match sharingd's default annotation prefix
+		// (configuration.DefaultAnnotationPrefix = "nvidia.com/gpu-memory.container."):
+		//   nvidia.com/gpu-memory.container.<container>.{limit,request}
+		// The value is parsed by sharingd as a k8s resource.Quantity, so it needs
+		// a unit — the fields are MiB, so append the "Mi" suffix (a bare "2048"
+		// would be read as 2048 bytes → 0 MB and rejected).
 		annotations = map[string]string{
-			fmt.Sprintf("nvidia.com/container.%s.gpu-memory.limit", spec.ContainerName):   spec.GPUMemoryLimitMiB,
-			fmt.Sprintf("nvidia.com/container.%s.gpu-memory.request", spec.ContainerName): spec.GPUMemoryRequestMiB,
+			fmt.Sprintf("nvidia.com/gpu-memory.container.%s.limit", spec.ContainerName):   spec.GPUMemoryLimitMiB + "Mi",
+			fmt.Sprintf("nvidia.com/gpu-memory.container.%s.request", spec.ContainerName): spec.GPUMemoryRequestMiB + "Mi",
 		}
 	}
 
