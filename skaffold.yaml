@@ -18,8 +18,14 @@ build:
   # push:false keeps images local; Skaffold auto-loads them into a k3d/kind
   # cluster when the current kube-context is one. All Dockerfiles build from the
   # repo root so their cross-module COPYs resolve.
+  #
+  # useBuildkit: BuildKit populates the $TARGETPLATFORM/$BUILDPLATFORM build args
+  # that every Dockerfile's `FROM --platform=...` relies on. The legacy docker
+  # builder (the GitHub runner's default) leaves them empty, which breaks
+  # metricsd's `FROM --platform=$TARGETPLATFORM` with an "invalid platform" error.
   local:
     push: false
+    useBuildkit: true
   artifacts:
     # operator/sharingd/mpsd are CGO_ENABLED=0 and build FROM $BUILDPLATFORM,
     # cross-compiling via the buildkit-provided TARGETARCH — no build args needed.
