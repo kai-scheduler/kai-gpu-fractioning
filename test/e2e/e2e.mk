@@ -36,6 +36,11 @@ E2E_OPERATOR_NAMESPACE        ?= gpu-sharing-operator
 # the whole flow off your default context (e.g. a remote cluster) entirely.
 E2E_KUBECONFIG                ?= $(HOME)/.kube/$(E2E_CLUSTER_NAME).yaml
 
+# Your default kubeconfig — only touched by the opt-in e2e-kubeconfig-merge/
+# -unmerge targets (never by the core flow).
+KUBECONFIG_DEFAULT            ?= $(HOME)/.kube/config
+E2E_KUBE_CONTEXT              := k3d-$(E2E_CLUSTER_NAME)
+
 # Host arch, passed to Skaffold for metricsd's TARGETARCH build-arg (its
 # Dockerfile hardcodes ARG TARGETARCH=amd64, which otherwise wins over the build
 # platform). amd64 CI runners get amd64; Apple Silicon gets arm64.
@@ -52,7 +57,8 @@ export E2E_ARCH
 export E2E_KUBECONFIG
 
 .PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps \
-	e2e-deploy e2e-undeploy test-e2e test-e2e-metrics run-e2e
+	e2e-deploy e2e-undeploy e2e-kubeconfig-merge e2e-kubeconfig-unmerge \
+	test-e2e test-e2e-metrics run-e2e
 
 e2e: e2e-cluster-up e2e-deploy test-e2e
 
@@ -66,8 +72,31 @@ e2e-cluster-deps:
 e2e-cluster-up: e2e-cluster-deps
 	$(PYTHON) test/e2e/hack/create-cluster.py
 
-e2e-cluster-down: e2e-cluster-deps
+e2e-cluster-down: e2e-cluster-deps e2e-kubeconfig-unmerge
 	$(PYTHON) test/e2e/hack/create-cluster.py --delete
+
+# Opt-in convenience: add the e2e cluster to your DEFAULT kubeconfig
+# ($(KUBECONFIG_DEFAULT)) as the named context "$(E2E_KUBE_CONTEXT)", so you can
+# `kubectl config use-context $(E2E_KUBE_CONTEXT)` without setting KUBECONFIG.
+# Your current-context is preserved and the previous file is backed up to
+# <config>.bak. The core flow never calls this — it uses the standalone
+# E2E_KUBECONFIG file. e2e-cluster-down runs -unmerge to clean up.
+e2e-kubeconfig-merge:
+	@test -f "$(E2E_KUBECONFIG)" || { echo "no $(E2E_KUBECONFIG) — run 'make e2e-cluster-up' first"; exit 1; }
+	@mkdir -p "$(dir $(KUBECONFIG_DEFAULT))"
+	@cur=$$(KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config current-context 2>/dev/null); \
+	[ -f "$(KUBECONFIG_DEFAULT)" ] && cp -f "$(KUBECONFIG_DEFAULT)" "$(KUBECONFIG_DEFAULT).bak"; \
+	KUBECONFIG="$(KUBECONFIG_DEFAULT):$(E2E_KUBECONFIG)" kubectl config view --flatten > "$(KUBECONFIG_DEFAULT).tmp"; \
+	mv "$(KUBECONFIG_DEFAULT).tmp" "$(KUBECONFIG_DEFAULT)"; \
+	if [ -n "$$cur" ]; then KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config use-context "$$cur" >/dev/null; \
+	else KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config unset current-context >/dev/null; fi; \
+	echo "Merged context '$(E2E_KUBE_CONTEXT)' into $(KUBECONFIG_DEFAULT) (backup: $(KUBECONFIG_DEFAULT).bak; current-context unchanged)"
+
+# Remove the e2e cluster's entries from your default kubeconfig (no-op if absent).
+e2e-kubeconfig-unmerge:
+	@KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config delete-context "$(E2E_KUBE_CONTEXT)" >/dev/null 2>&1 || true
+	@KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config delete-cluster "$(E2E_KUBE_CONTEXT)" >/dev/null 2>&1 || true
+	@KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config unset "users.$(E2E_KUBE_CONTEXT)" >/dev/null 2>&1 || true
 
 # e2e-deploy builds all four images, loads them into the (k3d) cluster, and helm
 # installs the operator chart — all via `skaffold run -p e2e` (skaffold.yaml).
