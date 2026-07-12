@@ -150,18 +150,18 @@ func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
 	if httpGet.Path != "/readyz" {
 		t.Errorf("probe path = %q, expected %q", httpGet.Path, "/readyz")
 	}
-	if httpGet.Port.IntValue() != healthPort {
-		t.Errorf("probe port = %d, expected %d", httpGet.Port.IntValue(), healthPort)
+	if httpGet.Port.IntValue() != readinessPort {
+		t.Errorf("probe port = %d, expected %d", httpGet.Port.IntValue(), readinessPort)
 	}
 
 	var found bool
 	for _, p := range ctr.Ports {
-		if p.ContainerPort == healthPort {
+		if p.ContainerPort == readinessPort {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected container port %d to be declared, got %v", healthPort, ctr.Ports)
+		t.Errorf("expected container port %d to be declared, got %v", readinessPort, ctr.Ports)
 	}
 }
 

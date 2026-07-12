@@ -1,4 +1,4 @@
-package health
+package readiness
 
 import (
 	"net/http"

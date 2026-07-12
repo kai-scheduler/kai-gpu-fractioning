@@ -13,10 +13,10 @@ import (
 const (
 	defaultNRISocketPath = "/var/run/nri/nri.sock"
 
-	// defaultHealthPort serves /readyz for the kubelet readiness probe. The
+	// defaultReadinessPort serves /readyz for the kubelet readiness probe. The
 	// operator's DaemonSet probe must match (see
 	// operator/internal/sharingmanager/components/sharingd).
-	defaultHealthPort = 8093
+	defaultReadinessPort = 8093
 )
 
 type cliFlags struct {
@@ -44,8 +44,8 @@ type cliFlags struct {
 	stableThreshold time.Duration
 	// maxRetries is the max NRI connection retries (0 = unlimited).
 	maxRetries int
-	// healthPort is the port for the /readyz readiness endpoint (0 = disabled).
-	healthPort int
+	// readinessPort is the port for the /readyz readiness endpoint (0 = disabled).
+	readinessPort int
 }
 
 func parseFlags() cliFlags {
@@ -62,7 +62,7 @@ func parseFlags() cliFlags {
 	flag.DurationVar(&f.retryInterval, "retry-interval", 5*time.Second, "initial wait between NRI connection retries")
 	flag.DurationVar(&f.stableThreshold, "stable-threshold", 5*time.Minute, "connection duration considered stable (resets retry budget)")
 	flag.IntVar(&f.maxRetries, "max-retries", 0, "max NRI connection retries (0 = unlimited)")
-	flag.IntVar(&f.healthPort, "health-port", env.Int("HEALTH_PORT", defaultHealthPort), "port for the /readyz readiness endpoint (0 disables)")
+	flag.IntVar(&f.readinessPort, "readiness-port", env.Int("READINESS_PORT", defaultReadinessPort), "port for the /readyz readiness endpoint (0 disables)")
 	flag.Parse()
 	return f
 }

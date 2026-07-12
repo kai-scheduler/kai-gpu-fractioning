@@ -30,10 +30,10 @@ const (
 	volumeMPSPipe   = "mps-pipe"
 	volumeMapDir    = "map-dir"
 
-	// healthPort and readyzPath must match the sharingd binary's defaults
-	// (sharing-manager/sharingd): it serves /readyz on --health-port.
-	healthPort = 8093
-	readyzPath = "/readyz"
+	// readinessPort and readyzPath must match the sharingd binary's defaults
+	// (sharing-manager/sharingd): it serves /readyz on --readiness-port.
+	readinessPort = 8093
+	readyzPath    = "/readyz"
 )
 
 // daemon implements daemonmgr.ManagedDaemon for the sharingd NRI plugin plus its
@@ -156,14 +156,15 @@ func (d *daemon) metricsAnnotationPath() string {
 func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
 	// sharingd retries its NRI connection indefinitely by default, so the
 	// process stays Running even when it never registers with containerd. The
-	// binary serves /readyz on healthPort, flipping to ready only once the NRI
-	// plugin is registered and synchronized — probing it keeps the pod (and the
-	// node's gpu-sharing Ready condition) not-ready until sharingd actually works.
+	// binary serves /readyz on readinessPort, flipping to ready only once the
+	// NRI plugin is registered and synchronized — probing it keeps the pod (and
+	// the node's gpu-sharing Ready condition) not-ready until sharingd actually
+	// works.
 	readinessProbe := &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: readyzPath,
-				Port: intstr.FromInt32(healthPort),
+				Port: intstr.FromInt32(readinessPort),
 			},
 		},
 		InitialDelaySeconds: 5,
@@ -179,8 +180,8 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		ReadinessProbe:  readinessProbe,
 		Ports: []corev1.ContainerPort{
 			{
-				Name:          "health",
-				ContainerPort: healthPort,
+				Name:          "readiness",
+				ContainerPort: readinessPort,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},

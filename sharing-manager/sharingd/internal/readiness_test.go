@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/health"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
 )
 
 func TestReadinessFollowsNRILifecycle(t *testing.T) {
-	state := &health.State{}
+	state := &readiness.State{}
 	p := NewPlugin(Config{
 		MapDir:    t.TempDir(),
 		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),

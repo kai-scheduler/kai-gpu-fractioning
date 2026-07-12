@@ -13,7 +13,7 @@ import (
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/health"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	// Readiness flips to ready only once the NRI plugin is registered and
 	// synchronized (Plugin.Synchronize) and back off when the connection drops,
 	// so the kubelet readiness probe reflects actual NRI registration.
-	readiness := &health.State{}
+	readyState := &readiness.State{}
 
 	plugin := internal.NewPlugin(internal.Config{
 		AnnotationPrefix: flags.annotationPrefix,
@@ -33,7 +33,7 @@ func main() {
 		MapDir:           flags.mapDir,
 		LogPodEvents:     flags.logPodEvents,
 		Log:              logger,
-		Readiness:        readiness,
+		Readiness:        readyState,
 	})
 
 	logger.Info("container→pod mapping handoff directory", "mapDir", flags.mapDir)
@@ -41,17 +41,17 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	if flags.healthPort > 0 {
+	if flags.readinessPort > 0 {
 		go func() {
 			// A listen failure leaves /readyz unreachable, which the kubelet
 			// treats as not-ready — the safe direction — so log and keep running.
-			if err := health.Serve(ctx, flags.healthPort, readiness, logger); err != nil {
+			if err := readiness.Serve(ctx, flags.readinessPort, readyState, logger); err != nil {
 				logger.Error("readiness server failed", "error", err)
 			}
 		}()
 	}
 
-	err := runWithRetry(ctx, logger, plugin, readiness, flags)
+	err := runWithRetry(ctx, logger, plugin, readyState, flags)
 
 	// Drain any queued mapping writes before exiting so the last events reach the
 	// shared directory.
@@ -74,7 +74,7 @@ func main() {
 //   - stableThreshold: how long a connection must stay up to be considered stable;
 //     once stable, the attempt counter and backoff reset so a process that ran for
 //     years doesn't exhaust its retry budget from earlier boot failures.
-func runWithRetry(ctx context.Context, logger *slog.Logger, plugin *internal.Plugin, readiness *health.State, flags cliFlags) error {
+func runWithRetry(ctx context.Context, logger *slog.Logger, plugin *internal.Plugin, readyState *readiness.State, flags cliFlags) error {
 	const maxBackoff = 60 * time.Second
 
 	attempt := 0
@@ -100,7 +100,7 @@ func runWithRetry(ctx context.Context, logger *slog.Logger, plugin *internal.Plu
 		// so the plugin is no longer registered regardless of the cause. The
 		// runtime's Shutdown callback also clears readiness, but it is not
 		// guaranteed to fire on abrupt connection loss.
-		readiness.SetReady(false)
+		readyState.SetReady(false)
 
 		// ctx was created via signal.NotifyContext with no deadline, so the
 		// only reason ctx.Err() can be non-nil is context.Canceled — meaning

@@ -1,10 +1,10 @@
-// Package health exposes sharingd's NRI registration state as an HTTP
+// Package readiness exposes sharingd's NRI registration state as an HTTP
 // readiness endpoint. sharingd retries its NRI connection indefinitely by
 // default, so without this signal a pod that never registers with containerd
 // still reports Ready and the operator marks the node healthy. The kubelet
 // probes /readyz; the plugin flips the shared State on Synchronize (registered
 // and synced) and back off when the connection drops.
-package health
+package readiness
 
 import (
 	"context"
