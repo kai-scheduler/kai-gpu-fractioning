@@ -8,7 +8,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
-// goldenRecordV1 is the frozen on-disk wire contract for the container->pod
+// goldenRecordV1 is the frozen on-disk wire contract for the container→pod
 // mapping handoff (schemaVersion 1). sharingd writes these records and the
 // metricsd sidecar (a separate Go module) reads them from the shared MapDir, so
 // the JSON shape is a cross-container contract. This test freezes it: any change
