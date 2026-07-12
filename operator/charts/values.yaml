@@ -19,6 +19,13 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# mpsd configures the MPS daemon (mpsd) managed by the operator.
+mpsd:
+  # auditLog toggles features.memacct.audit_log in the generated MPS
+  # control-daemon config (nvidia-cuda-mps-control -a). memacct itself is always
+  # enabled and context-share always disabled.
+  auditLog: true
+
 serviceAccount:
   create: true
   name: ""

@@ -43,6 +43,8 @@ spec:
               value: {{ .Values.images.mpsd.tag | default .Chart.AppVersion | quote }}
             - name: MPSD_IMAGE_PULL_POLICY
               value: {{ .Values.images.mpsd.pullPolicy | quote }}
+            - name: MPSD_AUDIT_LOG
+              value: {{ .Values.mpsd.auditLog | quote }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect

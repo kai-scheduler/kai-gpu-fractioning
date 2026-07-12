@@ -110,6 +110,10 @@ func main() {
 	mpsdImage := controller.ReadImageFromEnv("MPSD_IMAGE")
 	setupLog.Info("mpsd default image", "image", mpsdImage.FullImage())
 
+	// ── mpsd MPS config (Helm-injected default; forwarded to the mpsd pod) ──
+	mpsdAuditLog := controller.ReadBoolFromEnv("MPSD_AUDIT_LOG", true)
+	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
+
 	// ── Register controllers ─────────────────────────────────────────────
 	if err := controller.NewGpuSharingConfigReconciler(
 		mgr.GetClient(),
@@ -121,6 +125,7 @@ func main() {
 			"sharingd": sharingdImage,
 			"mpsd":     mpsdImage,
 		},
+		mpsdAuditLog,
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")
 		os.Exit(1)

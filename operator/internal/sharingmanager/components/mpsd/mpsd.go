@@ -24,12 +24,14 @@ const (
 )
 
 type daemon struct {
-	spec *v1alpha1.MpsDaemonSpec
+	spec     *v1alpha1.MpsDaemonSpec
+	auditLog bool // set  level of the memacct audit log
 }
 
 // NewMpsdDaemon returns a ManagedDaemon for the MPS daemon supervisor.
-func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec) daemonmgr.ManagedDaemon {
-	return &daemon{spec: spec}
+// auditLog is the Helm-injected MPS memacct audit-log default.
+func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog bool) daemonmgr.ManagedDaemon {
+	return &daemon{spec: spec, auditLog: auditLog}
 }
 
 func (d *daemon) Name() string { return daemonName }
@@ -52,6 +54,10 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	}
 
 	container, volumes := d.buildContainer(image)
+	container.Env = append(container.Env, corev1.EnvVar{
+		Name:  "MPS_MEMACCT_AUDIT_LOG",
+		Value: strconv.FormatBool(d.auditLog),
+	})
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, container)
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)
 
