@@ -66,7 +66,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil,
+				"default", nil, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -78,7 +78,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should update observedGeneration on reconcile", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil,
+				"default", nil, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -94,7 +94,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should handle not-found resources gracefully", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil,
+				"default", nil, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

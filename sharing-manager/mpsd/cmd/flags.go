@@ -28,6 +28,12 @@ import (
 type cliFlags struct {
 	// mpsBinary is the path to the nvidia-cuda-mps-control binary.
 	mpsBinary string
+	// controlPort is the -p value for nvidia-cuda-mps-control.
+	controlPort string
+	// configPath is the -a MPS config file path (generated at startup).
+	configPath string
+	// memacctAuditLog enables features.memacct.audit_log in the generated config.
+	memacctAuditLog bool
 	// pipeDir is CUDA_MPS_PIPE_DIRECTORY, shared with containers.
 	pipeDir string
 	// logDir is CUDA_MPS_LOG_DIRECTORY, the daemon log output.
@@ -49,6 +55,15 @@ func parseFlags() cliFlags {
 	flag.StringVar(&f.mpsBinary, "mps-binary",
 		env.String("MPS_CONTROL_BINARY", internal.DefaultMPSBinary),
 		"path to nvidia-cuda-mps-control binary")
+	flag.StringVar(&f.controlPort, "mps-control-port",
+		env.String("MPS_CONTROL_PORT", internal.DefaultMPSControlPort),
+		"value passed to nvidia-cuda-mps-control -p (empty to omit)")
+	flag.StringVar(&f.configPath, "mps-config-path",
+		env.String("MPS_CONFIG_PATH", internal.DefaultMPSConfigPath),
+		"MPS control-daemon config file passed via -a (empty to omit)")
+	flag.BoolVar(&f.memacctAuditLog, "memacct-audit-log",
+		env.Bool("MPS_MEMACCT_AUDIT_LOG", internal.DefaultMemacctAuditLog),
+		"enable features.memacct.audit_log in the generated MPS config")
 	flag.StringVar(&f.pipeDir, "pipe-dir",
 		env.String("CUDA_MPS_PIPE_DIRECTORY", configuration.DefaultMPSPipeDirectory),
 		"CUDA MPS pipe directory")
