@@ -1,17 +1,11 @@
 package daemonmgr
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 )
@@ -175,78 +169,6 @@ func SetCondition(status *v1alpha1.GpuSharingConfigStatus, cond metav1.Condition
 		}
 	}
 	status.Conditions = append(status.Conditions, cond)
-}
-
-// PatchNodeCondition sets or updates the gpu-sharing.nvidia.com/Ready condition
-// on a node using a strategic merge patch.
-//
-// reader serves the current-node read and is deliberately the uncached API
-// reader: node conditions are only touched in the rare unhealthy/recovery path,
-// so caching every Node cluster-wide (a cluster-scoped informer) would be pure
-// overhead. writer performs the status patch, which always goes to the API
-// server regardless of caching.
-func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, ready bool, reason, message string) error {
-	log := logf.FromContext(ctx).WithValues("node", nodeName)
-
-	condStatus := corev1.ConditionFalse
-	if ready {
-		condStatus = corev1.ConditionTrue
-	}
-
-	now := metav1.NewTime(time.Now())
-	transitionTime := now
-
-	// Read the current node to preserve LastTransitionTime when the condition
-	// status has not changed
-	// Skip the patch entirely when status, reason, and message are all identical (no-op).
-	node := &corev1.Node{}
-	if err := reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err == nil {
-		for _, existing := range node.Status.Conditions {
-			if string(existing.Type) != NodeConditionType {
-				continue
-			}
-			if existing.Status == condStatus {
-				if existing.Reason == reason && existing.Message == message {
-					return nil // nothing to update
-				}
-				// same status, therefore LastTransitionTime should be preserved.
-				transitionTime = existing.LastTransitionTime
-			}
-			break // found our condition type
-		}
-	}
-
-	condition := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(NodeConditionType),
-		Status:             condStatus,
-		Reason:             reason,
-		Message:            message,
-		LastHeartbeatTime:  now,
-		LastTransitionTime: transitionTime,
-	}
-
-	patch := map[string]interface{}{
-		"status": map[string]interface{}{
-			"conditions": []corev1.NodeCondition{condition},
-		},
-	}
-
-	patchBytes, err := json.Marshal(patch)
-	if err != nil {
-		return fmt.Errorf("marshaling node condition patch: %w", err)
-	}
-
-	patchNode := &corev1.Node{}
-	patchNode.Name = nodeName
-
-	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
-		"application/strategic-merge-patch+json", patchBytes,
-	)); err != nil {
-		return fmt.Errorf("patching node %s condition: %w", nodeName, err)
-	}
-
-	log.V(1).Info("patched node condition", "condition", NodeConditionType, "status", condStatus, "reason", reason)
-	return nil
 }
 
 // Capitalize returns s with the first letter uppercased.
