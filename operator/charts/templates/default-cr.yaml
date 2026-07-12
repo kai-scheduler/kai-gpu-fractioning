@@ -10,3 +10,5 @@ metadata:
 spec:
   nodeSelector:
     nvidia.com/gpu.present: "true"
+  metricsAgent:
+    enabled: {{ .Values.metricsAgent.enabled }}

@@ -10,8 +10,8 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 // testMappingPlugin builds a plugin whose mapping handoff goes through a
@@ -68,7 +68,7 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 		&api.PodSandbox{
 			Name: "pod", Namespace: "default", Uid: "pod-uid",
 			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4096",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "4Gi",
 			},
 		},
 		gpuContainer("container-id", "container", "", 0, 1),
@@ -113,10 +113,9 @@ func TestCreateContainerFailClosedDoesNotRecordMapping(t *testing.T) {
 		&api.PodSandbox{
 			Name: "pod", Uid: "pod-uid",
 			Annotations: map[string]string{
-				// Malformed sharingd mutation annotation → fail-closed error.
-				"nvidia.com/gpu-memory.container.container.limit": "not-a-quantity",
-				// A valid mapping annotation that would otherwise be recorded.
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4096",
+				// Malformed value → mutation fail-closes; the same key drives the
+				// mapping, so the container must not be recorded either.
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "not-a-quantity",
 			},
 		},
 		gpuContainer("container-id", "container", "", 0),
@@ -136,7 +135,7 @@ func TestRemoveContainerDeletesMapping(t *testing.T) {
 		&api.PodSandbox{
 			Name: "pod", Uid: "pod-uid",
 			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "container" + annotationGPUMemoryLimitSuffix: "4096",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "4Gi",
 			},
 		},
 		gpuContainer("container-id", "container", "", 0),
@@ -163,7 +162,7 @@ func TestSynchronizeReplacesMappings(t *testing.T) {
 		[]*api.PodSandbox{{
 			Id: "pod-id", Name: "pod", Namespace: "default", Uid: "pod-uid",
 			Annotations: map[string]string{
-				annotationGPUMemoryPrefix + "gpu" + annotationGPUMemoryLimitSuffix: "4096",
+				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "gpu", annotationSuffixLimit): "4Gi",
 			},
 		}},
 		[]*api.Container{

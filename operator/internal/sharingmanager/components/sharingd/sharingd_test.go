@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
-	d := NewSharingdDaemon(nil)
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
 
 	if got := d.Name(); got != "sharingd" {
 		t.Errorf("Name() = %q, expected %q", got, "sharingd")
@@ -37,17 +38,43 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 		t.Errorf("NodeSelector = %v, expected nvidia.com/gpu.present=true", spec.NodeSelector)
 	}
 
-	// Container
-	if len(spec.Containers) != 1 {
-		t.Fatalf("expected 1 container, got %d", len(spec.Containers))
+	// Two containers: sharingd (the NRI plugin) + metricsd (the metrics sidecar).
+	if len(spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers (sharingd + metricsd), got %d", len(spec.Containers))
 	}
 
-	ctr := spec.Containers[0]
+	ctr := containerByName(t, spec.Containers, "sharingd")
 	if ctr.Image != "fake.io/org/sharingd:v0.1.0" {
 		t.Errorf("container image = %q, want %q", ctr.Image, "fake.io/org/sharingd:v0.1.0")
 	}
 	if ctr.SecurityContext == nil || ctr.SecurityContext.Privileged == nil || !*ctr.SecurityContext.Privileged {
 		t.Error("expected privileged=true")
+	}
+
+	// metricsd sidecar: image, privileged, metrics port, read-only shared map mount.
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+	if metricsd.Image != "fake.io/org/metricsd:v0.1.0" {
+		t.Errorf("metricsd image = %q, want %q", metricsd.Image, "fake.io/org/metricsd:v0.1.0")
+	}
+	if len(metricsd.Ports) != 1 || metricsd.Ports[0].ContainerPort != 2112 {
+		t.Errorf("expected metricsd to expose port 2112, got %v", metricsd.Ports)
+	}
+	if !hasMount(metricsd.VolumeMounts, "map-dir", "/var/run/gpu-sharing/map", true) {
+		t.Errorf("expected metricsd to mount map-dir read-only, got %v", metricsd.VolumeMounts)
+	}
+	if !hasMount(ctr.VolumeMounts, "map-dir", "/var/run/gpu-sharing/map", false) {
+		t.Errorf("expected sharingd to mount map-dir read-write, got %v", ctr.VolumeMounts)
+	}
+
+	// The shared map dir is an emptyDir (single pod owns writer + reader).
+	var mapDirIsEmptyDir bool
+	for _, v := range spec.Volumes {
+		if v.Name == "map-dir" {
+			mapDirIsEmptyDir = v.EmptyDir != nil
+		}
+	}
+	if !mapDirIsEmptyDir {
+		t.Errorf("expected map-dir to be an emptyDir volume")
 	}
 
 	// Volumes
@@ -92,6 +119,18 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	}
 }
 
+func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
+
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	if len(spec.Containers) != 1 {
+		t.Fatalf("expected only the sharingd container when metrics disabled, got %d", len(spec.Containers))
+	}
+	if spec.Containers[0].Name != "sharingd" {
+		t.Errorf("expected sole container to be sharingd, got %q", spec.Containers[0].Name)
+	}
+}
+
 func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
 		AnnotationPrefix: "custom.prefix.",
@@ -101,7 +140,7 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		RetryInterval:    &metav1.Duration{Duration: 10 * time.Second},
 		StableThreshold:  &metav1.Duration{Duration: 10 * time.Minute},
 		MaxRetries:       ptr.To(int32(5)),
-	})
+	}, nil)
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	args := ds.Spec.Template.Spec.Containers[0].Args
@@ -135,6 +174,30 @@ func defaultOpts() daemonmgr.BuildOptions {
 				Repository: "fake.io/org/sharingd",
 				Tag:        "v0.1.0",
 			},
+			"metricsd": {
+				Repository: "fake.io/org/metricsd",
+				Tag:        "v0.1.0",
+			},
 		},
 	}
+}
+
+func containerByName(t *testing.T, containers []corev1.Container, name string) corev1.Container {
+	t.Helper()
+	for _, c := range containers {
+		if c.Name == name {
+			return c
+		}
+	}
+	t.Fatalf("container %q not found", name)
+	return corev1.Container{}
+}
+
+func hasMount(mounts []corev1.VolumeMount, name, path string, readOnly bool) bool {
+	for _, m := range mounts {
+		if m.Name == name && m.MountPath == path && m.ReadOnly == readOnly {
+			return true
+		}
+	}
+	return false
 }

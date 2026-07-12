@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 	tempFilePattern = ".gpu-sharing-*.tmp"
 )
 
-// Writer persists the container→pod mapping as one <containerID>.json file per
+// Writer persists the container->pod mapping as one <containerID>.json file per
 // container under a shared directory. It is the write side
 // of the NRI mapper component; the metrics component's Reader consumes the same
 // files read-only. It satisfies store.Writer, so it plugs directly into the

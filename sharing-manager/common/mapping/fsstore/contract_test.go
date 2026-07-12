@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
-// goldenRecordV1 is the frozen on-disk wire contract for the container→pod
+// goldenRecordV1 is the frozen on-disk wire contract for the container->pod
 // mapping handoff (schemaVersion 1). sharingd (this module) writes it; the
 // metricsd sidecar reads it from a separate Go module. The identical literal is
 // asserted by metricsd's own contract test — if either side changes the schema

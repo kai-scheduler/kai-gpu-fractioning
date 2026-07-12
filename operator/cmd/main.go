@@ -106,6 +106,8 @@ func main() {
 	// ── Component images (defaults from Helm, overridable via CRD) ──────
 	sharingdImage := controller.ReadImageFromEnv("SHARINGD_IMAGE")
 	setupLog.Info("sharingd default image", "image", sharingdImage.FullImage())
+	metricsdImage := controller.ReadImageFromEnv("METRICSD_IMAGE")
+	setupLog.Info("metricsd default image", "image", metricsdImage.FullImage())
 
 	mpsdImage := controller.ReadImageFromEnv("MPSD_IMAGE")
 	setupLog.Info("mpsd default image", "image", mpsdImage.FullImage())
@@ -123,6 +125,7 @@ func main() {
 		podNamespace,
 		map[string]v1alpha1.ImageSpec{
 			"sharingd": sharingdImage,
+			"metricsd": metricsdImage,
 			"mpsd":     mpsdImage,
 		},
 		mpsdAuditLog,

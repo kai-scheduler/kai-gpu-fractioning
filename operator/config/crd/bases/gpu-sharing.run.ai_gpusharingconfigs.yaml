@@ -39,6 +39,51 @@ spec:
           spec:
             description: spec defines the desired state of GpuSharingConfig
             properties:
+              metricsAgent:
+                description: |-
+                  metricsAgent configures the GPU metrics exporter (metricsd), which runs as
+                  a sidecar container in the same DaemonSet as sharingd and reads the
+                  container→pod mapping sharingd writes to a shared volume.
+                properties:
+                  address:
+                    description: 'address is the Prometheus exporter listen address.
+                      Default: :2112.'
+                    type: string
+                  enabled:
+                    description: |-
+                      enabled controls whether the metricsd sidecar is added to the DaemonSet.
+                      When false, no metrics container is deployed. Default: true.
+                    type: boolean
+                  image:
+                    description: |-
+                      image overrides the default metricsd container image set via Helm env vars
+                      (METRICSD_IMAGE_*).
+                    properties:
+                      imagePullPolicy:
+                        description: |-
+                          imagePullPolicy controls when the kubelet pulls the image.
+                          One of Always, IfNotPresent, Never. Default: IfNotPresent.
+                        type: string
+                      repository:
+                        description: |-
+                          repository is the full image path including registry and image name
+                          (e.g. "gcr.io/run-ai-prod/sharingd").
+                        type: string
+                      tag:
+                        description: tag is the image tag (e.g. "v0.1.0"). Defaults
+                          to the chart appVersion.
+                        type: string
+                    type: object
+                  logLevel:
+                    description: |-
+                      logLevel controls the logging verbosity of the metrics agent.
+                      One of debug, info, warn, error. Default: info.
+                    type: string
+                  path:
+                    description: 'path is the HTTP path on which metrics are served.
+                      Default: /metrics.'
+                    type: string
+                type: object
               mpsDaemon:
                 description: mpsDaemon configures the MPS daemon supervisor (mpsd).
                 properties:

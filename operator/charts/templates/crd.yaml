@@ -84,6 +84,28 @@ spec:
                     maxRetries:
                       type: integer
                       format: int32
+                metricsAgent:
+                  description: >-
+                    metricsAgent configures the GPU metrics exporter (metricsd),
+                    which runs as a sidecar container in the same DaemonSet as
+                    sharingd and reads the container→pod mapping from a shared volume.
+                  type: object
+                  properties:
+                    image:
+                      description: image overrides the default metricsd container image.
+                      type: object
+                      properties:
+                        repository:
+                          type: string
+                        tag:
+                          type: string
+                        imagePullPolicy:
+                          type: string
+                    enabled:
+                      description: >-
+                        enabled controls whether the metricsd sidecar is added to
+                        the DaemonSet. Default: true.
+                      type: boolean
                 mpsDaemon:
                   description: mpsDaemon configures the MPS daemon supervisor (mpsd).
                   type: object

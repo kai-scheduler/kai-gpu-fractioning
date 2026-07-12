@@ -1,3 +1,10 @@
+// TODO(P0): Remove this env-var fake-GPU detector. sharingd must not fork on
+// real-vs-fake GPU in any build — even the e2e suite should exercise the real
+// device-node path (realgpu). The fakeness belongs below the daemon, in the
+// e2e/hack cluster setup (e.g. injecting real NVIDIA major-195 device nodes into
+// pods) so realgpu works unchanged. Note: NVML mock does not cover this — sharingd
+// maps via device nodes, not NVML.
+//
 // Package fakegpu is the TEST/DEV GPU detector. It identifies a container's GPUs
 // from its NVIDIA_VISIBLE_DEVICES / MOCK_NVIDIA_VISIBLE_DEVICES environment
 // variable rather than from real device nodes, so the NRI mapping path can be
@@ -14,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 
 	"github.com/containerd/nri/pkg/api"
 )
