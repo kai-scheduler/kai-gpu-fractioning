@@ -6,14 +6,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func waitingStatus(reason string) corev1.ContainerStatus {
-	return corev1.ContainerStatus{
-		State: corev1.ContainerState{
-			Waiting: &corev1.ContainerStateWaiting{Reason: reason},
-		},
-	}
-}
-
 func TestPodFailureReason(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -61,5 +53,13 @@ func TestPodFailureReason(t *testing.T) {
 				t.Errorf("podFailureReason() = %q, expected %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func waitingStatus(reason string) corev1.ContainerStatus {
+	return corev1.ContainerStatus{
+		State: corev1.ContainerState{
+			Waiting: &corev1.ContainerStateWaiting{Reason: reason},
+		},
 	}
 }

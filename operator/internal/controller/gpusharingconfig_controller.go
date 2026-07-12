@@ -42,9 +42,8 @@ import (
 )
 
 const (
-	requeueInterval  = 30 * time.Second
-	podListPageSize  = 500
-	nodeListPageSize = 500
+	requeueInterval = 30 * time.Second
+	podListPageSize = 500
 
 	// NodeConditionCleanupFinalizer blocks GpuSharingConfig deletion until the
 	// gpu-sharing.nvidia.com/Ready conditions the controller patched onto nodes
@@ -215,7 +214,7 @@ func (r *GpuSharingConfigReconciler) reconcileDelete(ctx context.Context, config
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.cleanupNodeConditions(ctx, config.Spec.NodeSelector); err != nil {
+	if err := daemonmgr.RemoveNodeConditions(ctx, r.APIReader, r.Client, config.Spec.NodeSelector); err != nil {
 		return ctrl.Result{}, fmt.Errorf("cleaning up node conditions: %w", err)
 	}
 
@@ -226,65 +225,6 @@ func (r *GpuSharingConfigReconciler) reconcileDelete(ctx context.Context, config
 
 	log.Info("removed node conditions and finalizer, deletion can complete")
 	return ctrl.Result{}, nil
-}
-
-// cleanupNodeConditions removes the gpu-sharing.nvidia.com/Ready condition
-// from all nodes matching the CR's nodeSelector (the selector is reliable here
-// because editing it on a live CR is unsupported). Nodes are listed via the
-// uncached API reader with pagination, for the same reason patchNodeConditions
-// pages pods: cleanup runs once per CR lifetime, so a cluster-scoped Node
-// informer would be pure overhead. Per-node failures are joined rather than
-// aborting the sweep, so one bad node does not prevent cleaning the rest.
-func (r *GpuSharingConfigReconciler) cleanupNodeConditions(ctx context.Context, nodeSelector map[string]string) error {
-	log := logf.FromContext(ctx)
-
-	var errs []error
-
-	listOpts := []client.ListOption{
-		client.MatchingLabels(nodeSelector),
-		client.Limit(nodeListPageSize),
-	}
-
-	var nodeList corev1.NodeList
-	for {
-		if err := r.APIReader.List(ctx, &nodeList, listOpts...); err != nil {
-			return fmt.Errorf("listing nodes: %w", err)
-		}
-
-		for i := range nodeList.Items {
-			node := &nodeList.Items[i]
-			if !hasGpuSharingCondition(node) {
-				continue
-			}
-			if err := daemonmgr.RemoveNodeCondition(ctx, r.Client, node.Name); err != nil {
-				// Name the failing node explicitly: a persistent failure here
-				// keeps the finalizer in place and wedges CR deletion, so it
-				// must be diagnosable from the logs.
-				log.Error(err, "failed to remove node condition", "node", node.Name)
-				errs = append(errs, err)
-			}
-		}
-
-		if nodeList.Continue == "" {
-			break
-		}
-		listOpts = []client.ListOption{
-			client.MatchingLabels(nodeSelector),
-			client.Limit(nodeListPageSize),
-			client.Continue(nodeList.Continue),
-		}
-	}
-
-	return errors.Join(errs...)
-}
-
-func hasGpuSharingCondition(node *corev1.Node) bool {
-	for _, cond := range node.Status.Conditions {
-		if string(cond.Type) == daemonmgr.NodeConditionType {
-			return true
-		}
-	}
-	return false
 }
 
 // patchNodeConditions lists all managed daemon pods (across all daemons) and
