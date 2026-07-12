@@ -317,10 +317,15 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 	// In steady state (all healthy) this set stays empty.
 	unhealthyNodes := make(map[string]struct{})
 
+	// Per-node patch failures are collected and joined so the caller requeues
+	// and retries them; one bad node does not abort the rest of the pass.
+	var errs []error
+
 	var podList corev1.PodList
 	for {
 		if err := r.APIReader.List(ctx, &podList, listOpts...); err != nil {
-			return false, fmt.Errorf("listing pods for node condition patching: %w", err)
+			errs = append(errs, fmt.Errorf("listing pods for node condition patching: %w", err))
+			return len(unhealthyNodes) > 0, errors.Join(errs...)
 		}
 
 		for i := range podList.Items {
@@ -344,6 +349,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			reason, msg := nodeConditionArgs(ready, pod)
 			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
 				log.Error(err, "failed to patch node condition", "node", pod.Spec.NodeName)
+				errs = append(errs, err)
 			}
 		}
 
@@ -358,7 +364,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 		}
 	}
 
-	return len(unhealthyNodes) > 0, nil
+	return len(unhealthyNodes) > 0, errors.Join(errs...)
 }
 
 // isPodReady returns true if the pod has condition Ready=True.
@@ -385,9 +391,15 @@ func nodeConditionArgs(ready bool, pod *corev1.Pod) (reason, message string) {
 }
 
 func podFailureReason(pod *corev1.Pod) string {
-	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.State.Waiting != nil {
-			return cs.State.Waiting.Reason
+	// Init containers gate the regular containers, so a stuck init container
+	// (e.g. Init:CrashLoopBackOff) is the primary failure signal. Waiting.Reason
+	// is optional; an empty one must not leak into the node condition's Reason,
+	// which the Kubernetes API requires to be a non-empty identifier.
+	for _, statuses := range [][]corev1.ContainerStatus{pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses} {
+		for _, cs := range statuses {
+			if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+				return cs.State.Waiting.Reason
+			}
 		}
 	}
 

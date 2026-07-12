@@ -226,8 +226,8 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 		LastTransitionTime: transitionTime,
 	}
 
-	patch := map[string]interface{}{
-		"status": map[string]interface{}{
+	patch := map[string]any{
+		"status": map[string]any{
 			"conditions": []corev1.NodeCondition{condition},
 		},
 	}
@@ -241,7 +241,7 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 	patchNode.Name = nodeName
 
 	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
-		"application/strategic-merge-patch+json", patchBytes,
+		types.StrategicMergePatchType, patchBytes,
 	)); err != nil {
 		return fmt.Errorf("patching node %s condition: %w", nodeName, err)
 	}
@@ -250,36 +250,26 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 	return nil
 }
 
+// removeNodeConditionPatch deletes the gpu-sharing.nvidia.com/Ready entry from
+// the merge-keyed conditions list. Node conditions use patchMergeKey "type",
+// so a plain strategic merge patch can only upsert entries; deletion needs the
+// $patch:delete directive, which typed NodeConditions cannot express. The
+// payload depends only on the constant condition type, so it is built once.
+var removeNodeConditionPatch = []byte(`{"status":{"conditions":[{"type":"` + NodeConditionType + `","$patch":"delete"}]}}`)
+
 // RemoveNodeCondition deletes the gpu-sharing.nvidia.com/Ready condition from
-// a node's status. Node conditions use patchMergeKey "type", so a plain
-// strategic merge patch can only upsert entries; deletion needs the
-// $patch:delete directive, which is why the patch is built as raw maps rather
-// than typed NodeConditions.
+// a node's status.
 //
 // The call is idempotent: deleting an absent condition is a server-side no-op,
 // and a missing node is treated as success.
 func RemoveNodeCondition(ctx context.Context, writer client.Client, nodeName string) error {
-	patch := map[string]interface{}{
-		"status": map[string]interface{}{
-			"conditions": []map[string]interface{}{
-				{
-					"type":   NodeConditionType,
-					"$patch": "delete",
-				},
-			},
-		},
-	}
-
-	patchBytes, err := json.Marshal(patch)
-	if err != nil {
-		return fmt.Errorf("marshaling node condition removal patch: %w", err)
-	}
+	log := logf.FromContext(ctx).WithValues("node", nodeName)
 
 	patchNode := &corev1.Node{}
 	patchNode.Name = nodeName
 
 	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
-		"application/strategic-merge-patch+json", patchBytes,
+		types.StrategicMergePatchType, removeNodeConditionPatch,
 	)); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -287,7 +277,7 @@ func RemoveNodeCondition(ctx context.Context, writer client.Client, nodeName str
 		return fmt.Errorf("removing condition from node %s: %w", nodeName, err)
 	}
 
-	logf.FromContext(ctx).V(1).Info("removed node condition", "node", nodeName, "condition", NodeConditionType)
+	log.V(1).Info("removed node condition", "condition", NodeConditionType)
 	return nil
 }
 
