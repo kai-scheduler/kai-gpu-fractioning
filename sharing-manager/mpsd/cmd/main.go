@@ -34,13 +34,28 @@ func main() {
 		"pipeDir", flags.pipeDir,
 		"logDir", flags.logDir,
 		"mpsBinary", flags.mpsBinary,
+		"controlPort", flags.controlPort,
+		"configPath", flags.configPath,
+		"memacctAuditLog", flags.memacctAuditLog,
 	)
+
+	// Render the MPS control-daemon config. memacct is enabled and context-share
+	// disabled by design; only the audit log is configurable (via Helm value ->
+	// MPS_MEMACCT_AUDIT_LOG env). The supervisor writes this to configPath at setup.
+	mpsConfig := internal.MPSConfig{
+		MemacctEnabled:      internal.DefaultMemacctEnabled,
+		MemacctAuditLog:     flags.memacctAuditLog,
+		ContextShareEnabled: internal.DefaultContextShareEnabled,
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
 	supervisor := internal.NewSupervisor(internal.SupervisorConfig{
 		MPSBinary:         flags.mpsBinary,
+		ControlPort:       flags.controlPort,
+		ConfigPath:        flags.configPath,
+		ConfigContent:     mpsConfig.TOML(),
 		PipeDir:           flags.pipeDir,
 		LogDir:            flags.logDir,
 		Backoff:           flags.backoff,

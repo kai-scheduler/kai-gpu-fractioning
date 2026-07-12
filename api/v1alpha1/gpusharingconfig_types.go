@@ -118,9 +118,9 @@ type MetricsAgentSpec struct {
 	Image *ImageSpec `json:"image,omitempty"`
 
 	// enabled controls whether the metricsd sidecar is added to the DaemonSet.
-	// When false, no metrics container is deployed. Default: true.
+	// When false, no metrics container is deployed.
 	// +optional
-	Enabled *bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 
 	// logLevel controls the logging verbosity of the metrics agent.
 	// One of debug, info, warn, error. Default: info.
