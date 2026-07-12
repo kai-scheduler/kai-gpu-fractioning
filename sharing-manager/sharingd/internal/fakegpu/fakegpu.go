@@ -3,8 +3,7 @@
 // device-node path (realgpu). The fakeness belongs below the daemon, in the
 // e2e/hack cluster setup (e.g. injecting real NVIDIA major-195 device nodes into
 // pods) so realgpu works unchanged. Note: NVML mock does not cover this — sharingd
-// maps via device nodes, not NVML. Tracking ticket: <JIRA-URL>. See
-// docs/pr-25-review-responses.md (Topic #4) for the full rationale.
+// maps via device nodes, not NVML.
 //
 // Package fakegpu is the TEST/DEV GPU detector. It identifies a container's GPUs
 // from its NVIDIA_VISIBLE_DEVICES / MOCK_NVIDIA_VISIBLE_DEVICES environment

@@ -13,7 +13,7 @@ import (
 )
 
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
-	d := NewSharingdDaemon(nil, nil)
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
 
 	if got := d.Name(); got != "sharingd" {
 		t.Errorf("Name() = %q, expected %q", got, "sharingd")
@@ -120,7 +120,7 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 }
 
 func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: ptr.To(false)})
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
 
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	if len(spec.Containers) != 1 {
@@ -136,6 +136,7 @@ func TestDaemon_BuildDaemonSet_MetricsExtraPassThrough(t *testing.T) {
 	// container and extra volumes onto the pod (used by the e2e overlay to mount
 	// the nvml-mock driver). Empty by default; here we assert they propagate.
 	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{
+		Enabled: true,
 		ExtraEnv: []corev1.EnvVar{
 			{Name: "LD_LIBRARY_PATH", Value: "/opt/driver/lib64"},
 		},

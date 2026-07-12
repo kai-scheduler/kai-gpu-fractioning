@@ -39,11 +39,22 @@ const (
 	// inside CUDA_MPS_PIPE_DIRECTORY. It is not user-configurable.
 	mpsControlSocket         = "control"
 	DefaultGracefulStopDelay = 60 * time.Second // time to wait after "quit" before SIGKILL
+
+	DefaultMPSControlPort = "3" // protocol version 3
+
+	DefaultMPSConfigPath = "/etc/nvidia-mps/mps-control.toml" // default path for the MPS config file
+	// Fixed MPS feature toggles. memacct is always on and context-share always off by design.
+	DefaultMemacctEnabled      = true
+	DefaultContextShareEnabled = false
+	DefaultMemacctAuditLog     = true // can be overridden by environment variable
 )
 
 // SupervisorConfig holds all settings for the MPS daemon supervisor.
 type SupervisorConfig struct {
 	MPSBinary         string        // path to the nvidia-cuda-mps-control binary
+	ControlPort       string        // value for the -p flag; empty omits -p
+	ConfigPath        string        // MPS config file for the -a flag; empty omits -a
+	ConfigContent     string        // TOML written to ConfigPath at setup; empty skips writing
 	PipeDir           string        // CUDA_MPS_PIPE_DIRECTORY — shared with containers
 	LogDir            string        // CUDA_MPS_LOG_DIRECTORY — daemon log output
 	Backoff           time.Duration // initial delay before restarting after an unexpected exit
@@ -151,10 +162,33 @@ func (s *Supervisor) setup() error {
 			return fmt.Errorf("creating directory %q: %w", dir, err)
 		}
 	}
+	// Generate the MPS control-daemon config on the fly (its content — e.g. the
+	// memacct audit-log toggle — is driven by a Helm value the operator injects
+	// as an env var). Regenerating each start lets a config change propagate on
+	// the next pod rollout without rebuilding the image.
+	if err := s.writeConfig(); err != nil {
+		return err
+	}
 	// Remove any stale control socket left by a previous instance (e.g. after a pod
 	// restart). Without this, the first runMPS call would fail to bind the socket
 	// and waste one attempt before the retry loop cleans it up.
 	s.removeStaleSocket()
+	return nil
+}
+
+// writeConfig writes the rendered MPS config to ConfigPath. It is a no-op when
+// either the path or the content is empty (e.g. tests, or -a explicitly disabled).
+func (s *Supervisor) writeConfig() error {
+	if s.cfg.ConfigPath == "" || s.cfg.ConfigContent == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.cfg.ConfigPath), dirPerm); err != nil {
+		return fmt.Errorf("creating MPS config directory: %w", err)
+	}
+	if err := os.WriteFile(s.cfg.ConfigPath, []byte(s.cfg.ConfigContent), 0o644); err != nil {
+		return fmt.Errorf("writing MPS config %q: %w", s.cfg.ConfigPath, err)
+	}
+	s.logger.Info("wrote MPS config", "path", s.cfg.ConfigPath)
 	return nil
 }
 
@@ -167,11 +201,29 @@ func (s *Supervisor) removeStaleSocket() {
 	}
 }
 
+// buildMPSArgs builds the nvidia-cuda-mps-control argument list. The daemon is
+// always run in the foreground (-f) so we can supervise it. -p (control port)
+// and -a (config file) are included only when configured — a blank value acts
+// as an escape hatch to drop the flag without rebuilding. Order mirrors the
+// known-good production invocation: `-p <port> -f -a <config>`.
+func buildMPSArgs(controlPort, configPath string) []string {
+	args := make([]string, 0, 4)
+	if controlPort != "" {
+		args = append(args, "-p", controlPort)
+	}
+	args = append(args, "-f")
+	if configPath != "" {
+		args = append(args, "-a", configPath)
+	}
+	return args
+}
+
 // runMPS starts the MPS daemon and blocks until it exits or ctx is cancelled.
 // Configuration is applied via environment variables (CUDA_MPS_PIPE_DIRECTORY,
-// CUDA_MPS_LOG_DIRECTORY) set on the command.
+// CUDA_MPS_LOG_DIRECTORY) set on the command, plus the -a config file.
 func (s *Supervisor) runMPS(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, s.cfg.MPSBinary, "-f")
+	args := buildMPSArgs(s.cfg.ControlPort, s.cfg.ConfigPath)
+	cmd := exec.CommandContext(ctx, s.cfg.MPSBinary, args...)
 	cmd.Env = append(os.Environ(),
 		"CUDA_MPS_PIPE_DIRECTORY="+s.cfg.PipeDir,
 		"CUDA_MPS_LOG_DIRECTORY="+s.cfg.LogDir,
@@ -206,8 +258,10 @@ func (s *Supervisor) runMPS(ctx context.Context) error {
 
 	s.logger.Info("starting MPS daemon",
 		"binary", s.cfg.MPSBinary,
+		"args", args,
 		"pipeDir", s.cfg.PipeDir,
 		"logDir", s.cfg.LogDir,
+		"configPath", s.cfg.ConfigPath,
 	)
 
 	if err := cmd.Run(); err != nil {

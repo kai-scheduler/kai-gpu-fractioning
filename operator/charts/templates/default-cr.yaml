@@ -10,9 +10,10 @@ metadata:
 spec:
   nodeSelector:
     nvidia.com/gpu.present: "true"
+  metricsAgent:
+    enabled: {{ .Values.metricsAgent.enabled }}
   {{- with .Values.metricsAgent }}
   {{- if or .extraEnv .extraVolumeMounts .extraVolumes }}
-  metricsAgent:
     {{- with .extraEnv }}
     extraEnv:
       {{- toYaml . | nindent 6 }}

@@ -23,12 +23,20 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# mpsd configures the MPS daemon (mpsd) managed by the operator.
+mpsd:
+  # auditLog toggles features.memacct.audit_log in the generated MPS
+  # control-daemon config (nvidia-cuda-mps-control -a). memacct itself is always
+  # enabled and context-share always disabled.
+  auditLog: true
+
 # metricsAgent exposes advanced pass-through knobs for the metricsd sidecar in
 # the operator-managed default GpuSharingConfig. Empty by default (prod
 # unaffected); a non-standard deployment (e.g. the e2e fake-GPU cluster) can
 # supply extra env/mounts/volumes via a values override to point the collector
 # at an alternate driver library.
 metricsAgent:
+  enabled: true
   extraEnv: []
   extraVolumeMounts: []
   extraVolumes: []
@@ -50,3 +58,6 @@ resources:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+metricsAgent:
+  enabled: true

@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -216,6 +217,97 @@ func TestSupervisor_StableThresholdResetsRetryBudget(t *testing.T) {
 	err := s.Run(ctx)
 	if err != nil {
 		t.Errorf("expected nil (context timeout) because stable runs should reset the retry budget, got: %v", err)
+	}
+}
+
+func TestBuildMPSArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		controlPort string
+		configPath  string
+		want        []string
+	}{
+		{
+			name:        "port and config (production invocation)",
+			controlPort: DefaultMPSControlPort,
+			configPath:  DefaultMPSConfigPath,
+			want:        []string{"-p", "3", "-f", "-a", "/etc/nvidia-mps/mps-control.toml"},
+		},
+		{
+			name:        "empty port omits -p",
+			controlPort: "",
+			configPath:  DefaultMPSConfigPath,
+			want:        []string{"-f", "-a", "/etc/nvidia-mps/mps-control.toml"},
+		},
+		{
+			name:        "empty config omits -a",
+			controlPort: DefaultMPSControlPort,
+			configPath:  "",
+			want:        []string{"-p", "3", "-f"},
+		},
+		{
+			name:        "both empty leaves only -f",
+			controlPort: "",
+			configPath:  "",
+			want:        []string{"-f"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildMPSArgs(tt.controlPort, tt.configPath)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("buildMPSArgs(%q, %q) = %v, want %v", tt.controlPort, tt.configPath, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSupervisor_SetupWritesConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "nested", "mps-control.toml")
+	content := MPSConfig{MemacctEnabled: true, MemacctAuditLog: true}.TOML()
+
+	s := NewSupervisor(SupervisorConfig{
+		MPSBinary:     "/bin/true",
+		ConfigPath:    configPath,
+		ConfigContent: content,
+		PipeDir:       filepath.Join(t.TempDir(), "pipe"),
+		LogDir:        filepath.Join(t.TempDir(), "log"),
+		Stdout:        io.Discard,
+		Stderr:        io.Discard,
+	}, testLogger())
+
+	if err := s.setup(); err != nil {
+		t.Fatalf("setup() error: %v", err)
+	}
+
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("reading config: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("config file =\n%q\nwant\n%q", got, content)
+	}
+}
+
+func TestSupervisor_SetupSkipsConfigWhenEmpty(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "mps-control.toml")
+
+	s := NewSupervisor(SupervisorConfig{
+		MPSBinary:  "/bin/true",
+		ConfigPath: configPath,
+		// ConfigContent empty -> no file written
+		PipeDir: filepath.Join(t.TempDir(), "pipe"),
+		LogDir:  filepath.Join(t.TempDir(), "log"),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+	}, testLogger())
+
+	if err := s.setup(); err != nil {
+		t.Fatalf("setup() error: %v", err)
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Errorf("expected no config file, stat err = %v", err)
 	}
 }
 

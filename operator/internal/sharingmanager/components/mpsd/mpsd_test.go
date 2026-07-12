@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
-	d := NewMpsdDaemon(nil)
+	d := NewMpsdDaemon(nil, true)
 
 	if got := d.Name(); got != "mpsd" {
 		t.Errorf("Name() = %q, want %q", got, "mpsd")
@@ -104,6 +105,29 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	if len(ctr.Args) != 0 {
 		t.Errorf("expected no args when spec is nil, got %v", ctr.Args)
 	}
+
+	// Helm-driven audit-log toggle is injected as an env var.
+	if got := envValue(ctr.Env, "MPS_MEMACCT_AUDIT_LOG"); got != "true" {
+		t.Errorf("MPS_MEMACCT_AUDIT_LOG env = %q, want %q", got, "true")
+	}
+}
+
+func TestDaemon_BuildDaemonSet_AuditLogDisabled(t *testing.T) {
+	ds := NewMpsdDaemon(nil, false).BuildDaemonSet(defaultOpts())
+	ctr := ds.Spec.Template.Spec.Containers[0]
+
+	if got := envValue(ctr.Env, "MPS_MEMACCT_AUDIT_LOG"); got != "false" {
+		t.Errorf("MPS_MEMACCT_AUDIT_LOG env = %q, want %q", got, "false")
+	}
+}
+
+func envValue(env []corev1.EnvVar, name string) string {
+	for _, e := range env {
+		if e.Name == name {
+			return e.Value
+		}
+	}
+	return ""
 }
 
 func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
@@ -113,7 +137,7 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		MaxRetries:        ptr.To(int32(5)),
 		StableThreshold:   &metav1.Duration{Duration: 10 * time.Minute},
 		GracefulStopDelay: &metav1.Duration{Duration: 30 * time.Second},
-	})
+	}, true)
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	args := ds.Spec.Template.Spec.Containers[0].Args
@@ -141,7 +165,7 @@ func TestDaemon_BuildDaemonSet_ImageOverride(t *testing.T) {
 		Image: &v1alpha1.ImageSpec{
 			Tag: "custom-tag",
 		},
-	})
+	}, true)
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	ctr := ds.Spec.Template.Spec.Containers[0]
