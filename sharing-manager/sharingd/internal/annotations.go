@@ -8,10 +8,6 @@ import (
 )
 
 const (
-	// annotationGPUMemoryPrefix is the key prefix for fractional GPU memory annotations.
-	// Full key: <prefix><containerName>.{request,limit}
-	annotationGPUMemoryPrefix = "nvidia.com/gpu-memory.container."
-
 	// Annotation key suffixes appended after the container name.
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
@@ -39,6 +35,26 @@ type GPUMemoryConfig struct {
 // IsEmpty returns true if neither request nor limit was specified.
 func (c GPUMemoryConfig) IsEmpty() bool {
 	return c.Request == "" && c.Limit == ""
+}
+
+// EffectiveMemoryMB returns the container's allocated GPU memory in decimal MB:
+// the limit if set, otherwise the request, otherwise 0. Request and Limit are
+// already decimal-MB strings (see parseToDecimalMB), so this just parses one back
+// to an integer. It is the numerator the metrics sidecar uses to derive the GPU
+// fraction (requested memory ÷ device total memory) for SM-util normalization.
+func (c GPUMemoryConfig) EffectiveMemoryMB() int64 {
+	value := c.Limit
+	if value == "" {
+		value = c.Request
+	}
+	if value == "" {
+		return 0
+	}
+	mb, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return mb
 }
 
 // ParseGPUMemoryAnnotations extracts GPU memory configuration for a specific

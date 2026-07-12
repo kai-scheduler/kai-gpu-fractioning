@@ -14,6 +14,17 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 )
 
+// testMemPrefix is the GPU-memory annotation prefix used by the mapping tests. A
+// container is recorded for metrics iff it carries a well-formed annotation under
+// this prefix — the same signal the mutation path enforces on.
+const testMemPrefix = "nvidia.com/gpu-memory.container."
+
+// memAnnotations builds the pod annotations granting the named container a GPU
+// memory limit (a Kubernetes quantity such as "4Gi").
+func memAnnotations(container, limit string) map[string]string {
+	return map[string]string{testMemPrefix + container + ".limit": limit}
+}
+
 // testMappingPlugin builds a plugin whose mapping handoff goes through a
 // throwaway directory, plus a reader over the same directory so a test can
 // observe what the metrics sidecar would read back.
@@ -22,11 +33,10 @@ func testMappingPlugin(t *testing.T) (*Plugin, *fsstore.Reader) {
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	p := NewPlugin(Config{
-		AnnotationPrefix:      "nvidia.com/gpu-memory.container.",
-		MPSPipeDirectory:      "/run/nvidia-mps",
-		MapDir:                dir,
-		GPUFractionAnnotation: "gpu-fraction",
-		Log:                   log,
+		AnnotationPrefix: testMemPrefix,
+		MPSPipeDirectory: "/run/nvidia-mps",
+		MapDir:           dir,
+		Log:              log,
 	})
 	return p, fsstore.NewReader(dir, log)
 }
@@ -67,9 +77,7 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
 			Name: "pod", Namespace: "default", Uid: "pod-uid",
-			Annotations: map[string]string{
-				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "4Gi",
-			},
+			Annotations: memAnnotations("container", "4Gi"),
 		},
 		gpuContainer("container-id", "container", "", 0, 1),
 	); err != nil {
@@ -87,9 +95,13 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 	if len(info.GPUDevices) != 2 {
 		t.Fatalf("expected two GPU devices recorded, got %#v", info.GPUDevices)
 	}
+	// 4Gi = 4294967296 bytes → 4294 decimal MB.
+	if info.RequestedMemoryMB != 4294 {
+		t.Fatalf("expected RequestedMemoryMB 4294, got %d", info.RequestedMemoryMB)
+	}
 }
 
-func TestCreateContainerIgnoresNonFractionalContainer(t *testing.T) {
+func TestCreateContainerIgnoresNonGPUContainer(t *testing.T) {
 	plugin, reader := testMappingPlugin(t)
 
 	if _, _, err := plugin.CreateContainer(context.Background(),
@@ -100,7 +112,7 @@ func TestCreateContainerIgnoresNonFractionalContainer(t *testing.T) {
 	}
 
 	if n := len(activeContainers(t, plugin, reader)); n != 0 {
-		t.Fatalf("expected non-fractional container to be ignored, got %d mappings", n)
+		t.Fatalf("expected non-GPU container to be ignored, got %d mappings", n)
 	}
 }
 
@@ -112,11 +124,7 @@ func TestCreateContainerFailClosedDoesNotRecordMapping(t *testing.T) {
 	_, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
 			Name: "pod", Uid: "pod-uid",
-			Annotations: map[string]string{
-				// Malformed value → mutation fail-closes; the same key drives the
-				// mapping, so the container must not be recorded either.
-				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "not-a-quantity",
-			},
+			Annotations: memAnnotations("container", "not-a-quantity"),
 		},
 		gpuContainer("container-id", "container", "", 0),
 	)
@@ -134,9 +142,7 @@ func TestRemoveContainerDeletesMapping(t *testing.T) {
 	if _, _, err := plugin.CreateContainer(context.Background(),
 		&api.PodSandbox{
 			Name: "pod", Uid: "pod-uid",
-			Annotations: map[string]string{
-				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "container", annotationSuffixLimit): "4Gi",
-			},
+			Annotations: memAnnotations("container", "4Gi"),
 		},
 		gpuContainer("container-id", "container", "", 0),
 	); err != nil {
@@ -161,9 +167,7 @@ func TestSynchronizeReplacesMappings(t *testing.T) {
 	updates, err := plugin.Synchronize(context.Background(),
 		[]*api.PodSandbox{{
 			Id: "pod-id", Name: "pod", Namespace: "default", Uid: "pod-uid",
-			Annotations: map[string]string{
-				containerMemoryAnnotationKey(annotationGPUMemoryPrefix, "gpu", annotationSuffixLimit): "4Gi",
-			},
+			Annotations: memAnnotations("gpu", "4Gi"),
 		}},
 		[]*api.Container{
 			gpuContainer("gpu-container", "gpu", "pod-id", 0),

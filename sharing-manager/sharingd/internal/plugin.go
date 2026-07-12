@@ -18,14 +18,9 @@ const (
 	envGPUMemoryLimits   = "NVIDIA_GPU_MEMORY_LIMITS"
 	envMPSPipeDirectory  = "CUDA_MPS_PIPE_DIRECTORY"
 
-	// NRI plugin registration defaults.
+	// DefaultPluginName NRI plugin registration defaults.
 	DefaultPluginName = "gpu-sharing"
 	DefaultPluginIdx  = "10"
-
-	// DefaultGPUFractionAnnotation is the pod annotation key whose value is the
-	// requested GPU fraction (e.g. "0.5"), recorded in the mapping so the metrics
-	// sidecar can normalize SM utilization. Empty disables the lookup.
-	DefaultGPUFractionAnnotation = "gpu-fraction"
 )
 
 // Config configures a Plugin. The first fields drive container mutation (the
@@ -39,12 +34,8 @@ type Config struct {
 	// FailOpen skips a container on parse error instead of blocking it.
 	FailOpen bool
 
-	// MapDir is the shared dir for the container→pod mapping handoff.
-	MapDir string
-	// GPUFractionAnnotation is the annotation key for the requested GPU fraction.
-	GPUFractionAnnotation string
-	// LogPodEvents logs each recorded/removed mapping event.
-	LogPodEvents bool
+	MapDir       string // shared dir for the container→pod mapping handoff
+	LogPodEvents bool   // log each recorded/removed mapping event
 
 	// Log is the logger used by the plugin; defaults to slog.Default() when nil.
 	Log *slog.Logger
@@ -104,7 +95,7 @@ func NewPlugin(cfg Config) *Plugin {
 		FailOpen:         cfg.FailOpen,
 		Log:              log,
 		events:           proc,
-		adapter:          adapter{gpuFractionAnnotation: cfg.GPUFractionAnnotation, log: log},
+		adapter:          adapter{annotationPrefix: cfg.AnnotationPrefix, log: log},
 	}
 }
 
