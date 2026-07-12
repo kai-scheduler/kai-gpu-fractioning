@@ -8,10 +8,6 @@ import (
 )
 
 const (
-	// annotationGPUMemoryPrefix is the key prefix for fractional GPU memory annotations.
-	// Full key: <prefix><containerName>.{request,limit}
-	annotationGPUMemoryPrefix = "nvidia.com/gpu-memory.container."
-
 	// Annotation key suffixes appended after the container name.
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
