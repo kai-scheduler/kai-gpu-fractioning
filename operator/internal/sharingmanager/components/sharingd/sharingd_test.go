@@ -131,6 +131,40 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	}
 }
 
+// The readiness probe must hit the binary's /readyz endpoint so a sharingd
+// that never registers with NRI reports Ready=False (and the node condition
+// stays false) instead of a false-positive AllDaemonsReady.
+func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
+	d := NewSharingdDaemon(nil, nil)
+	ds := d.BuildDaemonSet(defaultOpts())
+	ctr := ds.Spec.Template.Spec.Containers[0]
+
+	probe := ctr.ReadinessProbe
+	if probe == nil {
+		t.Fatal("expected a readiness probe on the sharingd container")
+	}
+	httpGet := probe.HTTPGet
+	if httpGet == nil {
+		t.Fatal("expected an httpGet readiness probe")
+	}
+	if httpGet.Path != "/readyz" {
+		t.Errorf("probe path = %q, expected %q", httpGet.Path, "/readyz")
+	}
+	if httpGet.Port.IntValue() != healthPort {
+		t.Errorf("probe port = %d, expected %d", httpGet.Port.IntValue(), healthPort)
+	}
+
+	var found bool
+	for _, p := range ctr.Ports {
+		if p.ContainerPort == healthPort {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected container port %d to be declared, got %v", healthPort, ctr.Ports)
+	}
+}
+
 func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
 		AnnotationPrefix: "custom.prefix.",

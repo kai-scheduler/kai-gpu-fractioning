@@ -10,6 +10,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/health"
 )
 
 const (
@@ -39,6 +40,11 @@ type Config struct {
 
 	// Log is the logger used by the plugin; defaults to slog.Default() when nil.
 	Log *slog.Logger
+
+	// Readiness, when non-nil, is flipped to ready on Synchronize (the runtime
+	// delivered the full container state, so registration succeeded) and back to
+	// not-ready on Shutdown (the runtime is disconnecting).
+	Readiness *health.State
 }
 
 // Plugin implements the GPU sharing NRI handler logic. It has two independent
@@ -67,8 +73,9 @@ type Plugin struct {
 	FailOpen         bool
 	Log              *slog.Logger
 
-	events  *events.Processor
-	adapter adapter
+	events    *events.Processor
+	adapter   adapter
+	readiness *health.State
 }
 
 // NewPlugin creates a Plugin from cfg. Empty mapping defaults are filled in so a
@@ -96,6 +103,14 @@ func NewPlugin(cfg Config) *Plugin {
 		Log:              log,
 		events:           proc,
 		adapter:          adapter{annotationPrefix: cfg.AnnotationPrefix, log: log},
+		readiness:        cfg.Readiness,
+	}
+}
+
+// setReady updates the shared readiness state, if one was configured.
+func (p *Plugin) setReady(ready bool) {
+	if p.readiness != nil {
+		p.readiness.SetReady(ready)
 	}
 }
 
@@ -111,6 +126,9 @@ func (p *Plugin) Configure(ctx context.Context, _, runtime, version string) (api
 // container set on (re)connect. Pre-existing pods arrive here, not via
 // CreateContainer. The conversion runs on the events worker; the handler returns
 // no container updates (this plugin does not mutate on sync).
+//
+// Synchronize only fires after the plugin successfully registered with the
+// runtime, so it doubles as the readiness signal.
 func (p *Plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
 	p.Log.InfoContext(ctx, "synchronizing container mapping with runtime",
 		"pods", len(pods), "containers", len(containers))
@@ -120,6 +138,7 @@ func (p *Plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 			"recordedContainers", len(infos), "totalContainers", len(containers))
 		return infos
 	})
+	p.setReady(true)
 	return nil, nil
 }
 
@@ -204,8 +223,10 @@ func (p *Plugin) RemoveContainer(_ context.Context, _ *api.PodSandbox, ctr *api.
 	return nil
 }
 
-// Shutdown flushes any queued mapping events when the runtime disconnects.
+// Shutdown flushes any queued mapping events when the runtime disconnects,
+// and marks the plugin not-ready until the next successful Synchronize.
 func (p *Plugin) Shutdown(_ context.Context) {
+	p.setReady(false)
 	p.events.Flush()
 }
 

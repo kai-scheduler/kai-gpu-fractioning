@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
@@ -28,6 +29,11 @@ const (
 	volumeNRISocket = "nri-socket"
 	volumeMPSPipe   = "mps-pipe"
 	volumeMapDir    = "map-dir"
+
+	// healthPort and readyzPath must match the sharingd binary's defaults
+	// (sharing-manager/sharingd): it serves /readyz on --health-port.
+	healthPort = 8093
+	readyzPath = "/readyz"
 )
 
 // daemon implements daemonmgr.ManagedDaemon for the sharingd NRI plugin plus its
@@ -148,12 +154,36 @@ func (d *daemon) metricsAnnotationPath() string {
 // buildSharingdContainer returns the main sharingd container and its required
 // host-path volumes. The map-dir mount is added by the caller when metricsd is enabled.
 func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
+	// sharingd retries its NRI connection indefinitely by default, so the
+	// process stays Running even when it never registers with containerd. The
+	// binary serves /readyz on healthPort, flipping to ready only once the NRI
+	// plugin is registered and synchronized — probing it keeps the pod (and the
+	// node's gpu-sharing Ready condition) not-ready until sharingd actually works.
+	readinessProbe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: readyzPath,
+				Port: intstr.FromInt32(healthPort),
+			},
+		},
+		InitialDelaySeconds: 5,
+		PeriodSeconds:       10,
+	}
+
 	container := corev1.Container{
 		Name:            daemonName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildArgs(),
+		ReadinessProbe:  readinessProbe,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "health",
+				ContainerPort: healthPort,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeNRISocket, MountPath: d.nriSocketDir()},
 			{Name: volumeMPSPipe, MountPath: defaultMPSPipeDir},
