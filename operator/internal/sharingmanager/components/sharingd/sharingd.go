@@ -1,6 +1,7 @@
 package sharingd
 
 import (
+	"log/slog"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -77,10 +78,12 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	metricsOn := d.metricsEnabled()
 	if metricsOn {
-		d.applyMetricsSharedVolume(podSpec, &sharingdContainer)
+		vol, mount := metricsSharedVolume()
+		podSpec.Volumes = append(podSpec.Volumes, vol)
+		sharingdContainer.VolumeMounts = append(sharingdContainer.VolumeMounts, mount)
 	}
-	// sharingdContainer is a value type: append must happen after applyMetricsSharedVolume
-	// so the map-dir VolumeMount is included in the copy placed into the slice.
+	// sharingdContainer is a value type: append must happen after the map-dir mount
+	// is added so the VolumeMount is included in the copy placed into the slice.
 	podSpec.Containers = append(podSpec.Containers, sharingdContainer)
 	if metricsOn {
 		d.applyMetricsSidecar(result, opts.DefaultImages)
@@ -89,24 +92,18 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	return result
 }
 
-// metricsEnabled reports whether the metricsd sidecar should be deployed. It
-// defaults to true and is disabled only by an explicit Enabled=false.
 func (d *daemon) metricsEnabled() bool {
-	if d.metricsSpec != nil && d.metricsSpec.Enabled != nil {
-		return *d.metricsSpec.Enabled
-	}
-	return true
+	return d.metricsSpec != nil && d.metricsSpec.Enabled
 }
 
-// applyMetricsSharedVolume adds the map-dir emptyDir to the pod and mounts it
-// into sharingdContainer as the writer side of the metrics handoff.
-func (d *daemon) applyMetricsSharedVolume(podSpec *corev1.PodSpec, sharingdContainer *corev1.Container) {
-	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-		Name:         volumeMapDir,
-		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-	})
-	sharingdContainer.VolumeMounts = append(sharingdContainer.VolumeMounts,
-		corev1.VolumeMount{Name: volumeMapDir, MountPath: containerPodMapDir})
+// metricsSharedVolume returns the map-dir emptyDir volume and the corresponding
+// mount for the sharingd container (writer side of the container→pod mapping handoff).
+func metricsSharedVolume() (corev1.Volume, corev1.VolumeMount) {
+	return corev1.Volume{
+			Name:         volumeMapDir,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+		corev1.VolumeMount{Name: volumeMapDir, MountPath: containerPodMapDir}
 }
 
 // applyMetricsSidecar adds the metricsd container and Prometheus scrape
@@ -130,7 +127,10 @@ func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map
 // annotation, derived from the configured address or falling back to the default.
 func (d *daemon) metricsAnnotationPort() string {
 	if d.metricsSpec != nil && d.metricsSpec.Address != "" {
-		if _, port, err := net.SplitHostPort(d.metricsSpec.Address); err == nil && port != "" {
+		_, port, err := net.SplitHostPort(d.metricsSpec.Address)
+		if err != nil {
+			slog.Warn("invalid metricsAgent.address, falling back to default port", "address", d.metricsSpec.Address, "err", err)
+		} else if port != "" {
 			return port
 		}
 	}

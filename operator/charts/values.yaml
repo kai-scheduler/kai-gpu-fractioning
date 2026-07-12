@@ -40,3 +40,6 @@ resources:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+metricsAgent:
+  enabled: true

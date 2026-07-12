@@ -45,6 +45,10 @@ spec:
                   a sidecar container in the same DaemonSet as sharingd and reads the
                   container→pod mapping sharingd writes to a shared volume.
                 properties:
+                  address:
+                    description: 'address is the Prometheus exporter listen address.
+                      Default: :2112.'
+                    type: string
                   enabled:
                     description: |-
                       enabled controls whether the metricsd sidecar is added to the DaemonSet.
@@ -70,6 +74,15 @@ spec:
                           to the chart appVersion.
                         type: string
                     type: object
+                  logLevel:
+                    description: |-
+                      logLevel controls the logging verbosity of the metrics agent.
+                      One of debug, info, warn, error. Default: info.
+                    type: string
+                  path:
+                    description: 'path is the HTTP path on which metrics are served.
+                      Default: /metrics.'
+                    type: string
                 type: object
               mpsDaemon:
                 description: mpsDaemon configures the MPS daemon supervisor (mpsd).
