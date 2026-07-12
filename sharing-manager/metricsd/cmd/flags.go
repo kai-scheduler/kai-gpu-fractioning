@@ -16,8 +16,6 @@ package main
 
 import (
 	"flag"
-	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/env"
@@ -67,16 +65,3 @@ func parseFlags() cliFlags {
 	return f
 }
 
-// parseLogLevel maps a log-level string to a slog.Level, defaulting to info.
-func parseLogLevel(level string) slog.Level {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "debug":
-		return slog.LevelDebug
-	case "warn", "warning":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
-}

@@ -23,11 +23,11 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
 )
@@ -41,9 +41,7 @@ var (
 func main() {
 	flags := parseFlags()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(flags.logLevel),
-	}))
+	logger := configuration.NewLogger(flags.logLevel)
 
 	logger.Info("starting gpu-sharing-metrics",
 		"version", version,

@@ -28,7 +28,7 @@ const (
 	bytesPerDecimalMB = 1_000_000
 )
 
-type metricsController struct {
+type metricsEngine struct {
 	// mu protects snapshot.
 	mu sync.RWMutex
 	// collector is the NVML or noop source of per-process GPU metrics.
@@ -53,11 +53,11 @@ type metricsController struct {
 	snapshot Snapshot
 }
 
-func newMetricsController(collector GPUProcessCollector, resolver PIDCgroupResolver, reader store.Reader, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsController {
+func newMetricsController(collector GPUProcessCollector, resolver PIDCgroupResolver, reader store.Reader, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsEngine {
 	return newMetricsControllerWithPodSource(collector, newCgroupPodSource(resolver, reader, logger), interval, smUtilWindow, logger)
 }
 
-func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSource, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsController {
+func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSource, interval, smUtilWindow time.Duration, logger *slog.Logger) *metricsEngine {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -71,7 +71,7 @@ func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSo
 	if windowSize > 1 {
 		smUtilBuf = map[podGPUKey][]float64{}
 	}
-	return &metricsController{
+	return &metricsEngine{
 		collector:              collector,
 		pods:                   pods,
 		interval:               interval,
@@ -84,7 +84,7 @@ func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSo
 	}
 }
 
-func (s *metricsController) Run(ctx context.Context) error {
+func (s *metricsEngine) Run(ctx context.Context) error {
 	if s.collector == nil || s.pods == nil {
 		return errors.New("metrics controller: collector or pod source is nil")
 	}
@@ -114,13 +114,13 @@ func (s *metricsController) Run(ctx context.Context) error {
 // Snapshot satisfies SnapshotProvider. The in-process controller returns the latest
 // locally cached snapshot and never errors; the context and error are part of
 // the contract so a future out-of-process provider can honor them.
-func (s *metricsController) Snapshot(_ context.Context) (Snapshot, error) {
+func (s *metricsEngine) Snapshot(_ context.Context) (Snapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneSnapshot(s.snapshot), nil
 }
 
-func (s *metricsController) collect(ctx context.Context) {
+func (s *metricsEngine) collect(ctx context.Context) {
 	// Snapshot fetches the container mapping once; all queries in this cycle
 	// hit the resulting in-memory store rather than the filesystem.
 	pods := s.pods.Snapshot()
@@ -160,14 +160,14 @@ func (s *metricsController) collect(ctx context.Context) {
 	}
 }
 
-func (s *metricsController) setSnapshot(metrics []PodGPUMetric, activePodUIDs map[string]struct{}) {
+func (s *metricsEngine) setSnapshot(metrics []PodGPUMetric, activePodUIDs map[string]struct{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.snapshot.Metrics = append([]PodGPUMetric(nil), metrics...)
 	s.snapshot.ActivePodUIDs = maps.Clone(activePodUIDs)
 }
 
-func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
+func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
 	byPodGPU := map[podGPUKey]*PodGPUMetric{}
 	observedPodDevices := map[string]struct{}{}
 	// memByKey sums each pod×GPU's requested GPU memory (decimal MB) across its
@@ -246,7 +246,7 @@ func (s *metricsController) enrich(ctx context.Context, processes []GPUProcessMe
 // of the last smUtilWindowSize samples (same approach as runai-container-toolkit:
 // window_size = max(1, window/interval)). Called only when smUtilWindowSize > 1.
 // Buffer entries for series no longer present are pruned immediately.
-func (s *metricsController) windowedSMUtil(metrics []PodGPUMetric) []PodGPUMetric {
+func (s *metricsEngine) windowedSMUtil(metrics []PodGPUMetric) []PodGPUMetric {
 	current := make(map[podGPUKey]struct{}, len(metrics))
 	for i, m := range metrics {
 		key := podGPUKeyForMetric(m)
@@ -265,7 +265,7 @@ func (s *metricsController) windowedSMUtil(metrics []PodGPUMetric) []PodGPUMetri
 
 // pushSample appends sample to the ring buffer for key, trims it to the window
 // size, and returns the average of the retained samples.
-func (s *metricsController) pushSample(key podGPUKey, sample float64) float64 {
+func (s *metricsEngine) pushSample(key podGPUKey, sample float64) float64 {
 	buf := append(s.smUtilBuf[key], sample)
 	if len(buf) > s.smUtilWindowSize {
 		buf = buf[len(buf)-s.smUtilWindowSize:]
@@ -280,7 +280,7 @@ func (s *metricsController) pushSample(key podGPUKey, sample float64) float64 {
 
 // normalizeSMUtil sets each metric's SMUtilizationPercentNormalized to its SM
 // utilization divided by the requested GPU fraction, capped at 100.
-func (s *metricsController) normalizeSMUtil(metrics []PodGPUMetric) {
+func (s *metricsEngine) normalizeSMUtil(metrics []PodGPUMetric) {
 	for i := range metrics {
 		metrics[i].SMUtilizationPercentNormalized = normalizedSMUtil(
 			metrics[i].SMUtilizationPercent,
@@ -335,7 +335,7 @@ func sumRequestedMemory(byContainer map[string]int64) int64 {
 // device's total memory has not been learned from NVML yet — in which case
 // normalizeSMUtil falls back to treating the pod as holding the whole GPU (so the
 // normalized value equals the raw SM utilization rather than a misleading spike).
-func (s *metricsController) gpuFraction(gpuIndex int, requestedMB int64) float64 {
+func (s *metricsEngine) gpuFraction(gpuIndex int, requestedMB int64) float64 {
 	if requestedMB <= 0 {
 		return 0
 	}
@@ -348,7 +348,7 @@ func (s *metricsController) gpuFraction(gpuIndex int, requestedMB int64) float64
 
 // rememberDeviceTotalMemory records each device's total memory learned from an
 // NVML collect so it persists across cycles where a transient error omits it.
-func (s *metricsController) rememberDeviceTotalMemory(deviceTotalMemory map[int]uint64) {
+func (s *metricsEngine) rememberDeviceTotalMemory(deviceTotalMemory map[int]uint64) {
 	for index, total := range deviceTotalMemory {
 		if total == 0 {
 			continue
@@ -357,7 +357,7 @@ func (s *metricsController) rememberDeviceTotalMemory(deviceTotalMemory map[int]
 	}
 }
 
-func (s *metricsController) rememberDeviceUUIDs(deviceUUIDs map[int]string) {
+func (s *metricsEngine) rememberDeviceUUIDs(deviceUUIDs map[int]string) {
 	for index, uuid := range deviceUUIDs {
 		if uuid == "" {
 			continue
@@ -366,7 +366,7 @@ func (s *metricsController) rememberDeviceUUIDs(deviceUUIDs map[int]string) {
 	}
 }
 
-func (s *metricsController) idlePodGPUKey(container store.ContainerInfo, device store.GPUDevice) podGPUKey {
+func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device store.GPUDevice) podGPUKey {
 	// The NRI backend identifies a device by index and learns its UUID from the
 	// NVML collect; the PodResources backend supplies the UUID directly (and we
 	// recover the index from NVML when it is known) since it has no device index.
@@ -386,7 +386,7 @@ func (s *metricsController) idlePodGPUKey(container store.ContainerInfo, device 
 	}
 }
 
-func (s *metricsController) indexForUUID(uuid string) (int, bool) {
+func (s *metricsEngine) indexForUUID(uuid string) (int, bool) {
 	for index, deviceUUID := range s.deviceUUIDs {
 		if deviceUUID == uuid {
 			return index, true

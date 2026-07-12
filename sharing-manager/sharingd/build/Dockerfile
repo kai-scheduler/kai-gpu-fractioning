@@ -6,7 +6,7 @@ WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
 COPY sharing-manager/ sharing-manager/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -ldflags="-s -w" -o sharingd ./sharing-manager/sharingd/cmd
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o sharingd ./sharing-manager/sharingd/cmd
 
 # distroless/static is sufficient because sharingd is a statically-linked Go
 # binary with no GPU or OS-level dependencies — it only communicates via the

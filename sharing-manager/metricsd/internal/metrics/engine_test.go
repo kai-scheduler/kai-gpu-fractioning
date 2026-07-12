@@ -397,7 +397,7 @@ func TestWindowedSMUtilAveragesWithinWindow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &metricsController{
+			s := &metricsEngine{
 				smUtilWindowSize: tt.windowSize,
 				smUtilBuf:        map[podGPUKey][]float64{},
 				deviceUUIDs:      map[int]string{},
@@ -413,7 +413,7 @@ func TestWindowedSMUtilAveragesWithinWindow(t *testing.T) {
 }
 
 func TestWindowedSMUtilPrunesDeletedPodSeriesImmediately(t *testing.T) {
-	controller := &metricsController{
+	controller := &metricsEngine{
 		smUtilWindowSize: 3,
 		smUtilBuf:        map[podGPUKey][]float64{},
 		deviceUUIDs:      map[int]string{},
@@ -455,7 +455,7 @@ func TestGPUFraction(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &metricsController{deviceTotalMemoryBytes: tt.deviceTotal}
+			s := &metricsEngine{deviceTotalMemoryBytes: tt.deviceTotal}
 			if got := s.gpuFraction(0, tt.requestedMB); got != tt.want {
 				t.Fatalf("gpuFraction(0, %d) = %g, want %g", tt.requestedMB, got, tt.want)
 			}
@@ -467,7 +467,7 @@ func TestGPUFraction(t *testing.T) {
 // learned total survives a later collect that omits it or reports 0 (a transient
 // NVML error), so the derived fraction does not flap to the whole-GPU fallback.
 func TestRememberDeviceTotalMemoryPersistsAcrossPartialUpdates(t *testing.T) {
-	s := &metricsController{deviceTotalMemoryBytes: map[int]uint64{}}
+	s := &metricsEngine{deviceTotalMemoryBytes: map[int]uint64{}}
 
 	s.rememberDeviceTotalMemory(map[int]uint64{0: 100, 1: 200})
 	// Next collect: device 0 still reports; device 1 reports 0 (transient error).

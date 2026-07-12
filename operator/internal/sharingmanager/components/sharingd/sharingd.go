@@ -1,6 +1,8 @@
 package sharingd
 
 import (
+	"log/slog"
+	"net"
 	"path/filepath"
 	"strconv"
 
@@ -31,14 +33,14 @@ const (
 // daemon implements daemonmgr.ManagedDaemon for the sharingd NRI plugin plus its
 // metricsd metrics sidecar. Both run in a single DaemonSet pod.
 type daemon struct {
-	spec    *v1alpha1.SharingAgentSpec
-	metrics *v1alpha1.MetricsAgentSpec
+	sharingSpec *v1alpha1.SharingAgentSpec
+	metricsSpec *v1alpha1.MetricsAgentSpec
 }
 
 // NewSharingdDaemon returns a ManagedDaemon for the sharingd NRI plugin. The
 // metricsAgent spec (may be nil) configures the co-located metricsd sidecar.
 func NewSharingdDaemon(spec *v1alpha1.SharingAgentSpec, metrics *v1alpha1.MetricsAgentSpec) daemonmgr.ManagedDaemon {
-	return &daemon{spec: spec, metrics: metrics}
+	return &daemon{sharingSpec: spec, metricsSpec: metrics}
 }
 
 func (d *daemon) Name() string { return daemonName }
@@ -67,50 +69,84 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	podSpec.NodeSelector = opts.NodeSelector
 	podSpec.HostPID = true
 
-	// Shared handoff volume between sharingd (writer) and metricsd (reader).
-	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-		Name:         volumeMapDir,
-		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-	})
-
 	sharingdImage := opts.DefaultImages[daemonName]
-	if d.spec != nil && d.spec.Image != nil {
-		sharingdImage = sharingdImage.MergeWith(*d.spec.Image)
+	if d.sharingSpec != nil && d.sharingSpec.Image != nil {
+		sharingdImage = sharingdImage.MergeWith(*d.sharingSpec.Image)
 	}
-	container, volumes := d.buildSharingdContainer(sharingdImage)
-	podSpec.Containers = append(podSpec.Containers, container)
-	podSpec.Volumes = append(podSpec.Volumes, volumes...)
+	sharingdContainer, sharingdVolumes := d.buildSharingdContainer(sharingdImage)
+	podSpec.Volumes = append(podSpec.Volumes, sharingdVolumes...)
 
-	if d.metricsEnabled() {
-		metricsImage := opts.DefaultImages[metricsdName]
-		if d.metrics != nil && d.metrics.Image != nil {
-			metricsImage = metricsImage.MergeWith(*d.metrics.Image)
-		}
-		podSpec.Containers = append(podSpec.Containers, d.buildMetricsdContainer(metricsImage))
-
-		// Prometheus pod-scrape discovery for the metrics port.
-		if result.Spec.Template.Annotations == nil {
-			result.Spec.Template.Annotations = map[string]string{}
-		}
-		result.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
-		result.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(metricsPort)
-		result.Spec.Template.Annotations["prometheus.io/path"] = "/metrics"
+	metricsOn := d.metricsEnabled()
+	if metricsOn {
+		vol, mount := metricsSharedVolume()
+		podSpec.Volumes = append(podSpec.Volumes, vol)
+		sharingdContainer.VolumeMounts = append(sharingdContainer.VolumeMounts, mount)
+	}
+	// sharingdContainer is a value type: append must happen after the map-dir mount
+	// is added so the VolumeMount is included in the copy placed into the slice.
+	podSpec.Containers = append(podSpec.Containers, sharingdContainer)
+	if metricsOn {
+		d.applyMetricsSidecar(result, opts.DefaultImages)
 	}
 
 	return result
 }
 
-// metricsEnabled reports whether the metricsd sidecar should be deployed. It
-// defaults to true and is disabled only by an explicit Enabled=false.
 func (d *daemon) metricsEnabled() bool {
-	if d.metrics != nil && d.metrics.Enabled != nil {
-		return *d.metrics.Enabled
+	return d.metricsSpec != nil && d.metricsSpec.Enabled
+}
+
+// metricsSharedVolume returns the map-dir emptyDir volume and the corresponding
+// mount for the sharingd container (writer side of the container→pod mapping handoff).
+func metricsSharedVolume() (corev1.Volume, corev1.VolumeMount) {
+	return corev1.Volume{
+			Name:         volumeMapDir,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+		corev1.VolumeMount{Name: volumeMapDir, MountPath: containerPodMapDir}
+}
+
+// applyMetricsSidecar adds the metricsd container and Prometheus scrape
+// annotations to the DaemonSet.
+func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map[string]v1alpha1.ImageSpec) {
+	metricsImage := defaultImages[metricsdName]
+	if d.metricsSpec != nil && d.metricsSpec.Image != nil {
+		metricsImage = metricsImage.MergeWith(*d.metricsSpec.Image)
 	}
-	return true
+	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(metricsImage))
+
+	if result.Spec.Template.Annotations == nil {
+		result.Spec.Template.Annotations = map[string]string{}
+	}
+	result.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
+	result.Spec.Template.Annotations["prometheus.io/port"] = d.metricsAnnotationPort()
+	result.Spec.Template.Annotations["prometheus.io/path"] = d.metricsAnnotationPath()
+}
+
+// metricsAnnotationPort returns the port string for the prometheus.io/port
+// annotation, derived from the configured address or falling back to the default.
+func (d *daemon) metricsAnnotationPort() string {
+	if d.metricsSpec != nil && d.metricsSpec.Address != "" {
+		_, port, err := net.SplitHostPort(d.metricsSpec.Address)
+		if err != nil {
+			slog.Warn("invalid metricsAgent.address, falling back to default port", "address", d.metricsSpec.Address, "err", err)
+		} else if port != "" {
+			return port
+		}
+	}
+	return strconv.Itoa(metricsPort)
+}
+
+// metricsAnnotationPath returns the path for the prometheus.io/path annotation.
+func (d *daemon) metricsAnnotationPath() string {
+	if d.metricsSpec != nil && d.metricsSpec.Path != "" {
+		return d.metricsSpec.Path
+	}
+	return "/metrics"
 }
 
 // buildSharingdContainer returns the main sharingd container and its required
-// host-path volumes, plus a mount of the shared map directory it writes to.
+// host-path volumes. The map-dir mount is added by the caller when metricsd is enabled.
 func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
 	container := corev1.Container{
 		Name:            daemonName,
@@ -121,7 +157,6 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeNRISocket, MountPath: d.nriSocketDir()},
 			{Name: volumeMPSPipe, MountPath: defaultMPSPipeDir},
-			{Name: volumeMapDir, MountPath: containerPodMapDir},
 		},
 	}
 
@@ -146,15 +181,15 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 }
 
 // buildMetricsdContainer returns the metricsd sidecar. It reads the shared map
-// directory (read-only) and exports GPU metrics on metricsPort. All of metricsd's
-// defaults (map dir, :2112, /proc) already match this deployment, so it needs no
-// arguments; PID→pod attribution works via the pod's host PID namespace.
+// directory (read-only) and exports GPU metrics on metricsPort. PID→pod
+// attribution works via the pod's host PID namespace.
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
 	return corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
+		Args:            d.buildMetricsdArgs(),
 		Ports: []corev1.ContainerPort{
 			{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP},
 		},
@@ -164,8 +199,25 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 	}
 }
 
+func (d *daemon) buildMetricsdArgs() []string {
+	if d.metricsSpec == nil {
+		return nil
+	}
+	var args []string
+	if d.metricsSpec.LogLevel != "" {
+		args = append(args, "--log-level", d.metricsSpec.LogLevel)
+	}
+	if d.metricsSpec.Address != "" {
+		args = append(args, "--metrics-address", d.metricsSpec.Address)
+	}
+	if d.metricsSpec.Path != "" {
+		args = append(args, "--metrics-path", d.metricsSpec.Path)
+	}
+	return args
+}
+
 func (d *daemon) buildArgs() []string {
-	spec := d.spec
+	spec := d.sharingSpec
 	if spec == nil {
 		return nil
 	}
@@ -207,11 +259,11 @@ func (d *daemon) buildArgs() []string {
 // nriSocketDir returns the directory containing the NRI socket.
 // The volume mount needs the directory, not the socket file itself.
 func (d *daemon) nriSocketDir() string {
-	if d.spec == nil || d.spec.NRISocketPath == "" {
+	if d.sharingSpec == nil || d.sharingSpec.NRISocketPath == "" {
 		return defaultNRISocketDir
 	}
 
-	return filepath.Dir(d.spec.NRISocketPath)
+	return filepath.Dir(d.sharingSpec.NRISocketPath)
 }
 
 // pullPolicy resolves the image pull policy, defaulting to IfNotPresent.
