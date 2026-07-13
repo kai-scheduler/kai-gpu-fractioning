@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
@@ -28,6 +29,13 @@ const (
 	volumeNRISocket = "nri-socket"
 	volumeMPSPipe   = "mps-pipe"
 	volumeMapDir    = "map-dir"
+
+	// defaultReadinessPort must match the sharingd binary's default
+	// (sharing-manager/sharingd): it serves /readyz on --readiness-port. Used
+	// when spec.readinessPort is unset, in which case no argument is passed to
+	// the binary — keeping older sharingd images (without the flag) compatible.
+	defaultReadinessPort = 8093
+	readyzPath           = "/readyz"
 )
 
 // daemon implements daemonmgr.ManagedDaemon for the sharingd NRI plugin plus its
@@ -151,12 +159,37 @@ func (d *daemon) metricsAnnotationPath() string {
 // buildSharingdContainer returns the main sharingd container and its required
 // host-path volumes. The map-dir mount is added by the caller when metricsd is enabled.
 func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
+	// sharingd retries its NRI connection indefinitely by default, so the
+	// process stays Running even when it never registers with containerd. The
+	// binary serves /readyz on the readiness port, flipping to ready only once
+	// the NRI plugin is registered and synchronized — probing it keeps the pod
+	// (and the node's gpu-sharing Ready condition) not-ready until sharingd
+	// actually works.
+	readinessProbe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: readyzPath,
+				Port: intstr.FromInt32(d.readinessPort()),
+			},
+		},
+		InitialDelaySeconds: 5,
+		PeriodSeconds:       10,
+	}
+
 	container := corev1.Container{
 		Name:            daemonName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildArgs(),
+		ReadinessProbe:  readinessProbe,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "readiness",
+				ContainerPort: d.readinessPort(),
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeNRISocket, MountPath: d.nriSocketDir()},
 			{Name: volumeMPSPipe, MountPath: defaultMPSPipeDir},
@@ -265,8 +298,23 @@ func (d *daemon) buildArgs() []string {
 	if spec.MaxRetries != nil {
 		args = append(args, "--max-retries", strconv.Itoa(int(*spec.MaxRetries)))
 	}
+	// Port for the /readyz readiness endpoint. Only passed when explicitly
+	// configured; otherwise the binary's default is left to match
+	// defaultReadinessPort, so older images without the flag keep working.
+	if spec.ReadinessPort != nil {
+		args = append(args, "--readiness-port", strconv.Itoa(int(*spec.ReadinessPort)))
+	}
 
 	return args
+}
+
+// readinessPort returns the port the readiness probe (and container port)
+// target: the CRD override when set, the binary's default otherwise.
+func (d *daemon) readinessPort() int32 {
+	if d.sharingSpec != nil && d.sharingSpec.ReadinessPort != nil {
+		return *d.sharingSpec.ReadinessPort
+	}
+	return defaultReadinessPort
 }
 
 // nriSocketDir returns the directory containing the NRI socket.

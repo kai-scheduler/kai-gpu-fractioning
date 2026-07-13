@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
@@ -26,14 +27,26 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	defer cancel()
 
 	c := s.Client
+
+	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
+	if err != nil {
+		t.Fatalf("list GPU nodes: %v", err)
+	}
+	if len(gpuNodes) == 0 {
+		t.Fatalf("no GPU nodes found matching selector %q", c.Config.GPUNodeSelector)
+	}
+	targetNode := gpuNodes[0].Name
+
 	spec := workload.FractionalPod{
 		Namespace:           attributionTestNamespace,
 		Name:                "tc1-single-fractional-pod",
 		ContainerName:       "trainer",
 		GPUMemoryLimitMiB:   "2048",
 		GPUMemoryRequestMiB: "2048",
+		NodeSelector:        map[string]string{"kubernetes.io/hostname": targetNode},
 	}
 
+	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
 	pod, err := workload.Apply(ctx, c, spec)
 	if err != nil {
 		t.Fatalf("create fractional pod: %v", err)
@@ -47,7 +60,7 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	// Resolve the container's host-namespace PID and make NVML report it as a
 	// GPU process using wantBytes of memory on gpuUUID.
 	marker := workload.DefaultMarker(spec.Namespace, spec.Name)
-	pid, err := nvmlmock.HostPID(ctx, c, pod.Spec.NodeName, marker)
+	pid, err := nvmlmock.HostPID(ctx, c, targetNode, marker)
 	if err != nil {
 		t.Fatalf("resolve host PID for %s/%s: %v", spec.Namespace, spec.Name, err)
 	}

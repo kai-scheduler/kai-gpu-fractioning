@@ -109,6 +109,15 @@ type SharingAgentSpec struct {
 	// 0 means unlimited. Default: 0.
 	// +optional
 	MaxRetries *int32 `json:"maxRetries,omitempty"`
+
+	// readinessPort is the port sharingd serves its /readyz endpoint on. When set,
+	// the operator passes --readiness-port to the binary and points the readiness
+	// probe at it. When unset, no argument is passed and the probe targets the
+	// binary's built-in default (8093), keeping older sharingd images compatible.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	ReadinessPort *int32 `json:"readinessPort,omitempty"`
 }
 
 // MetricsAgentSpec configures the metricsd sidecar in the sharingd DaemonSet.

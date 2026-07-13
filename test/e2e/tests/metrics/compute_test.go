@@ -3,11 +3,12 @@
 package metrics
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
-	"context"
 
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
@@ -42,6 +43,15 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 
 	c := s.Client
 
+	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
+	if err != nil {
+		t.Fatalf("list GPU nodes: %v", err)
+	}
+	if len(gpuNodes) == 0 {
+		t.Fatalf("no GPU nodes found matching selector %q", c.Config.GPUNodeSelector)
+	}
+	targetNode := gpuNodes[0].Name
+
 	// 25% of total GPU memory — small fraction, deliberately below the sm_util
 	// we will inject (95%), to make it obvious the two are independent.
 	quarterMemMiB := strconv.Itoa(c.Config.GPUMemoryMiB / 4)
@@ -52,6 +62,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 		ContainerName:       "trainer",
 		GPUMemoryLimitMiB:   quarterMemMiB,
 		GPUMemoryRequestMiB: quarterMemMiB,
+		NodeSelector:        map[string]string{"kubernetes.io/hostname": targetNode},
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -66,7 +77,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	})
 
 	marker := workload.DefaultMarker(spec.Namespace, spec.Name)
-	pid, err := nvmlmock.HostPID(ctx, c, pod.Spec.NodeName, marker)
+	pid, err := nvmlmock.HostPID(ctx, c, targetNode, marker)
 	if err != nil {
 		t.Fatalf("resolve host PID: %v", err)
 	}

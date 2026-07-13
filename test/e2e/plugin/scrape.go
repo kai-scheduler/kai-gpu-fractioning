@@ -39,12 +39,13 @@ func ScrapeAll(ctx context.Context, c *cluster.Client) (map[string]map[string]*d
 	for _, pod := range sharingdPods {
 		fw, err := portforward.ToPod(c, pod.Namespace, pod.Name, metricsPort)
 		if err != nil {
-			return nil, fmt.Errorf("port-forward to %s/%s: %w", pod.Namespace, pod.Name, err)
+			// Pod may be restarting mid-rollout; skip and check remaining pods.
+			continue
 		}
 		families, err := metrics.Scrape(fw.LocalPort, "/metrics")
 		fw.Close()
 		if err != nil {
-			return nil, fmt.Errorf("scrape metrics from %s/%s: %w", pod.Namespace, pod.Name, err)
+			continue
 		}
 		result[pod.Name] = families
 	}
