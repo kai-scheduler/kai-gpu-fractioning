@@ -17,7 +17,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_SMUtilizationClampedAtOneHundred is TC-5: when two processes from
+// TestE2E_SMUtilizationClampedAtOneHundred verifies that when two processes from
 // the same pod both report SM utilization on the same GPU device, the engine
 // sums their contributions (70 + 60 = 130) and clamps the result to 100 —
 // testing engine.go lines 236-238 (the maxSMUtilPercent guard).
@@ -31,7 +31,7 @@ import (
 // utilization injection is available).
 func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("TC-5 requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

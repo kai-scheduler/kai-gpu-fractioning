@@ -14,7 +14,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_TwoFractionalPodsShareOneGPU is TC-2: two fractional pods
+// TestE2E_TwoFractionalPodsShareOneGPU verifies that two fractional pods
 // co-located on the same GPU node each produce a distinct metric series
 // attributed to their own pod identity, proving per-pod isolation of
 // accounting on a shared device.
@@ -39,7 +39,7 @@ import (
 // report up to 100% SM utilisation while the idle co-tenant reports 0.
 func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	// Two DaemonSet rollouts (inside SetProcesses) plus collection cycles for
-	// two pods — match the TC-1/TC-9 budget.
+	// two pods — match the attribution/resilience test budget.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -145,7 +145,7 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	// For memory bytes we assert presence only: nvml-mock's
 	// GetComputeRunningProcesses_v3 always returns usedGpuMemory=0 regardless
 	// of the configured used_gpu_memory — value assertion is deferred until
-	// the mock gains per-process memory fidelity (see TC-1 NOTE).
+	// the mock gains per-process memory fidelity (see attribution_test.go NOTE).
 	for _, metricName := range bothMetricNames {
 		seriesA, err := waitForSeries(ctx, c, metricName, matchA)
 		if err != nil {

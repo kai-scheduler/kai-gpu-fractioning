@@ -14,13 +14,14 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_MultipleGPUsOnOneNodeAreIsolated is TC-3: two fractional pods
-// placed on different physical GPUs on the same node must each carry their
-// own gpu_uuid / gpu_index label — no series for pod A must ever appear
-// under pod B's device, and vice versa.
+// TestE2E_MultipleGPUsOnOneNodeAreIsolated verifies that two fractional pods
+// placed on different physical GPUs on the same node each carry their own
+// gpu_uuid / gpu_index label — no series for pod A must ever appear under
+// pod B's device, and vice versa.
 //
-// This is the inverse of TC-2 (which tests co-location on the same device):
-// TC-3 proves the plugin does not conflate different physical devices.
+// This is the inverse of TestE2E_TwoFractionalPodsShareOneGPU (which tests
+// co-location on the same device): this test proves the plugin does not
+// conflate different physical devices.
 //
 // The test requires GPUCountPerNode >= 2 (set E2E_GPU_COUNT_PER_NODE=2 for
 // nvml-mock clusters, which always expose Device0 and Device1). It skips
@@ -36,7 +37,7 @@ import (
 //     pod_uid never appears under Device0UUID.
 func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 	if s.Client.Config.GPUCountPerNode < 2 {
-		t.Skipf("TC-3 requires GPUCountPerNode >= 2, have %d (set E2E_GPU_COUNT_PER_NODE=2 for nvml-mock clusters)",
+		t.Skipf("requires GPUCountPerNode >= 2, have %d (set E2E_GPU_COUNT_PER_NODE=2 for nvml-mock clusters)",
 			s.Client.Config.GPUCountPerNode)
 	}
 

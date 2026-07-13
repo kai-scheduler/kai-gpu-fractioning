@@ -10,7 +10,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_FullGPUPodIsExcludedFromMetrics is TC-7: a pod requesting
+// TestE2E_FullGPUPodIsExcludedFromMetrics verifies that a pod requesting
 // nvidia.com/gpu without a fractional gpu-memory annotation is treated as
 // full-GPU and intentionally excluded from tracking
 // (sharing-manager/metricsd/internal/plugin/adapter.go:38-46). This is a
@@ -48,10 +48,10 @@ func TestE2E_FullGPUPodIsExcludedFromMetrics(t *testing.T) {
 	}
 }
 
-// TestE2E_MalformedAnnotationIsIgnoredNotFatal is TC-8: a near-miss
+// TestE2E_MalformedAnnotationIsIgnoredNotFatal verifies that a near-miss
 // annotation key (here, a typo'd ".gpu-mem.limit" suffix instead of
-// ".gpu-memory.limit") must degrade to "not tracked," exactly like TC-7 —
-// not crash the plugin. Protects against a future regex/parsing change
+// ".gpu-memory.limit") degrades to "not tracked" — same as a full-GPU pod —
+// and does not crash the plugin. Protects against a future regex/parsing change
 // turning a bad annotation into a panic or a wrongly-attributed series.
 func TestE2E_MalformedAnnotationIsIgnoredNotFatal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

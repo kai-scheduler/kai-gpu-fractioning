@@ -41,9 +41,9 @@ type FractionalPod struct {
 
 	// Annotations, when non-nil, replaces the derived fractional-GPU
 	// annotations entirely. Use an empty (non-nil) map for a full-GPU pod
-	// with no fractional annotation at all (TC-7), or a map containing a
-	// deliberately malformed key to test that the plugin ignores it rather
-	// than tracking or crashing on it (TC-8). Leave nil for the normal,
+	// with no fractional annotation at all (full-GPU pod exclusion test), or a
+	// map containing a deliberately malformed key to test that the plugin ignores
+	// it rather than tracking or crashing on it. Leave nil for the normal,
 	// well-formed fractional case.
 	Annotations map[string]string
 

@@ -13,7 +13,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_SoloFractionalPodIsNotComputeThrottled is TC-10: a fractional GPU
+// TestE2E_SoloFractionalPodIsNotComputeThrottled verifies that a fractional GPU
 // annotation only partitions memory in this system — it carries no SM
 // utilization cap. A solo pod whose declared fraction is 25% of the device
 // must still be able to report the full SM util that NVML observed.
@@ -29,12 +29,12 @@ import (
 //
 // Memory is asserted for presence only: nvml-mock's
 // GetComputeRunningProcesses_v3 always returns usedGpuMemory=0 regardless of
-// the configured value (documented nvml-mock limitation — see TC-1 NOTE).
+// the configured value (documented nvml-mock limitation — see attribution_test.go NOTE).
 //
 // Requires: E2E_NVML_MOCK=1.
 func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("TC-10 requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

@@ -51,14 +51,14 @@ type Config struct {
 	GPUMemoryMiB int
 
 	// GPUCountPerNode is the number of GPUs available per GPU node. Tests that
-	// require multiple physical devices on one node (TC-3) skip when this is
+	// require multiple physical devices on one node skip when this is
 	// less than 2. The default is 1 (conservative); set E2E_GPU_COUNT_PER_NODE=2
 	// for nvml-mock clusters, which always expose two devices per node.
 	GPUCountPerNode int
 
 	// NVMLMock signals that the cluster is running the nvml-mock DaemonSet
 	// instead of a real NVIDIA driver. Tests that rely on per-process SM
-	// utilization injection (TC-5) require nvml-mock and skip when this is
+	// utilization injection require nvml-mock and skip when this is
 	// false. Set E2E_NVML_MOCK=1 for nvml-mock clusters.
 	NVMLMock bool
 }

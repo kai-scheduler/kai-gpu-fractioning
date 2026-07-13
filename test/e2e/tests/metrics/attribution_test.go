@@ -11,8 +11,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_SingleFractionalPodAttribution is TC-1 from
-// test/e2e/docs/metricsd-e2e-test-plan.md: a pod carrying a fractional GPU
+// TestE2E_SingleFractionalPodAttribution verifies that a pod carrying a fractional GPU
 // annotation is attributed under the namespace/pod/pod_uid it actually has, on
 // the GPU whose UUID we pinned in nvml-mock.
 //

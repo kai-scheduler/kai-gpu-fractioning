@@ -14,7 +14,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_IdleThenActiveThenGoneLifecycle is TC-6: the three lifecycle states
+// TestE2E_IdleThenActiveThenGoneLifecycle exercises the three lifecycle states
 // (idle → active → gone) exercise independent code paths in the exporter that
 // can each regress independently:
 //
@@ -26,7 +26,7 @@ import (
 //   - gone: deleting the pod causes both series to disappear on the next
 //     scrape (exporter.go pruneDeletedPods / deleteSeries).
 //
-// A crash or leak in any one state won't be caught by TC-1 or TC-9 alone —
+// A crash or leak in any one state won't be caught by the attribution or resilience tests alone —
 // only a test that runs all three in sequence can catch a regression in the
 // transition logic itself (e.g. a stale series surviving pod deletion, or an
 // in-place update creating a phantom duplicate).
@@ -34,7 +34,7 @@ import (
 // Requires: E2E_NVML_MOCK=1 (per-process SMUtil injection available).
 func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("TC-6 requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

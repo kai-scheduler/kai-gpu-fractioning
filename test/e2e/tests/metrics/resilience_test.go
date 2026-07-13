@@ -13,7 +13,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
 
-// TestE2E_PodDeletionMidCollectionDoesNotBreakExporter is TC-9: deleting a
+// TestE2E_PodDeletionMidCollectionDoesNotBreakExporter verifies that deleting a
 // tracked pod while scrapes are actively in flight must not panic or hang
 // the exporter (exporter.go's pruneDeletedPods/deleteSeries mutate shared
 // registry state under a mutex concurrently with scrapes — easy to get
@@ -22,7 +22,7 @@ import (
 func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	// Two DaemonSet rollouts (inside SetProcesses) plus a collection cycle and
 	// the post-delete prune wait — give it well over the single-rollout budget,
-	// matching TC-1.
+	// matching the attribution test budget.
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 
@@ -58,7 +58,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 
 	// Make NVML report this pod's container as a GPU process so the plugin
 	// exports a series for it — the deletion race can only be exercised once
-	// there is a series to prune. Same PID-pinning dance as TC-1.
+	// there is a series to prune. Same PID-pinning dance as attribution_test.go.
 	marker := workload.DefaultMarker(spec.Namespace, spec.Name)
 	pid, err := nvmlmock.HostPID(ctx, c, pod.Spec.NodeName, marker)
 	if err != nil {

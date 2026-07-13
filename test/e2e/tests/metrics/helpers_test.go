@@ -73,7 +73,7 @@ func waitForAbsence(ctx context.Context, c *cluster.Client, metricName string, m
 
 // assertNeverAppears scrapes repeatedly over window and fails the test the
 // instant a series for metricName matches every label in match. Used for
-// negative cases (TC-7/TC-8) where the expected state is deterministic and
+// negative cases (full-GPU and malformed-annotation exclusion) where the expected state is deterministic and
 // immediate (the adapter rejects/accepts a container synchronously at
 // create time — there's no eventual-consistency to wait out), so this
 // confirms the negative holds rather than just checking once, which could
