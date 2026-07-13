@@ -9,6 +9,7 @@ import (
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
 )
 
@@ -181,7 +182,7 @@ func (p *Plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *ap
 // adjustment when the container has no GPU memory annotations, and an error only
 // when annotation parsing fails while FailOpen is false.
 func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, error) {
-	gpuMemoryCfg, err := ParseGPUMemoryAnnotations(pod.Annotations, ctr.Name, p.AnnotationPrefix)
+	gpuMemoryCfg, err := annotations.ParseGPUMemoryAnnotations(pod.Annotations, ctr.Name, p.AnnotationPrefix)
 	if err != nil {
 		p.Log.Warn("failed to parse GPU memory annotations",
 			"container", ctr.Name,
