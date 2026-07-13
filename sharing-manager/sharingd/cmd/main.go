@@ -24,7 +24,7 @@ func main() {
 	// Readiness flips to ready only once the NRI plugin is registered and
 	// synchronized (Plugin.Synchronize) and back off when the connection drops,
 	// so the kubelet readiness probe reflects actual NRI registration.
-	readyState := &readiness.State{}
+	readyState := readiness.NewState()
 
 	plugin := internal.NewPlugin(internal.Config{
 		AnnotationPrefix: flags.annotationPrefix,

@@ -9,8 +9,12 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
 )
 
+// The plugin depends on the ReadinessSetter interface; readiness.State is the
+// production implementation, so keep the two in sync at compile time.
+var _ ReadinessSetter = (*readiness.State)(nil)
+
 func TestReadinessFollowsNRILifecycle(t *testing.T) {
-	state := &readiness.State{}
+	state := readiness.NewState()
 	p := NewPlugin(Config{
 		MapDir:    t.TempDir(),
 		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),

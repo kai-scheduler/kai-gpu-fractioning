@@ -10,8 +10,15 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
 )
+
+// ReadinessSetter receives the plugin's NRI registration state: true once the
+// runtime delivers Synchronize, false when it disconnects. *readiness.State
+// implements it; the plugin only needs the setter half, so it depends on this
+// interface rather than the readiness package.
+type ReadinessSetter interface {
+	SetReady(bool)
+}
 
 const (
 	// Environment variables injected into containers by the NRI plugin.
@@ -44,7 +51,7 @@ type Config struct {
 	// Readiness, when non-nil, is flipped to ready on Synchronize (the runtime
 	// delivered the full container state, so registration succeeded) and back to
 	// not-ready on Shutdown (the runtime is disconnecting).
-	Readiness *readiness.State
+	Readiness ReadinessSetter
 }
 
 // Plugin implements the GPU sharing NRI handler logic. It has two independent
@@ -75,7 +82,7 @@ type Plugin struct {
 
 	events    *events.Processor
 	adapter   adapter
-	readiness *readiness.State
+	readiness ReadinessSetter
 }
 
 // NewPlugin creates a Plugin from cfg. Empty mapping defaults are filled in so a

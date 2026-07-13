@@ -31,6 +31,11 @@ type State struct {
 	ready atomic.Bool
 }
 
+// NewState returns a State that starts not-ready.
+func NewState() *State {
+	return &State{}
+}
+
 // SetReady records whether the NRI plugin is registered and synchronized.
 func (s *State) SetReady(ready bool) {
 	s.ready.Store(ready)
@@ -41,9 +46,9 @@ func (s *State) Ready() bool {
 	return s.ready.Load()
 }
 
-// Handler returns the readiness HTTP handler: 200 when state is ready,
+// handler returns the readiness HTTP handler: 200 when state is ready,
 // 503 otherwise.
-func Handler(state *State) http.Handler {
+func handler(state *State) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(ReadyzPath, func(w http.ResponseWriter, _ *http.Request) {
 		if !state.Ready() {
@@ -62,7 +67,7 @@ func Handler(state *State) http.Handler {
 func Serve(ctx context.Context, port int, state *State, log *slog.Logger) error {
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           Handler(state),
+		Handler:           handler(state),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

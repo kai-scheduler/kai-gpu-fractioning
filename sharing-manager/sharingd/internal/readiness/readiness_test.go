@@ -28,12 +28,12 @@ func TestStateSetReady(t *testing.T) {
 }
 
 func TestHandlerReadyz(t *testing.T) {
-	state := &State{}
-	handler := Handler(state)
+	state := NewState()
+	h := handler(state)
 
 	probe := func() int {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, ReadyzPath, nil))
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, ReadyzPath, nil))
 		return rec.Code
 	}
 
