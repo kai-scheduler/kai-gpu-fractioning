@@ -32,12 +32,15 @@ func testMappingPlugin(t *testing.T) (*Plugin, *fsstore.Reader) {
 	t.Helper()
 	dir := t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	p := NewPlugin(Config{
+	p, err := NewPlugin(Config{
 		AnnotationPrefix: testMemPrefix,
 		MPSPipeDirectory: "/run/nvidia-mps",
 		MapDir:           dir,
 		Log:              log,
-	})
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewPlugin: %v", err)
+	}
 	return p, fsstore.NewReader(dir, log)
 }
 

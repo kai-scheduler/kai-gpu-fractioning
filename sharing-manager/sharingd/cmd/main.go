@@ -26,7 +26,7 @@ func main() {
 	// so the kubelet readiness probe reflects actual NRI registration.
 	readyState := readiness.NewState()
 
-	plugin := internal.NewPlugin(internal.Config{
+	plugin, err := internal.NewPlugin(internal.Config{
 		AnnotationPrefix: flags.annotationPrefix,
 		MPSPipeDirectory: flags.mpsPipeDir,
 		FailOpen:         flags.failOpen,
@@ -34,7 +34,11 @@ func main() {
 		LogPodEvents:     flags.logPodEvents,
 		Log:              logger,
 		Readiness:        readyState,
-	})
+	}, nil)
+	if err != nil {
+		logger.Error("failed to create plugin", "error", err)
+		os.Exit(1)
+	}
 
 	logger.Info("container→pod mapping handoff directory", "mapDir", flags.mapDir)
 
@@ -51,7 +55,7 @@ func main() {
 		}()
 	}
 
-	err := runWithRetry(ctx, logger, plugin, readyState, flags)
+	err = runWithRetry(ctx, logger, plugin, readyState, flags)
 
 	// Drain any queued mapping writes before exiting so the last events reach the
 	// shared directory.

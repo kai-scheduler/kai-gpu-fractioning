@@ -10,6 +10,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/audit"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
 )
 
@@ -42,6 +43,12 @@ type Config struct {
 	MPSPipeDirectory string
 	// FailOpen skips a container on parse error instead of blocking it.
 	FailOpen bool
+
+	// RetroactiveEnforcement enables the audit pass on NRI (re)connect: any
+	// GPU-sharing container found running without the expected injection is
+	// stopped so kubelet recreates it through a healthy CreateContainer hook.
+	// Requires a non-nil stopper passed to NewPlugin; otherwise it is a no-op.
+	RetroactiveEnforcement bool
 
 	// MapDir is the shared dir for the container→pod mapping handoff.
 	MapDir string
@@ -86,11 +93,20 @@ type Plugin struct {
 	events    *events.Processor
 	adapter   adapter
 	readiness ReadinessSetter
+
+	// sentinel runs retroactive enforcement on Synchronize; nil when disabled.
+	sentinel *audit.Sentinel
 }
 
 // NewPlugin creates a Plugin from cfg. Empty mapping defaults are filled in so a
 // minimal caller still gets a working handoff directory.
-func NewPlugin(cfg Config) *Plugin {
+//
+// stopper backs retroactive enforcement: when cfg.RetroactiveEnforcement is true
+// the plugin audits each NRI Synchronize snapshot and stops GPU-sharing
+// containers missing injection. Enabling the flag without a stopper is a
+// misconfiguration and returns an error rather than silently doing nothing;
+// when the flag is off, stopper is ignored (pass nil).
+func NewPlugin(cfg Config, stopper audit.ContainerStopper) (*Plugin, error) {
 	log := cfg.Log
 	if log == nil {
 		log = slog.Default()
@@ -106,6 +122,14 @@ func NewPlugin(cfg Config) *Plugin {
 		LogEvents: func() bool { return logPodEvents },
 	})
 
+	var sentinel *audit.Sentinel
+	if cfg.RetroactiveEnforcement {
+		if stopper == nil {
+			return nil, fmt.Errorf("retroactive enforcement enabled but no container stopper was provided")
+		}
+		sentinel = audit.NewSentinel(cfg.AnnotationPrefix, cfg.MPSPipeDirectory, stopper, log)
+	}
+
 	return &Plugin{
 		AnnotationPrefix: cfg.AnnotationPrefix,
 		MPSPipeDirectory: cfg.MPSPipeDirectory,
@@ -114,7 +138,8 @@ func NewPlugin(cfg Config) *Plugin {
 		events:           proc,
 		adapter:          adapter{annotationPrefix: cfg.AnnotationPrefix, log: log},
 		readiness:        cfg.Readiness,
-	}
+		sentinel:         sentinel,
+	}, nil
 }
 
 // setReady updates the shared readiness state, if one was configured.
@@ -139,6 +164,12 @@ func (p *Plugin) Configure(ctx context.Context, _, runtime, version string) (api
 //
 // Synchronize only fires after the plugin successfully registered with the
 // runtime, so it doubles as the readiness signal.
+//
+// When retroactive enforcement is enabled it also audits the snapshot for
+// GPU-sharing containers that started without injection (while the agent was
+// down) and stops them off the hot path. Detection is synchronous and cheap;
+// the stopping happens on a background goroutine so it never stalls this NRI
+// callback.
 func (p *Plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) ([]*api.ContainerUpdate, error) {
 	p.Log.InfoContext(ctx, "synchronizing container mapping with runtime",
 		"pods", len(pods), "containers", len(containers))
@@ -149,6 +180,9 @@ func (p *Plugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, contai
 		return infos
 	})
 	p.setReady(true)
+	if p.sentinel != nil {
+		p.sentinel.Audit(ctx, pods, containers)
+	}
 	return nil, nil
 }
 
@@ -233,15 +267,22 @@ func (p *Plugin) RemoveContainer(_ context.Context, _ *api.PodSandbox, ctr *api.
 	return nil
 }
 
-// Shutdown flushes any queued mapping events when the runtime disconnects,
-// and marks the plugin not-ready until the next successful Synchronize.
+// Shutdown flushes any queued mapping events and waits for in-flight
+// remediation when the runtime disconnects, and marks the plugin not-ready until
+// the next successful Synchronize.
 func (p *Plugin) Shutdown(_ context.Context) {
 	p.setReady(false)
 	p.events.Flush()
+	if p.sentinel != nil {
+		p.sentinel.Wait()
+	}
 }
 
-// Flush blocks until all queued mapping events have been applied. Used by tests
-// and graceful shutdown.
+// Flush blocks until all queued mapping events have been applied and any
+// in-flight remediation has finished. Used by tests and graceful shutdown.
 func (p *Plugin) Flush() {
 	p.events.Flush()
+	if p.sentinel != nil {
+		p.sentinel.Wait()
+	}
 }

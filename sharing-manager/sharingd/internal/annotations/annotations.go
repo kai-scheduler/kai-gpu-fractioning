@@ -137,3 +137,10 @@ func parseToDecimalMB(value string) (string, error) {
 func containerMemoryAnnotationKey(prefix, containerName, suffix string) string {
 	return prefix + containerName + "." + suffix
 }
+
+// LimitAnnotationKey returns the annotation key sharingd looks up for a
+// container's GPU-memory limit (e.g. for diagnostic logging of the annotation a
+// non-sharing container is missing).
+func LimitAnnotationKey(prefix, containerName string) string {
+	return containerMemoryAnnotationKey(prefix, containerName, annotationSuffixLimit)
+}

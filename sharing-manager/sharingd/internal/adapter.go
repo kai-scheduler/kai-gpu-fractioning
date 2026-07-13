@@ -58,7 +58,7 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 			"container", container.GetName(),
 			"pod", pod.GetName(),
 			"namespace", pod.GetNamespace(),
-			"expectedAnnotation", containerMemoryAnnotationKey(a.annotationPrefix, container.GetName(), annotationSuffixLimit),
+			"expectedAnnotation", annotations.LimitAnnotationKey(a.annotationPrefix, container.GetName()),
 		)
 		return store.ContainerInfo{}, false
 	}
