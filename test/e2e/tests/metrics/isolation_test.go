@@ -123,19 +123,21 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 		}
 	})
 
-	// matchA / matchB include the expected gpu_uuid so waitForSeries only
-	// succeeds when the series is on the right device.
+	// matchA / matchB include gpu_uuid and gpu_index so waitForSeries only
+	// succeeds when the series is on the right device with the correct index label.
 	matchA := map[string]string{
 		"namespace": specA.Namespace,
 		"pod":       specA.Name,
 		"pod_uid":   string(podA.UID),
 		"gpu_uuid":  nvmlmock.Device0UUID,
+		"gpu_index": "0",
 	}
 	matchB := map[string]string{
 		"namespace": specB.Namespace,
 		"pod":       specB.Name,
 		"pod_uid":   string(podB.UID),
 		"gpu_uuid":  nvmlmock.Device1UUID,
+		"gpu_index": "1",
 	}
 
 	// 1. Positive assertion: each pod's series appears on its assigned device.

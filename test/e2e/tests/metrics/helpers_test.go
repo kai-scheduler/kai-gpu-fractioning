@@ -23,8 +23,9 @@ import (
 const attributionTestNamespace = "metricsd-e2e"
 
 const (
-	memMetricName = "gpu_sharing_gpu_memory_used_bytes"
-	smMetricName  = "gpu_sharing_gpu_sm_utilization_percent"
+	memMetricName  = "gpu_sharing_gpu_memory_used_bytes"
+	smMetricName   = "gpu_sharing_gpu_sm_utilization_percent"
+	normMetricName = "gpu_sharing_gpu_sm_utilization_percent_normalized"
 )
 
 // bothMetricNames is the pair every attribution/exclusion test case checks —
