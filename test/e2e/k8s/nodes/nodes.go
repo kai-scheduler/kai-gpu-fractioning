@@ -13,6 +13,19 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 )
 
+// ListGPUNodes returns all nodes matching c.Config.GPUNodeSelector.
+func ListGPUNodes(ctx context.Context, c *cluster.Client) ([]corev1.Node, error) {
+	sel, err := labels.Parse(c.Config.GPUNodeSelector)
+	if err != nil {
+		return nil, fmt.Errorf("parse GPU node selector %q: %w", c.Config.GPUNodeSelector, err)
+	}
+	var list corev1.NodeList
+	if err := c.Ctrl.List(ctx, &list, ctrlclient.MatchingLabelsSelector{Selector: sel}); err != nil {
+		return nil, fmt.Errorf("list nodes matching %q: %w", c.Config.GPUNodeSelector, err)
+	}
+	return list.Items, nil
+}
+
 // VerifyGPUNodes asserts that exactly c.Config.GPUNodeCount nodes match
 // c.Config.GPUNodeSelector. With GPUNodeCount == 0 there is nothing to
 // assert, so it returns immediately without parsing the selector or listing nodes.

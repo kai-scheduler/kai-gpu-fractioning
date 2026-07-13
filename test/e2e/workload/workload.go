@@ -180,6 +180,11 @@ func Delete(ctx context.Context, c *cluster.Client, namespace, name string) erro
 		})
 }
 
+// EnsureNamespace creates the namespace if it does not already exist.
+func EnsureNamespace(ctx context.Context, c *cluster.Client, name string) error {
+	return ensureNamespace(ctx, c, name)
+}
+
 func ensureNamespace(ctx context.Context, c *cluster.Client, name string) error {
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
 	if err := c.Ctrl.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {

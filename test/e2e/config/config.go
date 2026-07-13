@@ -41,6 +41,26 @@ type Config struct {
 	// DaemonSetReadyTimeout bounds how long nvmlmock waits for a DaemonSet
 	// rollout (nvml-mock or sharingd) to complete after a config change.
 	DaemonSetReadyTimeout time.Duration
+
+	// GPUMemoryMiB is the total GPU memory per device in MiB, used by
+	// attribution tests that derive fractional memory requests (e.g. half the
+	// device memory for two co-located pods). Matches the memory of the GPU
+	// profile installed in the cluster — for the default nvml-mock A100 profile
+	// this is 40 GiB (40960 MiB). Override via E2E_GPU_MEMORY_MIB when
+	// targeting a cluster with a different GPU model.
+	GPUMemoryMiB int
+
+	// GPUCountPerNode is the number of GPUs available per GPU node. Tests that
+	// require multiple physical devices on one node (TC-3) skip when this is
+	// less than 2. The default is 1 (conservative); set E2E_GPU_COUNT_PER_NODE=2
+	// for nvml-mock clusters, which always expose two devices per node.
+	GPUCountPerNode int
+
+	// NVMLMock signals that the cluster is running the nvml-mock DaemonSet
+	// instead of a real NVIDIA driver. Tests that rely on per-process SM
+	// utilization injection (TC-5) require nvml-mock and skip when this is
+	// false. Set E2E_NVML_MOCK=1 for nvml-mock clusters.
+	NVMLMock bool
 }
 
 // Load builds a Config from environment variables.
@@ -50,6 +70,9 @@ func Load() Config {
 		OperatorNamespace:     envOr("E2E_OPERATOR_NAMESPACE", "gpu-sharing-operator"),
 		GPUNodeSelector:       envOr("E2E_GPU_NODE_SELECTOR", "nvidia.com/gpu.present=true"),
 		GPUNodeCount:          envIntOr("E2E_GPU_NODE_COUNT", 0),
+		GPUMemoryMiB:          envIntOr("E2E_GPU_MEMORY_MIB", 40960),
+		GPUCountPerNode:       envIntOr("E2E_GPU_COUNT_PER_NODE", 1),
+		NVMLMock:              os.Getenv("E2E_NVML_MOCK") == "1",
 		PodReadyTimeout:       envDurationOr("E2E_POD_READY_TIMEOUT", 2*time.Minute),
 		PollInterval:          envDurationOr("E2E_POLL_INTERVAL", 2*time.Second),
 		DaemonSetReadyTimeout: envDurationOr("E2E_DAEMONSET_READY_TIMEOUT", 3*time.Minute),

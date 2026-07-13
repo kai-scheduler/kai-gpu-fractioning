@@ -61,6 +61,10 @@ type Proc struct {
 	UUID          string // must equal a device uuid below (Device0UUID/Device1UUID)
 	PID           uint32 // real host-namespace PID (from HostPID)
 	UsedGPUMemory uint64 // bytes; surfaced via nvmlDeviceGetComputeRunningProcesses
+	// SMUtil is the per-process SM utilization percent (0–100) reported via
+	// GetProcessUtilization. Non-zero values produce a non-zero
+	// gpu_sharing_gpu_sm_utilization_percent metric.
+	SMUtil uint32
 }
 
 // HostPID resolves the host-namespace PID of the workload process identified by
@@ -206,8 +210,8 @@ devices:
 			continue
 		}
 		for _, p := range ps {
-			_, _ = fmt.Fprintf(&b, "      - pid: %d\n        used_gpu_memory: %d\n        type: C\n",
-				p.PID, p.UsedGPUMemory)
+			_, _ = fmt.Fprintf(&b, "      - pid: %d\n        used_gpu_memory: %d\n        sm_util: %d\n        type: C\n",
+				p.PID, p.UsedGPUMemory, p.SMUtil)
 		}
 	}
 	return b.String()

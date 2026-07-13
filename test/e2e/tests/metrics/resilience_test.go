@@ -41,13 +41,20 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 		GPUMemoryRequestMiB: "2048",
 	}
 
+	// Remove any pod left behind by a previous failed run; workload.Delete is
+	// a no-op on a non-existent pod.
+	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
+
 	pod, err := workload.Apply(ctx, c, spec)
 	if err != nil {
 		t.Fatalf("create fractional pod: %v", err)
 	}
-	// Not t.Cleanup: this test deletes the pod itself as part of the
-	// scenario under test; cleanup here would just be a redundant delete of
-	// an already-gone pod, which workload.Delete tolerates but adds nothing.
+	// Safety-net cleanup: the test deletes the pod itself at line ~107 as the
+	// scenario under test, but if it fatals before reaching that point (e.g.
+	// waitForSeries times out) this ensures the pod doesn't leak.
+	t.Cleanup(func() {
+		_ = workload.Delete(context.Background(), c, spec.Namespace, spec.Name)
+	})
 
 	// Make NVML report this pod's container as a GPU process so the plugin
 	// exports a series for it — the deletion race can only be exercised once
