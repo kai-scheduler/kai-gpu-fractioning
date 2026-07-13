@@ -13,9 +13,10 @@ import (
 const (
 	defaultNRISocketPath = "/var/run/nri/nri.sock"
 
-	// defaultReadinessPort serves /readyz for the kubelet readiness probe. The
-	// operator's DaemonSet probe must match (see
-	// operator/internal/sharingmanager/components/sharingd).
+	// defaultReadinessPort serves /readyz when --readiness-port is not passed.
+	// The operator only passes the flag when spec.readinessPort is set;
+	// otherwise its probe targets this same default (see
+	// operator/internal/sharingmanager/components/sharingd), so the two must match.
 	defaultReadinessPort = 8093
 )
 

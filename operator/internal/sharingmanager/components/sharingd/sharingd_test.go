@@ -150,18 +150,52 @@ func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
 	if httpGet.Path != "/readyz" {
 		t.Errorf("probe path = %q, expected %q", httpGet.Path, "/readyz")
 	}
-	if httpGet.Port.IntValue() != readinessPort {
-		t.Errorf("probe port = %d, expected %d", httpGet.Port.IntValue(), readinessPort)
+	if httpGet.Port.IntValue() != defaultReadinessPort {
+		t.Errorf("probe port = %d, expected %d", httpGet.Port.IntValue(), defaultReadinessPort)
 	}
 
 	var found bool
 	for _, p := range ctr.Ports {
-		if p.ContainerPort == readinessPort {
+		if p.ContainerPort == defaultReadinessPort {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected container port %d to be declared, got %v", readinessPort, ctr.Ports)
+		t.Errorf("expected container port %d to be declared, got %v", defaultReadinessPort, ctr.Ports)
+	}
+
+	// With no spec override, no --readiness-port arg is passed: the binary's
+	// built-in default keeps older sharingd images (without the flag) working.
+	for _, a := range ctr.Args {
+		if a == "--readiness-port" {
+			t.Errorf("expected no --readiness-port arg by default, got args %v", ctr.Args)
+		}
+	}
+}
+
+// When spec.readinessPort is set, the operator passes it to the binary and
+// points the probe (and container port) at the same value.
+func TestDaemon_BuildDaemonSet_ReadinessPortOverride(t *testing.T) {
+	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
+		ReadinessPort: ptr.To(int32(9999)),
+	}, nil)
+	ctr := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
+
+	if got := ctr.ReadinessProbe.HTTPGet.Port.IntValue(); got != 9999 {
+		t.Errorf("probe port = %d, expected 9999", got)
+	}
+	if len(ctr.Ports) != 1 || ctr.Ports[0].ContainerPort != 9999 {
+		t.Errorf("container ports = %v, expected readiness port 9999", ctr.Ports)
+	}
+
+	var argPort string
+	for i, a := range ctr.Args {
+		if a == "--readiness-port" && i+1 < len(ctr.Args) {
+			argPort = ctr.Args[i+1]
+		}
+	}
+	if argPort != "9999" {
+		t.Errorf("--readiness-port arg = %q, expected %q (args %v)", argPort, "9999", ctr.Args)
 	}
 }
 
