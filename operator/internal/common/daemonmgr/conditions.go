@@ -1,0 +1,182 @@
+package daemonmgr
+
+// This file gathers everything that reads or writes the
+// gpu-sharing.nvidia.com/Ready node condition. Helpers for the CR's own
+// status conditions live in status.go.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+// nodeListPageSize bounds each page of the node list during condition
+// cleanup, keeping peak memory flat on large clusters.
+const nodeListPageSize = 500
+
+// FindNodeCondition returns the node's gpu-sharing.nvidia.com/Ready condition
+// and whether the node carries it.
+func FindNodeCondition(node *corev1.Node) (corev1.NodeCondition, bool) {
+	for _, cond := range node.Status.Conditions {
+		if string(cond.Type) == NodeConditionType {
+			return cond, true
+		}
+	}
+	return corev1.NodeCondition{}, false
+}
+
+// PatchNodeCondition sets or updates the gpu-sharing.nvidia.com/Ready condition
+// on a node using a strategic merge patch.
+//
+// reader serves the current-node read and is deliberately the uncached API
+// reader: node conditions are only touched in the rare unhealthy/recovery path,
+// so caching every Node cluster-wide (a cluster-scoped informer) would be pure
+// overhead. writer performs the status patch, which always goes to the API
+// server regardless of caching.
+func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, ready bool, reason, message string) error {
+	log := logf.FromContext(ctx).WithValues("node", nodeName)
+
+	condStatus := corev1.ConditionFalse
+	if ready {
+		condStatus = corev1.ConditionTrue
+	}
+
+	now := metav1.NewTime(time.Now())
+	transitionTime := now
+
+	// Read the current node to preserve LastTransitionTime when the condition
+	// status has not changed
+	// Skip the patch entirely when status, reason, and message are all identical (no-op).
+	node := &corev1.Node{}
+	if err := reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err == nil {
+		if existing, found := FindNodeCondition(node); found && existing.Status == condStatus {
+			if existing.Reason == reason && existing.Message == message {
+				return nil // nothing to update
+			}
+			// same status, therefore LastTransitionTime should be preserved.
+			transitionTime = existing.LastTransitionTime
+		}
+	}
+
+	condition := corev1.NodeCondition{
+		Type:               corev1.NodeConditionType(NodeConditionType),
+		Status:             condStatus,
+		Reason:             reason,
+		Message:            message,
+		LastHeartbeatTime:  now,
+		LastTransitionTime: transitionTime,
+	}
+
+	patch := map[string]any{
+		"status": map[string]any{
+			"conditions": []corev1.NodeCondition{condition},
+		},
+	}
+
+	patchBytes, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("marshaling node condition patch: %w", err)
+	}
+
+	patchNode := &corev1.Node{}
+	patchNode.Name = nodeName
+
+	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
+		types.StrategicMergePatchType, patchBytes,
+	)); err != nil {
+		return fmt.Errorf("patching node %s condition: %w", nodeName, err)
+	}
+
+	log.V(1).Info("patched node condition", "condition", NodeConditionType, "status", condStatus, "reason", reason)
+	return nil
+}
+
+// removeNodeConditionPatch deletes the gpu-sharing.nvidia.com/Ready entry from
+// the merge-keyed conditions list. Node conditions use patchMergeKey "type",
+// so a plain strategic merge patch can only upsert entries; deletion needs the
+// $patch:delete directive, which typed NodeConditions cannot express. The
+// payload depends only on the constant condition type, so it is built once.
+var removeNodeConditionPatch = []byte(`{"status":{"conditions":[{"type":"` + NodeConditionType + `","$patch":"delete"}]}}`)
+
+// RemoveNodeCondition deletes the gpu-sharing.nvidia.com/Ready condition from
+// a node's status.
+//
+// The call is idempotent: deleting an absent condition is a server-side no-op,
+// and a missing node is treated as success.
+func RemoveNodeCondition(ctx context.Context, writer client.Client, nodeName string) error {
+	log := logf.FromContext(ctx).WithValues("node", nodeName)
+
+	patchNode := &corev1.Node{}
+	patchNode.Name = nodeName
+
+	if err := writer.Status().Patch(ctx, patchNode, client.RawPatch(
+		types.StrategicMergePatchType, removeNodeConditionPatch,
+	)); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("removing condition from node %s: %w", nodeName, err)
+	}
+
+	log.V(1).Info("removed node condition", "condition", NodeConditionType)
+	return nil
+}
+
+// RemoveNodeConditions removes the gpu-sharing.nvidia.com/Ready condition from
+// all nodes matching nodeSelector (the selector is reliable here because
+// editing it on a live CR is unsupported). Nodes are listed via the uncached
+// reader with pagination, for the same reason PatchNodeCondition avoids a
+// Node informer: cleanup runs once per CR lifetime, so a cluster-scoped cache
+// would be pure overhead. Per-node failures are joined rather than aborting
+// the sweep, so one bad node does not prevent cleaning the rest.
+func RemoveNodeConditions(ctx context.Context, reader client.Reader, writer client.Client, nodeSelector map[string]string) error {
+	log := logf.FromContext(ctx)
+
+	var errs []error
+
+	listOpts := []client.ListOption{
+		client.MatchingLabels(nodeSelector),
+		client.Limit(nodeListPageSize),
+	}
+
+	var nodeList corev1.NodeList
+	for {
+		if err := reader.List(ctx, &nodeList, listOpts...); err != nil {
+			return fmt.Errorf("listing nodes: %w", err)
+		}
+
+		for i := range nodeList.Items {
+			node := &nodeList.Items[i]
+			if _, found := FindNodeCondition(node); !found {
+				continue
+			}
+			if err := RemoveNodeCondition(ctx, writer, node.Name); err != nil {
+				// Name the failing node explicitly: a persistent failure here
+				// keeps the finalizer in place and wedges CR deletion, so it
+				// must be diagnosable from the logs.
+				log.Error(err, "failed to remove node condition", "node", node.Name)
+				errs = append(errs, err)
+			}
+		}
+
+		if nodeList.Continue == "" {
+			break
+		}
+		listOpts = []client.ListOption{
+			client.MatchingLabels(nodeSelector),
+			client.Limit(nodeListPageSize),
+			client.Continue(nodeList.Continue),
+		}
+	}
+
+	return errors.Join(errs...)
+}

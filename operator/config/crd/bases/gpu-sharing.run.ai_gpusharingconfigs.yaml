@@ -52,7 +52,7 @@ spec:
                   enabled:
                     description: |-
                       enabled controls whether the metricsd sidecar is added to the DaemonSet.
-                      When false, no metrics container is deployed. Default: true.
+                      When false, no metrics container is deployed.
                     type: boolean
                   image:
                     description: |-
@@ -194,6 +194,16 @@ spec:
                       nriSocketPath is the path to the NRI Unix socket used to communicate
                       with the container runtime (containerd/CRI-O). Default: /var/run/nri/nri.sock.
                     type: string
+                  readinessPort:
+                    description: |-
+                      readinessPort is the port sharingd serves its /readyz endpoint on. When set,
+                      the operator passes --readiness-port to the binary and points the readiness
+                      probe at it. When unset, no argument is passed and the probe targets the
+                      binary's built-in default (8093), keeping older sharingd images compatible.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
                   retryInterval:
                     description: |-
                       retryInterval is the initial wait duration before retrying a failed NRI connection.

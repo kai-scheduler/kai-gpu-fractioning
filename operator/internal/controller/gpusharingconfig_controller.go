@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -25,12 +26,13 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
@@ -42,6 +44,12 @@ import (
 const (
 	requeueInterval = 30 * time.Second
 	podListPageSize = 500
+
+	// NodeConditionCleanupFinalizer blocks GpuSharingConfig deletion until the
+	// gpu-sharing.nvidia.com/Ready conditions the controller patched onto nodes
+	// are removed. Without it, DaemonSets are garbage-collected via owner
+	// references but nodes keep advertising a stale Ready condition.
+	NodeConditionCleanupFinalizer = "gpu-sharing.nvidia.com/cleanup-node-conditions"
 )
 
 // GpuSharingConfigReconciler reconciles a GpuSharingConfig object
@@ -105,11 +113,23 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	var config v1alpha1.GpuSharingConfig
 	if err := r.Get(ctx, req.NamespacedName, &config); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.Info("GpuSharingConfig resource deleted")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to fetch GpuSharingConfig: %w", err)
+	}
+
+	if !config.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, &config)
+	}
+
+	// Register the cleanup finalizer before any DaemonSets are created or node
+	// conditions patched, so deletion can never race past the cleanup logic.
+	if controllerutil.AddFinalizer(&config, NodeConditionCleanupFinalizer) {
+		if err := r.Update(ctx, &config); err != nil {
+			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
+		}
 	}
 
 	log.Info("reconciling GpuSharingConfig", "generation", config.Generation)
@@ -181,6 +201,32 @@ func (r *GpuSharingConfigReconciler) buildOptions(config *v1alpha1.GpuSharingCon
 	}
 }
 
+// reconcileDelete handles a GpuSharingConfig with a non-zero deletionTimestamp:
+// it removes the gpu-sharing.nvidia.com/Ready condition from the nodes the CR
+// targets, then releases the finalizer so deletion can complete. Any cleanup
+// error is returned with the finalizer still in place, so controller-runtime
+// requeues with backoff until cleanup converges — deletion is never unblocked
+// prematurely, but also never blocked forever by a transient failure.
+func (r *GpuSharingConfigReconciler) reconcileDelete(ctx context.Context, config *v1alpha1.GpuSharingConfig) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	if !controllerutil.ContainsFinalizer(config, NodeConditionCleanupFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	if err := daemonmgr.RemoveNodeConditions(ctx, r.APIReader, r.Client, config.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cleaning up node conditions: %w", err)
+	}
+
+	controllerutil.RemoveFinalizer(config, NodeConditionCleanupFinalizer)
+	if err := r.Update(ctx, config); err != nil {
+		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+	}
+
+	log.Info("removed node conditions and finalizer, deletion can complete")
+	return ctrl.Result{}, nil
+}
+
 // patchNodeConditions lists all managed daemon pods (across all daemons) and
 // patches the gpu-sharing.nvidia.com/Ready condition on each node.
 // A node is marked Ready only when every daemon pod on it is ready.
@@ -218,10 +264,15 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 	// In steady state (all healthy) this set stays empty.
 	unhealthyNodes := make(map[string]struct{})
 
+	// Per-node patch failures are collected and joined so the caller requeues
+	// and retries them; one bad node does not abort the rest of the pass.
+	var errs []error
+
 	var podList corev1.PodList
 	for {
 		if err := r.APIReader.List(ctx, &podList, listOpts...); err != nil {
-			return false, fmt.Errorf("listing pods for node condition patching: %w", err)
+			errs = append(errs, fmt.Errorf("listing pods for node condition patching: %w", err))
+			return len(unhealthyNodes) > 0, errors.Join(errs...)
 		}
 
 		for i := range podList.Items {
@@ -245,6 +296,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			reason, msg := nodeConditionArgs(ready, pod)
 			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
 				log.Error(err, "failed to patch node condition", "node", pod.Spec.NodeName)
+				errs = append(errs, err)
 			}
 		}
 
@@ -259,7 +311,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 		}
 	}
 
-	return len(unhealthyNodes) > 0, nil
+	return len(unhealthyNodes) > 0, errors.Join(errs...)
 }
 
 // isPodReady returns true if the pod has condition Ready=True.
@@ -286,9 +338,15 @@ func nodeConditionArgs(ready bool, pod *corev1.Pod) (reason, message string) {
 }
 
 func podFailureReason(pod *corev1.Pod) string {
-	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.State.Waiting != nil {
-			return cs.State.Waiting.Reason
+	// Init containers gate the regular containers, so a stuck init container
+	// (e.g. Init:CrashLoopBackOff) is the primary failure signal. Waiting.Reason
+	// is optional; an empty one must not leak into the node condition's Reason,
+	// which the Kubernetes API requires to be a non-empty identifier.
+	for _, statuses := range [][]corev1.ContainerStatus{pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses} {
+		for _, cs := range statuses {
+			if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+				return cs.State.Waiting.Reason
+			}
 		}
 	}
 

@@ -5,7 +5,9 @@ metadata:
   labels:
     {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
 rules:
-  # Watch for GpuSharingConfig changes and read the resource.
+  # Watch for GpuSharingConfig changes, read the resource, and update it to
+  # add/remove the node-condition cleanup finalizer (metadata.finalizers is
+  # modified through the main resource, not the finalizers subresource).
   - apiGroups:
       - gpu-sharing.run.ai
     resources:
@@ -14,6 +16,7 @@ rules:
       - get
       - list
       - watch
+      - update
   # Update finalizers on the CR so the controller can register cleanup
   # logic that runs before the resource is deleted.
   - apiGroups:
@@ -59,14 +62,16 @@ rules:
       - update
       - watch
   # Read individual nodes to preserve LastTransitionTime when patching
-  # conditions. Only "get" is needed: nodes are read via the uncached API
-  # reader (a targeted Get), not a cached list/watch informer.
+  # conditions, and list targeted nodes during finalizer cleanup on CR
+  # deletion. Both go through the uncached API reader, not a cached
+  # list/watch informer, so no "watch" verb.
   - apiGroups:
       - ""
     resources:
       - nodes
     verbs:
       - get
+      - list
   # Patch the gpu-sharing.nvidia.com/Ready condition on GPU nodes.
   - apiGroups:
       - ""

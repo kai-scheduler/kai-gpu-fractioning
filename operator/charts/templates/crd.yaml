@@ -84,6 +84,11 @@ spec:
                     maxRetries:
                       type: integer
                       format: int32
+                    readinessPort:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      maximum: 65535
                 metricsAgent:
                   description: >-
                     metricsAgent configures the GPU metrics exporter (metricsd),
