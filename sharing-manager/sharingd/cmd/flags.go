@@ -10,7 +10,15 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
 )
 
-const defaultNRISocketPath = "/var/run/nri/nri.sock"
+const (
+	defaultNRISocketPath = "/var/run/nri/nri.sock"
+
+	// defaultReadinessPort serves /readyz when --readiness-port is not passed.
+	// The operator only passes the flag when spec.readinessPort is set;
+	// otherwise its probe targets this same default (see
+	// operator/internal/sharingmanager/components/sharingd), so the two must match.
+	defaultReadinessPort = 8093
+)
 
 type cliFlags struct {
 	// pluginName is the NRI plugin registration name.
@@ -37,6 +45,8 @@ type cliFlags struct {
 	stableThreshold time.Duration
 	// maxRetries is the max NRI connection retries (0 = unlimited).
 	maxRetries int
+	// readinessPort is the port for the /readyz readiness endpoint (0 = disabled).
+	readinessPort int
 }
 
 func parseFlags() cliFlags {
@@ -53,6 +63,7 @@ func parseFlags() cliFlags {
 	flag.DurationVar(&f.retryInterval, "retry-interval", 5*time.Second, "initial wait between NRI connection retries")
 	flag.DurationVar(&f.stableThreshold, "stable-threshold", 5*time.Minute, "connection duration considered stable (resets retry budget)")
 	flag.IntVar(&f.maxRetries, "max-retries", 0, "max NRI connection retries (0 = unlimited)")
+	flag.IntVar(&f.readinessPort, "readiness-port", env.Int("READINESS_PORT", defaultReadinessPort), "port for the /readyz readiness endpoint (0 disables)")
 	flag.Parse()
 	return f
 }
