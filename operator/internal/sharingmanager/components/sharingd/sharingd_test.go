@@ -119,6 +119,48 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	}
 }
 
+func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+
+	// Pod must opt into the nvidia RuntimeClass so the NVIDIA container runtime
+	// injects libnvidia-ml.so — without this NVML returns ERROR_LIBRARY_NOT_FOUND.
+	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
+		t.Errorf("runtimeClassName = %v, expected \"nvidia\"", spec.RuntimeClassName)
+	}
+
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+
+	envMap := make(map[string]string, len(metricsd.Env))
+	for _, e := range metricsd.Env {
+		envMap[e.Name] = e.Value
+	}
+	if envMap["NVIDIA_VISIBLE_DEVICES"] != "all" {
+		t.Errorf("NVIDIA_VISIBLE_DEVICES = %q, expected \"all\"", envMap["NVIDIA_VISIBLE_DEVICES"])
+	}
+	if envMap["NVIDIA_DRIVER_CAPABILITIES"] != "utility" {
+		t.Errorf("NVIDIA_DRIVER_CAPABILITIES = %q, expected \"utility\"", envMap["NVIDIA_DRIVER_CAPABILITIES"])
+	}
+}
+
+func TestDaemon_BuildDaemonSet_MetricsRuntimeClassOverride(t *testing.T) {
+	custom := "custom-nvidia"
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &custom})
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "custom-nvidia" {
+		t.Errorf("runtimeClassName = %v, expected %q", spec.RuntimeClassName, custom)
+	}
+}
+
+func TestDaemon_BuildDaemonSet_MetricsRuntimeClassEmpty(t *testing.T) {
+	empty := ""
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &empty})
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	if spec.RuntimeClassName != nil {
+		t.Errorf("runtimeClassName = %v, expected nil (node default)", spec.RuntimeClassName)
+	}
+}
+
 func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
 
