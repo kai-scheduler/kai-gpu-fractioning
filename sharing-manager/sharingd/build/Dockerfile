@@ -4,6 +4,7 @@ FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETARCH
 WORKDIR /workspace
 COPY go.mod go.sum ./
+COPY pkg/ pkg/
 RUN go mod download
 COPY sharing-manager/ sharing-manager/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o sharingd ./sharing-manager/sharingd/cmd

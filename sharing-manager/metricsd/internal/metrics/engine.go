@@ -141,7 +141,7 @@ func (s *metricsEngine) collect(ctx context.Context) {
 	s.rememberDeviceTotalMemory(snapshot.DeviceTotalMemoryBytes)
 
 	metrics, unmatched := s.enrich(ctx, snapshot.Processes, pods)
-	if s.smUtilWindow > s.interval {
+	if s.smUtilWindowSize > 1 {
 		metrics = s.windowedSMUtil(metrics)
 	}
 	s.normalizeSMUtil(metrics)

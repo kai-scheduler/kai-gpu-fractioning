@@ -32,6 +32,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/config"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
 	// +kubebuilder:scaffold:imports
@@ -113,7 +114,7 @@ func main() {
 	setupLog.Info("mpsd default image", "image", mpsdImage.FullImage())
 
 	// ── mpsd MPS config (Helm-injected default; forwarded to the mpsd pod) ──
-	mpsdAuditLog := controller.ReadBoolFromEnv("MPSD_AUDIT_LOG", true)
+	mpsdAuditLog := env.Bool("MPSD_AUDIT_LOG", true)
 	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
 
 	// ── Register controllers ─────────────────────────────────────────────
