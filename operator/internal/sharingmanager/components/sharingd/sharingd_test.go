@@ -287,15 +287,33 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		}
 	}
 
-	// The custom CRI socket is mounted at the same path it is dialed on.
+	// The CRI socket's parent directory is mounted (DirectoryOrCreate), so a
+	// missing/relocated socket can never block the pod from starting; the binary
+	// still dials the full socket path passed via --cri-socket.
 	var criMount string
 	for _, m := range ds.Spec.Template.Spec.Containers[0].VolumeMounts {
 		if m.Name == "cri-socket" {
 			criMount = m.MountPath
 		}
 	}
-	if criMount != "/custom/cri.sock" {
-		t.Errorf("cri-socket mount = %q, want %q", criMount, "/custom/cri.sock")
+	if criMount != "/custom" {
+		t.Errorf("cri-socket mount = %q, want %q", criMount, "/custom")
+	}
+
+	var criVol *corev1.HostPathVolumeSource
+	for _, v := range ds.Spec.Template.Spec.Volumes {
+		if v.Name == "cri-socket" {
+			criVol = v.HostPath
+		}
+	}
+	if criVol == nil {
+		t.Fatal("cri-socket volume not found")
+	}
+	if criVol.Path != "/custom" {
+		t.Errorf("cri-socket volume path = %q, want %q", criVol.Path, "/custom")
+	}
+	if criVol.Type == nil || *criVol.Type != corev1.HostPathDirectoryOrCreate {
+		t.Errorf("cri-socket volume type = %v, want %q", criVol.Type, corev1.HostPathDirectoryOrCreate)
 	}
 }
 

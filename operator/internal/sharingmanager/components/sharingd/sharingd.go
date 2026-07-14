@@ -218,19 +218,27 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 
 	// Retroactive enforcement stops offending containers via the CRI runtime
 	// socket, so mount it into the (privileged) pod only when the feature is on.
+	// We mount the socket's PARENT DIRECTORY (DirectoryOrCreate), not the socket
+	// file with HostPathType: Socket: a Socket mount makes the kubelet refuse to
+	// start the pod whenever the socket is absent or at a non-default path (k3s
+	// and RKE2 keep containerd under /run/k3s/containerd), which would take down
+	// sharingd's core NRI injection too — not just enforcement. With the directory
+	// mount sharingd always starts; if the socket really isn't at the dialed path
+	// the CRIStopper just logs a dial error and enforcement no-ops. The binary
+	// still dials the full socket path.
 	if d.retroactiveEnforcementEnabled() {
-		socketType := corev1.HostPathSocket
-		criSocket := d.criSocketPath()
+		dirType := corev1.HostPathDirectoryOrCreate
+		criSocketDir := filepath.Dir(d.criSocketPath())
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 			Name:      volumeCRISocket,
-			MountPath: criSocket,
+			MountPath: criSocketDir,
 		})
 		volumes = append(volumes, corev1.Volume{
 			Name: volumeCRISocket,
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: criSocket,
-					Type: &socketType,
+					Path: criSocketDir,
+					Type: &dirType,
 				},
 			},
 		})
