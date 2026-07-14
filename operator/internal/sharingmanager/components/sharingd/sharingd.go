@@ -6,19 +6,22 @@ import (
 	"path/filepath"
 	"strconv"
 
+	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-
-	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 )
 
 const (
-	daemonName          = "sharingd"
-	metricsdName        = "metricsd"
-	defaultMPSPipeDir   = "/run/nvidia-mps"
-	defaultNRISocketDir = "/var/run/nri"
+	daemonName   = "sharingd"
+	metricsdName = "metricsd"
+	// defaultMetricsRuntimeClassName is the RuntimeClass applied to the
+	// sharingd+metricsd pod when metricsAgent.runtimeClassName is unset. The NVIDIA
+	// runtime injects libnvidia-ml.so, which metricsd needs to call NVML.
+	defaultMetricsRuntimeClassName = "nvidia"
+	defaultMPSPipeDir              = "/run/nvidia-mps"
+	defaultNRISocketDir            = "/var/run/nri"
 	// containerPodMapDir is the shared handoff directory: sharingd writes the
 	// container→pod mapping here and the metricsd sidecar reads it. Must match
 	// sharingd's and metricsd's built-in default (fsstore.DefaultMapDir).
@@ -89,6 +92,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 		vol, mount := metricsSharedVolume()
 		podSpec.Volumes = append(podSpec.Volumes, vol)
 		sharingdContainer.VolumeMounts = append(sharingdContainer.VolumeMounts, mount)
+		podSpec.RuntimeClassName = d.runtimeClassName()
 	}
 	// sharingdContainer is a value type: append must happen after the map-dir mount
 	// is added so the VolumeMount is included in the copy placed into the slice.
@@ -219,6 +223,11 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 // buildMetricsdContainer returns the metricsd sidecar. It reads the shared map
 // directory (read-only) and exports GPU metrics on metricsPort. PID→pod
 // attribution works via the pod's host PID namespace.
+//
+// NVIDIA_VISIBLE_DEVICES=all and NVIDIA_DRIVER_CAPABILITIES=utility are
+// required so the NVIDIA container runtime mounts libnvidia-ml.so into the
+// container at create time (the "utility" capability is sufficient for
+// read-only NVML; "compute" is not needed).
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
 	container := corev1.Container{
 		Name:            metricsdName,
@@ -226,6 +235,10 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 		ImagePullPolicy: pullPolicy(image),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildMetricsdArgs(),
+		Env: []corev1.EnvVar{
+			{Name: "NVIDIA_VISIBLE_DEVICES", Value: "all"},
+			{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "utility"},
+		},
 		Ports: []corev1.ContainerPort{
 			{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP},
 		},
@@ -243,6 +256,19 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 	}
 
 	return container
+}
+
+// runtimeClassName returns the RuntimeClass to set on the pod when metricsd is
+// enabled. Nil in the spec defaults to "nvidia"; a pointer to "" explicitly
+// clears the runtime class (use the node default); any other value is used as-is.
+func (d *daemon) runtimeClassName() *string {
+	if d.metricsSpec == nil || d.metricsSpec.RuntimeClassName == nil {
+		return new(defaultMetricsRuntimeClassName)
+	}
+	if *d.metricsSpec.RuntimeClassName == "" {
+		return nil
+	}
+	return d.metricsSpec.RuntimeClassName
 }
 
 func (d *daemon) buildMetricsdArgs() []string {

@@ -167,6 +167,11 @@ func (in *MetricsAgentSpec) DeepCopyInto(out *MetricsAgentSpec) {
 		*out = new(ImageSpec)
 		**out = **in
 	}
+	if in.RuntimeClassName != nil {
+		in, out := &in.RuntimeClassName, &out.RuntimeClassName
+		*out = new(string)
+		**out = **in
+	}
 	if in.ExtraEnv != nil {
 		in, out := &in.ExtraEnv, &out.ExtraEnv
 		*out = make([]corev1.EnvVar, len(*in))

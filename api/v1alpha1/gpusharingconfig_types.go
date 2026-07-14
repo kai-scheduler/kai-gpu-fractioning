@@ -145,6 +145,13 @@ type MetricsAgentSpec struct {
 	// +optional
 	Path string `json:"path,omitempty"`
 
+	// runtimeClassName sets the RuntimeClass for the sharingd+metricsd pod so
+	// the NVIDIA container runtime injects libnvidia-ml.so (required for NVML).
+	// Defaults to "nvidia". Set to "" to use the node's default runtime class
+	// (only safe when the default runtime already injects NVIDIA driver libraries).
+	// +optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
 	// extraEnv is an advanced pass-through: additional environment variables
 	// appended to the metricsd container. Empty by default. Intended for
 	// non-standard deployments (e.g. pointing the metrics collector at an
