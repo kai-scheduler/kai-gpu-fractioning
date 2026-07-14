@@ -4,8 +4,11 @@ go 1.26.2
 
 require (
 	github.com/containerd/nri v0.12.0
+	github.com/run-ai/gpu-sharing-operator/pkg v0.0.0
 	k8s.io/apimachinery v0.36.2
 )
+
+replace github.com/run-ai/gpu-sharing-operator/pkg => ./pkg
 
 require (
 	github.com/containerd/log v0.1.0 // indirect

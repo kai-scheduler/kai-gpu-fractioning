@@ -35,7 +35,15 @@ runs:
 
     - name: Install k3d
       shell: bash
-      run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+      run: |
+        if command -v k3d &>/dev/null; then
+          echo "k3d already installed: $(k3d version | head -1)"
+        else
+          K3D_VERSION=v5.8.3
+          curl -fsSL -o /tmp/k3d "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-amd64"
+          install /tmp/k3d /usr/local/bin/k3d && rm /tmp/k3d
+          k3d version
+        fi
 
     - name: Install Helm
       uses: azure/setup-helm@v4

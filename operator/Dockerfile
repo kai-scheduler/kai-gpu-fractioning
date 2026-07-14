@@ -11,6 +11,9 @@ WORKDIR /workspace
 COPY api/go.mod api/go.sum api/
 COPY api/v1alpha1/ api/v1alpha1/
 
+# Copy pkg module (local replace in operator/go.mod).
+COPY pkg/ pkg/
+
 # Copy operator module manifests and download deps first for layer caching.
 COPY operator/go.mod operator/go.sum operator/
 RUN cd operator && go mod download

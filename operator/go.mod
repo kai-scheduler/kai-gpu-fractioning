@@ -6,6 +6,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/run-ai/gpu-sharing-operator/api v0.0.0
+	github.com/run-ai/gpu-sharing-operator/pkg v0.0.0
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
@@ -14,6 +15,8 @@ require (
 )
 
 replace github.com/run-ai/gpu-sharing-operator/api => ../api
+
+replace github.com/run-ai/gpu-sharing-operator/pkg => ../pkg
 
 require (
 	cel.dev/expr v0.24.0 // indirect
