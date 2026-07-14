@@ -12,19 +12,6 @@ spec:
     nvidia.com/gpu.present: "true"
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}
-  {{- with .Values.metricsAgent }}
-  {{- if or .extraEnv .extraVolumeMounts .extraVolumes }}
-    {{- with .extraEnv }}
-    extraEnv:
-      {{- toYaml . | nindent 6 }}
+    {{- if hasKey .Values.metricsAgent "runtimeClassName" }}
+    runtimeClassName: {{ .Values.metricsAgent.runtimeClassName | quote }}
     {{- end }}
-    {{- with .extraVolumeMounts }}
-    extraVolumeMounts:
-      {{- toYaml . | nindent 6 }}
-    {{- end }}
-    {{- with .extraVolumes }}
-    extraVolumes:
-      {{- toYaml . | nindent 6 }}
-    {{- end }}
-  {{- end }}
-  {{- end }}

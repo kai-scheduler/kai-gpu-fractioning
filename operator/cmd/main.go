@@ -117,6 +117,9 @@ func main() {
 	mpsdAuditLog := env.Bool("MPSD_AUDIT_LOG", true)
 	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
 
+	// ── metricsd operator-level inject (Helm-injected; bypasses the CRD API) ─
+	metricsInject := controller.ReadMetricsInjectFromEnv()
+
 	// ── Register controllers ─────────────────────────────────────────────
 	if err := controller.NewGpuSharingConfigReconciler(
 		mgr.GetClient(),
@@ -130,6 +133,7 @@ func main() {
 			"mpsd":     mpsdImage,
 		},
 		mpsdAuditLog,
+		metricsInject,
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")
 		os.Exit(1)

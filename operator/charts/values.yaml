@@ -30,16 +30,15 @@ mpsd:
   # enabled and context-share always disabled.
   auditLog: true
 
-# metricsAgent exposes advanced pass-through knobs for the metricsd sidecar in
-# the operator-managed default GpuSharingConfig. Empty by default (prod
-# unaffected); a non-standard deployment (e.g. the e2e fake-GPU cluster) can
-# supply extra env/mounts/volumes via a values override to point the collector
-# at an alternate driver library.
+# metricsAgent configures the metricsd sidecar. injectEnv/injectVolumeMounts/
+# injectVolumes are operator-level overrides injected via the operator pod's
+# own env vars (not the CRD API). Empty by default; the e2e overlay sets them
+# to wire the nvml-mock driver into metricsd on fake-GPU clusters.
 metricsAgent:
   enabled: true
-  extraEnv: []
-  extraVolumeMounts: []
-  extraVolumes: []
+  injectEnv: []
+  injectVolumeMounts: []
+  injectVolumes: []
 
 serviceAccount:
   create: true
@@ -58,6 +57,3 @@ resources:
 nodeSelector: {}
 tolerations: []
 affinity: {}
-
-metricsAgent:
-  enabled: true

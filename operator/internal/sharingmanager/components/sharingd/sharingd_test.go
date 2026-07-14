@@ -13,7 +13,7 @@ import (
 )
 
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, MetricsInject{})
 
 	if got := d.Name(); got != "sharingd" {
 		t.Errorf("Name() = %q, expected %q", got, "sharingd")
@@ -120,7 +120,7 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 }
 
 func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, MetricsInject{})
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 
 	// Pod must opt into the nvidia RuntimeClass so the NVIDIA container runtime
@@ -145,7 +145,7 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 
 func TestDaemon_BuildDaemonSet_MetricsRuntimeClassOverride(t *testing.T) {
 	custom := "custom-nvidia"
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &custom})
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &custom}, MetricsInject{})
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "custom-nvidia" {
 		t.Errorf("runtimeClassName = %v, expected %q", spec.RuntimeClassName, custom)
@@ -154,7 +154,7 @@ func TestDaemon_BuildDaemonSet_MetricsRuntimeClassOverride(t *testing.T) {
 
 func TestDaemon_BuildDaemonSet_MetricsRuntimeClassEmpty(t *testing.T) {
 	empty := ""
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &empty})
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &empty}, MetricsInject{})
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	if spec.RuntimeClassName != nil {
 		t.Errorf("runtimeClassName = %v, expected nil (node default)", spec.RuntimeClassName)
@@ -162,7 +162,7 @@ func TestDaemon_BuildDaemonSet_MetricsRuntimeClassEmpty(t *testing.T) {
 }
 
 func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false}, MetricsInject{})
 
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	if len(spec.Containers) != 1 {
@@ -173,24 +173,24 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	}
 }
 
-func TestDaemon_BuildDaemonSet_MetricsExtraPassThrough(t *testing.T) {
-	// The advanced pass-through wires extra env/mounts onto the metricsd
-	// container and extra volumes onto the pod (used by the e2e overlay to mount
-	// the nvml-mock driver). Empty by default; here we assert they propagate.
-	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{
-		Enabled: true,
-		ExtraEnv: []corev1.EnvVar{
+func TestDaemon_BuildDaemonSet_MetricsInject(t *testing.T) {
+	// MetricsInject wires operator-level env/mounts onto the metricsd container
+	// and volumes onto the pod without touching the CRD API. Used by the e2e
+	// overlay to mount the nvml-mock driver; empty by default in production.
+	inject := MetricsInject{
+		Env: []corev1.EnvVar{
 			{Name: "LD_LIBRARY_PATH", Value: "/opt/driver/lib64"},
 		},
-		ExtraVolumeMounts: []corev1.VolumeMount{
+		VolumeMounts: []corev1.VolumeMount{
 			{Name: "driver", MountPath: "/opt/driver"},
 		},
-		ExtraVolumes: []corev1.Volume{
+		Volumes: []corev1.Volume{
 			{Name: "driver", VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{Path: "/opt/driver"},
 			}},
 		},
-	})
+	}
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, inject)
 
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	metricsd := containerByName(t, spec.Containers, "metricsd")
@@ -215,7 +215,7 @@ func TestDaemon_BuildDaemonSet_MetricsExtraPassThrough(t *testing.T) {
 // that never registers with NRI reports Ready=False (and the node condition
 // stays false) instead of a false-positive AllDaemonsReady.
 func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
-	d := NewSharingdDaemon(nil, nil)
+	d := NewSharingdDaemon(nil, nil, MetricsInject{})
 	ds := d.BuildDaemonSet(defaultOpts())
 	ctr := ds.Spec.Template.Spec.Containers[0]
 
@@ -258,7 +258,7 @@ func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
 func TestDaemon_BuildDaemonSet_ReadinessPortOverride(t *testing.T) {
 	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
 		ReadinessPort: ptr.To(int32(9999)),
-	}, nil)
+	}, nil, MetricsInject{})
 	ctr := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
 
 	if got := ctr.ReadinessProbe.HTTPGet.Port.IntValue(); got != 9999 {
@@ -288,7 +288,7 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		RetryInterval:    &metav1.Duration{Duration: 10 * time.Second},
 		StableThreshold:  &metav1.Duration{Duration: 10 * time.Minute},
 		MaxRetries:       ptr.To(int32(5)),
-	}, nil)
+	}, nil, MetricsInject{})
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	args := ds.Spec.Template.Spec.Containers[0].Args

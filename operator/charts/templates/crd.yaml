@@ -111,33 +111,12 @@ spec:
                         enabled controls whether the metricsd sidecar is added to
                         the DaemonSet. Default: true.
                       type: boolean
-                    extraEnv:
+                    runtimeClassName:
                       description: >-
-                        extraEnv is an advanced pass-through of additional
-                        environment variables appended to the metricsd container
-                        (core/v1 EnvVar). Empty by default.
-                      type: array
-                      items:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                    extraVolumeMounts:
-                      description: >-
-                        extraVolumeMounts is an advanced pass-through of additional
-                        volume mounts appended to the metricsd container
-                        (core/v1 VolumeMount). Empty by default.
-                      type: array
-                      items:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                    extraVolumes:
-                      description: >-
-                        extraVolumes is an advanced pass-through of additional
-                        volumes appended to the sharingd pod (core/v1 Volume).
-                        Empty by default.
-                      type: array
-                      items:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
+                        runtimeClassName sets the RuntimeClass for the sharingd+metricsd
+                        pod. Defaults to "nvidia" when unset. Set to "" to use the
+                        node default (required on clusters without the nvidia runtime).
+                      type: string
                 mpsDaemon:
                   description: mpsDaemon configures the MPS daemon supervisor (mpsd).
                   type: object

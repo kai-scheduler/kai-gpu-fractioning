@@ -13,17 +13,21 @@
 #   - mount it into the metricsd container at the same path
 #   - LD_LIBRARY_PATH points the loader at the mock's usr/lib64
 metricsAgent:
-  extraEnv:
+  # Disable the "nvidia" RuntimeClass default: k3d's fake-GPU cluster does not
+  # have this RuntimeClass (same reason mpsd never schedules there). An empty
+  # string in the CR tells the operator to use the node's default runtime.
+  runtimeClassName: ""
+  injectEnv:
     - name: LD_LIBRARY_PATH
       value: /var/lib/nvml-mock/driver/usr/lib64
     # Verbose logging on the e2e cluster so attribution/collection steps are
     # observable when a metrics test fails.
     - name: LOG_LEVEL
       value: debug
-  extraVolumeMounts:
+  injectVolumeMounts:
     - name: nvml-mock-driver
       mountPath: /var/lib/nvml-mock/driver
-  extraVolumes:
+  injectVolumes:
     - name: nvml-mock-driver
       hostPath:
         path: /var/lib/nvml-mock/driver

@@ -21,7 +21,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -171,27 +170,6 @@ func (in *MetricsAgentSpec) DeepCopyInto(out *MetricsAgentSpec) {
 		in, out := &in.RuntimeClassName, &out.RuntimeClassName
 		*out = new(string)
 		**out = **in
-	}
-	if in.ExtraEnv != nil {
-		in, out := &in.ExtraEnv, &out.ExtraEnv
-		*out = make([]corev1.EnvVar, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-	if in.ExtraVolumeMounts != nil {
-		in, out := &in.ExtraVolumeMounts, &out.ExtraVolumeMounts
-		*out = make([]corev1.VolumeMount, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
-	if in.ExtraVolumes != nil {
-		in, out := &in.ExtraVolumes, &out.ExtraVolumes
-		*out = make([]corev1.Volume, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
 	}
 }
 

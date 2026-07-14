@@ -41,17 +41,34 @@ const (
 	readyzPath           = "/readyz"
 )
 
+// MetricsInject carries operator-level configuration that is injected into the
+// metricsd sidecar at DaemonSet build time. It is read from the operator pod's
+// own environment variables (set via Helm), not from the GpuSharingConfig CR,
+// so it never pollutes the user-facing CRD API. All fields are optional and
+// empty by default for production deployments.
+type MetricsInject struct {
+	// Env is appended to the metricsd container's environment.
+	Env []corev1.EnvVar
+	// VolumeMounts is appended to the metricsd container's volume mounts.
+	VolumeMounts []corev1.VolumeMount
+	// Volumes is appended to the pod spec alongside the built-in volumes.
+	Volumes []corev1.Volume
+}
+
 // daemon implements daemonmgr.ManagedDaemon for the sharingd NRI plugin plus its
 // metricsd metrics sidecar. Both run in a single DaemonSet pod.
 type daemon struct {
-	sharingSpec *v1alpha1.SharingAgentSpec
-	metricsSpec *v1alpha1.MetricsAgentSpec
+	sharingSpec   *v1alpha1.SharingAgentSpec
+	metricsSpec   *v1alpha1.MetricsAgentSpec
+	metricsInject MetricsInject
 }
 
 // NewSharingdDaemon returns a ManagedDaemon for the sharingd NRI plugin. The
 // metricsAgent spec (may be nil) configures the co-located metricsd sidecar.
-func NewSharingdDaemon(spec *v1alpha1.SharingAgentSpec, metrics *v1alpha1.MetricsAgentSpec) daemonmgr.ManagedDaemon {
-	return &daemon{sharingSpec: spec, metricsSpec: metrics}
+// inject carries operator-level env/volume overrides for metricsd (empty for
+// production; populated from operator env vars in non-standard deployments).
+func NewSharingdDaemon(spec *v1alpha1.SharingAgentSpec, metrics *v1alpha1.MetricsAgentSpec, inject MetricsInject) daemonmgr.ManagedDaemon {
+	return &daemon{sharingSpec: spec, metricsSpec: metrics, metricsInject: inject}
 }
 
 func (d *daemon) Name() string { return daemonName }
@@ -126,9 +143,7 @@ func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map
 		metricsImage = metricsImage.MergeWith(*d.metricsSpec.Image)
 	}
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(metricsImage))
-	if d.metricsSpec != nil {
-		result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, d.metricsSpec.ExtraVolumes...)
-	}
+	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, d.metricsInject.Volumes...)
 
 	if result.Spec.Template.Annotations == nil {
 		result.Spec.Template.Annotations = map[string]string{}
@@ -247,13 +262,8 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 		},
 	}
 
-	// Advanced pass-through: append caller-supplied env and mounts (empty by
-	// default). Used by non-standard deployments to point the collector at an
-	// alternate driver library; the matching volumes are added in BuildDaemonSet.
-	if d.metricsSpec != nil {
-		container.Env = append(container.Env, d.metricsSpec.ExtraEnv...)
-		container.VolumeMounts = append(container.VolumeMounts, d.metricsSpec.ExtraVolumeMounts...)
-	}
+	container.Env = append(container.Env, d.metricsInject.Env...)
+	container.VolumeMounts = append(container.VolumeMounts, d.metricsInject.VolumeMounts...)
 
 	return container
 }
