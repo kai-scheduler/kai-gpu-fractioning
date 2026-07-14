@@ -143,6 +143,13 @@ type MetricsAgentSpec struct {
 	// path is the HTTP path on which metrics are served. Default: /metrics.
 	// +optional
 	Path string `json:"path,omitempty"`
+
+	// runtimeClassName sets the RuntimeClass for the sharingd+metricsd pod so
+	// the NVIDIA container runtime injects libnvidia-ml.so (required for NVML).
+	// Defaults to "nvidia". Set to "" to use the node's default runtime class
+	// (only safe when the default runtime already injects NVIDIA driver libraries).
+	// +optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
 }
 
 // MpsDaemonSpec configures the mpsd DaemonSet managed by the controller.
