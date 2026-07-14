@@ -28,6 +28,7 @@ WORKDIR /workspace
 # Root module go.mod/go.sum, then the whole sharing-manager tree (both the
 # metricsd module and the shared sharingd packages it references via replace).
 COPY go.mod go.sum ./
+COPY pkg/ pkg/
 COPY sharing-manager/ sharing-manager/
 
 RUN --mount=type=cache,target=/go/pkg/mod \

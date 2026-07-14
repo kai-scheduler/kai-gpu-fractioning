@@ -1,0 +1,99 @@
+name: "E2E Setup"
+description: >-
+  Install the e2e toolchain (Go, Python, k3d, Helm) and bring up the
+  k3d + fake-gpu-operator cluster. This is the suite-agnostic infra shared by
+  every e2e job — a suite job checks out the repo, runs this action, then does
+  its own suite-specific image load + test run + teardown.
+
+inputs:
+  gpu-worker-nodes:
+    description: "Number of GPU worker nodes (labeled into the fake-GPU node pool)."
+    required: false
+    default: "2"
+  non-gpu-worker-nodes:
+    description: "Number of plain (no-GPU) worker nodes, for a mixed topology."
+    required: false
+    default: "1"
+  cluster-name:
+    description: "k3d cluster name."
+    required: false
+    default: "gpu-sharing-e2e"
+  fake-gpu-operator-version:
+    description: "fake-gpu-operator chart version to install."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: test/e2e/go.mod
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install k3d
+      shell: bash
+      run: |
+        if command -v k3d &>/dev/null; then
+          echo "k3d already installed: $(k3d version | head -1)"
+        else
+          K3D_VERSION=v5.8.3
+          curl -fsSL -o /tmp/k3d "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-amd64"
+          install /tmp/k3d /usr/local/bin/k3d && rm /tmp/k3d
+          k3d version
+        fi
+
+    - name: Install Helm
+      uses: azure/setup-helm@v4
+
+    - name: Install Skaffold
+      shell: bash
+      run: |
+        curl -fsSL -o skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64
+        install skaffold /usr/local/bin/ && rm skaffold
+        skaffold version
+
+    - name: Create e2e cluster (k3d + fake-gpu-operator)
+      shell: bash
+      env:
+        E2E_CLUSTER_NAME: ${{ inputs.cluster-name }}
+        E2E_GPU_WORKER_NODES: ${{ inputs.gpu-worker-nodes }}
+        E2E_NON_GPU_WORKER_NODES: ${{ inputs.non-gpu-worker-nodes }}
+        E2E_FAKE_GPU_OPERATOR_VERSION: ${{ inputs.fake-gpu-operator-version }}
+      run: make e2e-cluster-up
+
+    - name: Verify cluster is up
+      shell: bash
+      env:
+        E2E_CLUSTER_NAME: ${{ inputs.cluster-name }}
+        E2E_GPU_WORKER_NODES: ${{ inputs.gpu-worker-nodes }}
+      run: |
+        # create-cluster.py writes the kubeconfig here, not ~/.kube/config.
+        export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
+        echo "## Nodes"
+        kubectl get nodes -o wide
+        echo "## gpu-operator pods"
+        kubectl get pods -n gpu-operator -o wide
+
+        ready_gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu.present=true --no-headers | grep -c ' Ready ')
+        echo "Ready GPU nodes: ${ready_gpu_nodes} (expected: ${E2E_GPU_WORKER_NODES})"
+
+        if [[ "${ready_gpu_nodes}" -ne "${E2E_GPU_WORKER_NODES}" ]]; then
+          echo "::error::expected ${E2E_GPU_WORKER_NODES} Ready GPU node(s), found ${ready_gpu_nodes}"
+          {
+            echo "### ❌ Cluster is NOT up"
+            echo "Expected **${E2E_GPU_WORKER_NODES}** Ready GPU node(s), found **${ready_gpu_nodes}**."
+            echo
+            echo '```'
+            kubectl get nodes -o wide
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+
+        {
+          echo "### ✅ Cluster is up and running"
+          echo "k3d cluster \`${E2E_CLUSTER_NAME}\`: **${ready_gpu_nodes}/${E2E_GPU_WORKER_NODES}** GPU nodes Ready, fake-gpu-operator installed."
+        } >> "$GITHUB_STEP_SUMMARY"

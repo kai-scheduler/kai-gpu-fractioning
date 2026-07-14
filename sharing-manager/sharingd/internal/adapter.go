@@ -53,6 +53,12 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 	}
 	cfg, ok := a.isFractionalGPUContainer(pod, container.GetName())
 	if !ok {
+		a.logger().Debug("skipping container: no GPU-memory annotation for it",
+			"container", container.GetName(),
+			"pod", pod.GetName(),
+			"namespace", pod.GetNamespace(),
+			"expectedAnnotation", containerMemoryAnnotationKey(a.annotationPrefix, container.GetName(), annotationSuffixLimit),
+		)
 		return store.ContainerInfo{}, false
 	}
 
@@ -69,14 +75,14 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 		info.CgroupPath = linux.GetCgroupsPath()
 	}
 
-	a.logger().Debug("recorded fractional GPU container mapping",
+	a.logger().Debug("recorded GPU-sharing container mapping",
 		"container", info.Container,
 		"pod", info.Pod,
 		"namespace", info.Namespace,
 		"podUID", info.PodUID,
 		"containerID", info.ContainerID,
 		"gpuDevices", info.GPUDevices,
-		"requestedMemoryMb", info.RequestedMemoryMB,
+		"requestedMemoryMB", info.RequestedMemoryMB,
 	)
 	return info, true
 }

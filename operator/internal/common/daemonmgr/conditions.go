@@ -57,7 +57,11 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 	// status has not changed
 	// Skip the patch entirely when status, reason, and message are all identical (no-op).
 	node := &corev1.Node{}
-	if err := reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err == nil {
+	if err := reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to read node for condition check; LastTransitionTime will reset")
+		}
+	} else {
 		if existing, found := FindNodeCondition(node); found && existing.Status == condStatus {
 			if existing.Reason == reason && existing.Message == message {
 				return nil // nothing to update

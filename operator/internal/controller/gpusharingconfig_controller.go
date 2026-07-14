@@ -20,8 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -36,6 +34,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/mpsd"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/sharingd"
@@ -369,31 +368,14 @@ func (r *GpuSharingConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// ReadImageFromEnv reads the SHARINGD_IMAGE_* env vars and returns an ImageSpec.
+// ReadImageFromEnv reads the <PREFIX>_REPOSITORY, <PREFIX>_TAG, and
+// <PREFIX>_PULL_POLICY env vars and returns an ImageSpec.
 func ReadImageFromEnv(prefix string) v1alpha1.ImageSpec {
 	return v1alpha1.ImageSpec{
-		Repository:      os.Getenv(prefix + "_REPOSITORY"),
-		Tag:             os.Getenv(prefix + "_TAG"),
-		ImagePullPolicy: os.Getenv(prefix + "_PULL_POLICY"),
+		Repository:      env.String(prefix+"_REPOSITORY", ""),
+		Tag:             env.String(prefix+"_TAG", ""),
+		ImagePullPolicy: env.String(prefix+"_PULL_POLICY", ""),
 	}
-}
-
-// ReadBoolFromEnv reads a boolean env var, returning fallback when unset or unparseable.
-//
-// TODO: this duplicates sharing-manager/common/env.Bool. That env package lives
-// in the root module, which the operator module doesn't import (it only depends
-// on the api submodule). We should hoist the env package to a location both
-// modules can share and reuse it here (and in ReadImageFromEnv) instead.
-func ReadBoolFromEnv(key string, fallback bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		return fallback
-	}
-	return b
 }
 
 func isConditionTrue(conditions []metav1.Condition, condType string) bool {

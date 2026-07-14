@@ -4,8 +4,8 @@ import (
 	"flag"
 	"time"
 
+	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/env"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
 )

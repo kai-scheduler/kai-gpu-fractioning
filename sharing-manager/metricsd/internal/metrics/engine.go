@@ -47,7 +47,7 @@ type metricsEngine struct {
 	log *slog.Logger
 	// deviceUUIDs maps GPU index -> UUID learned from NVML; fills UUID for NRI-sourced devices.
 	deviceUUIDs map[int]string
-	// deviceTotalMemoryBytes maps GPU index -> total memory (bytes) learned from NVML; divisor for the GPU fraction.
+	// deviceTotalMemoryBytes maps GPU index -> total memory (bytes) learned from NVML; the divisor for the GPU fraction.
 	deviceTotalMemoryBytes map[int]uint64
 	// snapshot is the latest published snapshot, read by Snapshot().
 	snapshot Snapshot
@@ -141,7 +141,7 @@ func (s *metricsEngine) collect(ctx context.Context) {
 	s.rememberDeviceTotalMemory(snapshot.DeviceTotalMemoryBytes)
 
 	metrics, unmatched := s.enrich(ctx, snapshot.Processes, pods)
-	if s.smUtilWindow > s.interval {
+	if s.smUtilWindowSize > 1 {
 		metrics = s.windowedSMUtil(metrics)
 	}
 	s.normalizeSMUtil(metrics)

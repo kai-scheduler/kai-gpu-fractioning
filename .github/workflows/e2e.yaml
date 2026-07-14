@@ -1,0 +1,67 @@
+name: E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sharing-manager/metricsd/**"
+      - "sharing-manager/mpsd/**"
+      - "sharing-manager/sharingd/**"
+      - "test/e2e/**"
+      - ".github/workflows/e2e.yaml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  E2E_CLUSTER_NAME: gpu-sharing-e2e
+  E2E_GPU_WORKER_NODES: 2          # GPU worker nodes
+  E2E_NON_GPU_WORKER_NODES: 1  # plain (no-GPU) worker nodes, for a mixed topology
+  # Pin to a known-good fake-gpu-operator release. Bump deliberately.
+  E2E_FAKE_GPU_OPERATOR_VERSION: 0.1.0
+
+jobs:
+  metrics:
+    name: Metrics e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Suite-agnostic infra: toolchain + k3d/fake-gpu-operator cluster.
+      # Reused as-is by future e2e suites (mpsd/sharingd).
+      - name: Set up e2e cluster
+        uses: ./.github/actions/e2e-setup
+        with:
+          gpu-worker-nodes: ${{ env.E2E_GPU_WORKER_NODES }}
+          non-gpu-worker-nodes: ${{ env.E2E_NON_GPU_WORKER_NODES }}
+          cluster-name: ${{ env.E2E_CLUSTER_NAME }}
+          fake-gpu-operator-version: ${{ env.E2E_FAKE_GPU_OPERATOR_VERSION }}
+
+      # Skaffold builds the four images, loads them into k3d, and helm-installs
+      # the operator chart; the operator then creates the sharingd DaemonSet
+      # (with the metricsd sidecar under test). Waits on the sharingd DaemonSet
+      # rollout, not the operator's aggregate Ready (mpsd can't schedule on k3d —
+      # no "nvidia" RuntimeClass — and is out of scope).
+      - name: Build, load and deploy the stack (skaffold + helm)
+        run: make e2e-deploy
+
+      - name: Run metrics e2e tests
+        run: make test-e2e-metrics
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl -n gpu-sharing-operator get gpusharingconfig -o yaml || true
+          kubectl -n gpu-sharing-operator describe pods || true
+          kubectl -n gpu-sharing-operator logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
+          kubectl -n gpu-sharing-operator logs deploy/gso-gpu-sharing-operator --tail=200 || true
+          kubectl -n gpu-operator logs -l app=status-updater --tail=200 || true
+
+      - name: Delete e2e cluster
+        if: always()
+        run: make e2e-cluster-down

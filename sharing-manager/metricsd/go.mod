@@ -3,10 +3,11 @@ module github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd
 go 1.26.4
 
 require (
-	github.com/NVIDIA/go-nvml v0.13.3-0
+	github.com/NVIDIA/go-nvml v0.13.3-1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/run-ai/gpu-sharing-operator v0.0.0
+	github.com/run-ai/gpu-sharing-operator/pkg v0.0.0
 )
 
 require (
@@ -25,3 +26,5 @@ require (
 )
 
 replace github.com/run-ai/gpu-sharing-operator => ../../
+
+replace github.com/run-ai/gpu-sharing-operator/pkg => ../../pkg

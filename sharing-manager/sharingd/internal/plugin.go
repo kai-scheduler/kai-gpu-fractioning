@@ -42,8 +42,10 @@ type Config struct {
 	// FailOpen skips a container on parse error instead of blocking it.
 	FailOpen bool
 
-	MapDir       string // shared dir for the container→pod mapping handoff
-	LogPodEvents bool   // log each recorded/removed mapping event
+	// MapDir is the shared dir for the container→pod mapping handoff.
+	MapDir string
+	// LogPodEvents logs each recorded/removed mapping event.
+	LogPodEvents bool
 
 	// Log is the logger used by the plugin; defaults to slog.Default() when nil.
 	Log *slog.Logger
