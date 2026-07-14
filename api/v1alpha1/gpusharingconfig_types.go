@@ -89,6 +89,20 @@ type SharingAgentSpec struct {
 	// +optional
 	NRISocketPath string `json:"nriSocketPath,omitempty"`
 
+	// retroactiveEnforcement controls whether sharingd, on (re)connect to NRI,
+	// stops GPU-sharing containers found running without passing through the NRI
+	// plugin. Those containers lack the proper GPU-sharing setup and may harm
+	// other containers on the GPU. Default: true.
+	// +kubebuilder:default=true
+	// +optional
+	RetroactiveEnforcement bool `json:"retroactiveEnforcement"`
+
+	// criSocketPath is the path to the CRI runtime socket sharingd uses to stop
+	// containers during retroactive enforcement. It is mounted into the pod only
+	// when retroactiveEnforcement is enabled. Default: /run/containerd/containerd.sock.
+	// +optional
+	CRISocketPath string `json:"criSocketPath,omitempty"`
+
 	// logLevel controls the logging verbosity of the sharing agent.
 	// One of debug, info, warn, error. Default: info.
 	// +optional

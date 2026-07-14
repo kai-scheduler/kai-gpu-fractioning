@@ -10,6 +10,9 @@ metadata:
 spec:
   nodeSelector:
     nvidia.com/gpu.present: "true"
+  # Present (even if empty) so the API server applies field-level defaults such
+  # as sharingAgent.retroactiveEnforcement=true.
+  sharingAgent: {}
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}
     {{- if hasKey .Values.metricsAgent "runtimeClassName" }}

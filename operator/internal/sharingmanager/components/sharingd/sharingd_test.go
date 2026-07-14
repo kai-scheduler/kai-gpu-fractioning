@@ -90,6 +90,12 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	if volumePaths["mps-pipe"] != "/run/nvidia-mps" {
 		t.Errorf("mps-pipe volume path = %q, expected %q", volumePaths["mps-pipe"], "/run/nvidia-mps")
 	}
+	// With a nil sharingAgent spec, retroactive enforcement is off (the default
+	// is materialized by the API server only when a sharingAgent block exists),
+	// so the CRI socket must not be mounted.
+	if _, ok := volumePaths["cri-socket"]; ok {
+		t.Errorf("cri-socket volume should be absent when sharingAgent spec is nil, got %q", volumePaths["cri-socket"])
+	}
 
 	// Volume mounts
 	mountPaths := make(map[string]string)
@@ -101,6 +107,9 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	}
 	if mountPaths["mps-pipe"] != "/run/nvidia-mps" {
 		t.Errorf("mps-pipe mount = %q, expected %q", mountPaths["mps-pipe"], "/run/nvidia-mps")
+	}
+	if _, ok := mountPaths["cri-socket"]; ok {
+		t.Errorf("cri-socket mount should be absent when sharingAgent spec is nil, got %q", mountPaths["cri-socket"])
 	}
 
 	// Labels
@@ -243,13 +252,15 @@ func TestDaemon_BuildDaemonSet_ReadinessPortOverride(t *testing.T) {
 
 func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
-		AnnotationPrefix: "custom.prefix.",
-		FailOpen:         ptr.To(true),
-		NRISocketPath:    "/custom/nri.sock",
-		LogLevel:         "debug",
-		RetryInterval:    &metav1.Duration{Duration: 10 * time.Second},
-		StableThreshold:  &metav1.Duration{Duration: 10 * time.Minute},
-		MaxRetries:       ptr.To(int32(5)),
+		AnnotationPrefix:       "custom.prefix.",
+		FailOpen:               ptr.To(true),
+		NRISocketPath:          "/custom/nri.sock",
+		LogLevel:               "debug",
+		RetryInterval:          &metav1.Duration{Duration: 10 * time.Second},
+		StableThreshold:        &metav1.Duration{Duration: 10 * time.Minute},
+		MaxRetries:             ptr.To(int32(5)),
+		RetroactiveEnforcement: true,
+		CRISocketPath:          "/custom/cri.sock",
 	}, nil)
 
 	ds := d.BuildDaemonSet(defaultOpts())
@@ -263,6 +274,8 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		"--retry-interval", "10s",
 		"--stable-threshold", "10m0s",
 		"--max-retries", "5",
+		"--retroactive-enforcement=true",
+		"--cri-socket", "/custom/cri.sock",
 	}
 
 	if len(args) != len(expected) {
@@ -272,6 +285,53 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		if args[i] != expected[i] {
 			t.Errorf("args[%d] = %q, want %q", i, args[i], expected[i])
 		}
+	}
+
+	// The custom CRI socket is mounted at the same path it is dialed on.
+	var criMount string
+	for _, m := range ds.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if m.Name == "cri-socket" {
+			criMount = m.MountPath
+		}
+	}
+	if criMount != "/custom/cri.sock" {
+		t.Errorf("cri-socket mount = %q, want %q", criMount, "/custom/cri.sock")
+	}
+}
+
+func TestDaemon_BuildDaemonSet_EnforcementDisabled(t *testing.T) {
+	d := NewSharingdDaemon(&v1alpha1.SharingAgentSpec{
+		RetroactiveEnforcement: false,
+	}, nil)
+
+	ds := d.BuildDaemonSet(defaultOpts())
+	spec := ds.Spec.Template.Spec
+	ctr := spec.Containers[0]
+
+	// The CRI socket must not be mounted when enforcement is disabled.
+	for _, v := range spec.Volumes {
+		if v.Name == "cri-socket" {
+			t.Error("cri-socket volume should be absent when enforcement is disabled")
+		}
+	}
+	for _, m := range ctr.VolumeMounts {
+		if m.Name == "cri-socket" {
+			t.Error("cri-socket mount should be absent when enforcement is disabled")
+		}
+	}
+
+	// The disable must be passed explicitly to override the binary default.
+	foundDisable := false
+	for _, a := range ctr.Args {
+		if a == "--retroactive-enforcement=false" {
+			foundDisable = true
+		}
+		if a == "--cri-socket" {
+			t.Error("--cri-socket should not be set when enforcement is disabled")
+		}
+	}
+	if !foundDisable {
+		t.Errorf("expected --retroactive-enforcement=false in args, got %v", ctr.Args)
 	}
 }
 

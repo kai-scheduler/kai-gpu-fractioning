@@ -75,6 +75,11 @@ spec:
                       type: boolean
                     nriSocketPath:
                       type: string
+                    retroactiveEnforcement:
+                      type: boolean
+                      default: true
+                    criSocketPath:
+                      type: string
                     logLevel:
                       type: string
                     retryInterval:
