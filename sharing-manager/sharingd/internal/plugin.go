@@ -47,7 +47,8 @@ type Config struct {
 	// RetroactiveEnforcement enables the audit pass on NRI (re)connect: any
 	// GPU-sharing container found running without the expected injection is
 	// stopped so kubelet recreates it through a healthy CreateContainer hook.
-	// Requires a non-nil stopper passed to NewPlugin; otherwise it is a no-op.
+	// Requires a non-nil stopper passed to NewPlugin; otherwise NewPlugin
+	// returns an error.
 	RetroactiveEnforcement bool
 
 	// MapDir is the shared dir for the container→pod mapping handoff.
