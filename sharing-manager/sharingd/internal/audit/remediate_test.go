@@ -11,7 +11,7 @@ func TestRemediateStopsEveryViolation(t *testing.T) {
 	fake := &fakeStopper{}
 	r := remediator{stopper: fake}
 
-	r.remediate(context.Background(), []violation{
+	r.remediate(context.Background(), []violator{
 		{containerID: "c1", container: "trainer", pod: "pod1"},
 		{containerID: "c2", container: "trainer", pod: "pod2"},
 	})
@@ -31,17 +31,20 @@ func TestRemediateEmptyIsNoop(t *testing.T) {
 }
 
 func TestRemediateContinuesAfterStopError(t *testing.T) {
-	// The stopper fails for c2 only; c1 and c3 must still be attempted.
+	// One stop fails in the MIDDLE of the batch (c2). remediate iterates the
+	// slice in order, so c3 is the load-bearing case: it comes AFTER the failure
+	// and must still be attempted and stopped. If a stop error aborted the loop,
+	// c3 would be neither attempted nor stopped and this test would catch it.
 	fake := &fakeStopper{failIDs: map[string]error{"c2": errors.New("boom")}}
 	r := remediator{stopper: fake}
 
-	r.remediate(context.Background(), []violation{
-		{containerID: "c1"},
-		{containerID: "c2"},
-		{containerID: "c3"},
+	r.remediate(context.Background(), []violator{
+		{containerID: "c1"}, // before the failure
+		{containerID: "c2"}, // fails
+		{containerID: "c3"}, // after the failure — proves the loop keeps going
 	})
 
-	// All three are attempted; the failing one is not recorded as stopped.
+	// All three are attempted; only c2 fails, so c1 and c3 are recorded stopped.
 	assertSameSet(t, fake.attemptedIDs(), []string{"c1", "c2", "c3"})
 	assertSameSet(t, fake.stoppedIDs(), []string{"c1", "c3"})
 }

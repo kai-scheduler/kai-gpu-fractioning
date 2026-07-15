@@ -26,7 +26,7 @@ func TestAuditStopsOnlyViolations(t *testing.T) {
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
 			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEnv(true, false), Mounts: []*api.Mount{mpsMount()},
 		},
-		{ // uninjected → violation
+		{ // uninjected → violator
 			Id: "c2", Name: "trainer", PodSandboxId: "p2",
 			State: api.ContainerState_CONTAINER_RUNNING,
 		},

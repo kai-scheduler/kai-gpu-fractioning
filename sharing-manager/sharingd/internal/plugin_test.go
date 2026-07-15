@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
 )
 
 func TestCreateContainer(t *testing.T) {
@@ -32,8 +33,8 @@ func TestCreateContainer(t *testing.T) {
 			},
 			containerName:   "trainer",
 			expectedNil:     false,
-			expectedEnvKeys: []string{envGPUMemoryRequests, envGPUMemoryLimits, envMPSPipeDirectory},
-			expectedEnvVals: map[string]string{envGPUMemoryRequests: "2147", envGPUMemoryLimits: "4294"},
+			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "2147", injection.EnvGPUMemoryLimits: "4294"},
 			expectedMount:   true,
 		},
 		{
@@ -43,7 +44,7 @@ func TestCreateContainer(t *testing.T) {
 			},
 			containerName:   "main",
 			expectedNil:     false,
-			expectedEnvKeys: []string{envGPUMemoryLimits, envMPSPipeDirectory},
+			expectedEnvKeys: []string{injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
 			expectedMount:   true,
 		},
 		{
@@ -53,7 +54,7 @@ func TestCreateContainer(t *testing.T) {
 			},
 			containerName:   "worker",
 			expectedNil:     false,
-			expectedEnvKeys: []string{envGPUMemoryRequests, envMPSPipeDirectory},
+			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvMPSPipeDirectory},
 			expectedMount:   true,
 		},
 		{
@@ -262,7 +263,7 @@ func syncSnapshot() ([]*api.PodSandbox, []*api.Container) {
 		{ // injected → not a violation
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
 			State: api.ContainerState_CONTAINER_RUNNING,
-			Env:   []string{envMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, envGPUMemoryLimits + "=4294"},
+			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4294"},
 			Mounts: []*api.Mount{{
 				Source:      configuration.DefaultMPSPipeDirectory,
 				Destination: configuration.DefaultMPSPipeDirectory,

@@ -15,7 +15,7 @@ import (
 // Detection is synchronous and pure, so it is safe on the NRI callback
 // goroutine. Remediation runs on a background goroutine because stopping a
 // container blocks on the runtime's grace period, which must never stall the
-// callback. Only the small []violation crosses into the goroutine — never the
+// callback. Only the small []violator crosses into the goroutine — never the
 // runtime snapshot slices.
 type Sentinel struct {
 	detector   detector
@@ -52,8 +52,8 @@ func NewSentinel(annotationPrefix, mpsPipeDirectory string, stopper ContainerSto
 // the NRI callback that triggered it; a Synchronize handler returning must not
 // cancel in-flight stops. Call Wait to block until remediation completes.
 func (s *Sentinel) Audit(ctx context.Context, pods []*api.PodSandbox, containers []*api.Container) {
-	violations := s.detector.violations(pods, containers)
-	if len(violations) == 0 {
+	violators := s.detector.violators(pods, containers)
+	if len(violators) == 0 {
 		return
 	}
 
@@ -61,7 +61,7 @@ func (s *Sentinel) Audit(ctx context.Context, pods []*api.PodSandbox, containers
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.remediator.remediate(stopCtx, violations)
+		s.remediator.remediate(stopCtx, violators)
 	}()
 }
 

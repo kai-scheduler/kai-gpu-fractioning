@@ -14,20 +14,13 @@ import (
 	"github.com/containerd/nri/pkg/api"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
 )
 
-// Injected env-var keys. Mirror the sharingd create-hook injection
-// (internal/plugin.go buildAdjustment). Keep in sync with that code.
-const (
-	envGPUMemoryRequests = "NVIDIA_GPU_MEMORY_REQUESTS"
-	envGPUMemoryLimits   = "NVIDIA_GPU_MEMORY_LIMITS"
-	envMPSPipeDirectory  = "CUDA_MPS_PIPE_DIRECTORY"
-)
-
-// violation describes a running container that belongs to a GPU-sharing pod but
+// violator describes a running container that belongs to a GPU-sharing pod but
 // is missing the sharing setup the CreateContainer hook would have injected. It
 // is produced by detector and consumed by the remediation path (same package).
-type violation struct {
+type violator struct {
 	containerID string
 	container   string
 	pod         string
@@ -52,14 +45,14 @@ type detector struct {
 	log *slog.Logger
 }
 
-// violations scans an NRI Synchronize snapshot and returns one entry per
+// violators scans an NRI Synchronize snapshot and returns one entry per
 // GPU-sharing container that is running without the expected injection. Each
 // container is matched to its pod sandbox by PodSandboxId; containers with no
 // matching pod, non-enforceable states, or no sharing annotations are skipped.
-func (d detector) violations(pods []*api.PodSandbox, containers []*api.Container) []violation {
+func (d detector) violators(pods []*api.PodSandbox, containers []*api.Container) []violator {
 	podsByID := podSandboxLookup(pods)
 
-	var out []violation
+	var out []violator
 	for _, container := range containers {
 		if v, ok := d.check(podsByID[container.GetPodSandboxId()], container); ok {
 			out = append(out, v)
@@ -72,9 +65,9 @@ func (d detector) violations(pods []*api.PodSandbox, containers []*api.Container
 // anything that must not be stopped: nil/pod-less containers, non-running
 // states, non-sharing containers, containers with unparseable annotations, or
 // containers that already carry the full expected injection.
-func (d detector) check(pod *api.PodSandbox, container *api.Container) (violation, bool) {
+func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator, bool) {
 	if container == nil || container.GetId() == "" || pod == nil {
-		return violation{}, false
+		return violator{}, false
 	}
 
 	// Only running/created containers can be meaningfully remediated. A stopped
@@ -82,7 +75,7 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violatio
 	switch container.GetState() {
 	case api.ContainerState_CONTAINER_CREATED, api.ContainerState_CONTAINER_RUNNING:
 	default:
-		return violation{}, false
+		return violator{}, false
 	}
 
 	cfg, err := annotations.ParseGPUMemoryAnnotations(pod.GetAnnotations(), container.GetName(), d.annotationPrefix)
@@ -101,19 +94,19 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violatio
 			"limitAnnotation", ann[limitKey],
 			"error", err,
 		)
-		return violation{}, false
+		return violator{}, false
 	}
 	if cfg.IsEmpty() {
 		// Not a GPU-sharing container — never touch it.
-		return violation{}, false
+		return violator{}, false
 	}
 
 	missing := d.missingInjection(cfg, container)
 	if len(missing) == 0 {
-		return violation{}, false
+		return violator{}, false
 	}
 
-	return violation{
+	return violator{
 		containerID: container.GetId(),
 		container:   container.GetName(),
 		pod:         pod.GetName(),
@@ -132,14 +125,14 @@ func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, container *a
 
 	var missing []string
 	// CUDA_MPS_PIPE_DIRECTORY is always injected for a sharing container.
-	if !env[envMPSPipeDirectory] {
-		missing = append(missing, "env:"+envMPSPipeDirectory)
+	if !env[injection.EnvMPSPipeDirectory] {
+		missing = append(missing, "env:"+injection.EnvMPSPipeDirectory)
 	}
-	if cfg.Limit != "" && !env[envGPUMemoryLimits] {
-		missing = append(missing, "env:"+envGPUMemoryLimits)
+	if cfg.Limit != "" && !env[injection.EnvGPUMemoryLimits] {
+		missing = append(missing, "env:"+injection.EnvGPUMemoryLimits)
 	}
-	if cfg.Request != "" && !env[envGPUMemoryRequests] {
-		missing = append(missing, "env:"+envGPUMemoryRequests)
+	if cfg.Request != "" && !env[injection.EnvGPUMemoryRequests] {
+		missing = append(missing, "env:"+injection.EnvGPUMemoryRequests)
 	}
 	if !hasMountDestination(container.GetMounts(), d.mpsPipeDirectory) {
 		missing = append(missing, "mount:"+d.mpsPipeDirectory)
@@ -165,7 +158,7 @@ func presentEnv(env []string) map[string]bool {
 			k = kv[:i]
 		}
 		switch k {
-		case envMPSPipeDirectory, envGPUMemoryLimits, envGPUMemoryRequests:
+		case injection.EnvMPSPipeDirectory, injection.EnvGPUMemoryLimits, injection.EnvGPUMemoryRequests:
 			present[k] = true
 		}
 	}

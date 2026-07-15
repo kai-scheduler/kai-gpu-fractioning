@@ -12,6 +12,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/audit"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
 )
 
 // ReadinessSetter receives the plugin's NRI registration state: true once the
@@ -23,11 +24,6 @@ type ReadinessSetter interface {
 }
 
 const (
-	// Environment variables injected into containers by the NRI plugin.
-	envGPUMemoryRequests = "NVIDIA_GPU_MEMORY_REQUESTS"
-	envGPUMemoryLimits   = "NVIDIA_GPU_MEMORY_LIMITS"
-	envMPSPipeDirectory  = "CUDA_MPS_PIPE_DIRECTORY"
-
 	// DefaultPluginName NRI plugin registration defaults.
 	DefaultPluginName = "gpu-sharing"
 	DefaultPluginIdx  = "10"
@@ -238,12 +234,12 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	adj := &api.ContainerAdjustment{}
 
 	if gpuMemoryCfg.Request != "" {
-		adj.AddEnv(envGPUMemoryRequests, gpuMemoryCfg.Request)
+		adj.AddEnv(injection.EnvGPUMemoryRequests, gpuMemoryCfg.Request)
 	}
 	if gpuMemoryCfg.Limit != "" {
-		adj.AddEnv(envGPUMemoryLimits, gpuMemoryCfg.Limit)
+		adj.AddEnv(injection.EnvGPUMemoryLimits, gpuMemoryCfg.Limit)
 	}
-	adj.AddEnv(envMPSPipeDirectory, p.MPSPipeDirectory)
+	adj.AddEnv(injection.EnvMPSPipeDirectory, p.MPSPipeDirectory)
 
 	adj.AddMount(&api.Mount{
 		Source:      p.MPSPipeDirectory,

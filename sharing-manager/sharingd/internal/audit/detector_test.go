@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
 )
 
 func TestDetectorViolations(t *testing.T) {
@@ -14,10 +15,10 @@ func TestDetectorViolations(t *testing.T) {
 		name        string
 		pod         *api.PodSandbox
 		ctr         *api.Container
-		wantMissing []string // nil ⇒ expect no violation
+		wantMissing []string // nil ⇒ expect no violator
 	}{
 		{
-			name: "fully injected container is not a violation",
+			name: "fully injected container is not a violator",
 			pod:  sharingPod("p", "pod", "trainer", "4Gi", "2Gi"),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
@@ -27,18 +28,18 @@ func TestDetectorViolations(t *testing.T) {
 			},
 		},
 		{
-			name: "missing MPS env is a violation",
+			name: "missing MPS env is a violator",
 			pod:  sharingPod("p", "pod", "trainer", "4Gi", ""),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    []string{envGPUMemoryLimits + "=4294"},
+				Env:    []string{injection.EnvGPUMemoryLimits + "=4294"},
 				Mounts: []*api.Mount{mpsMount()},
 			},
-			wantMissing: []string{"env:" + envMPSPipeDirectory},
+			wantMissing: []string{"env:" + injection.EnvMPSPipeDirectory},
 		},
 		{
-			name: "missing MPS mount is a violation",
+			name: "missing MPS mount is a violator",
 			pod:  sharingPod("p", "pod", "trainer", "4Gi", ""),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
@@ -48,15 +49,15 @@ func TestDetectorViolations(t *testing.T) {
 			wantMissing: []string{"mount:" + configuration.DefaultMPSPipeDirectory},
 		},
 		{
-			name: "missing limit env (limit annotated) is a violation",
+			name: "missing limit env (limit annotated) is a violator",
 			pod:  sharingPod("p", "pod", "trainer", "4Gi", ""),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    []string{envMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory},
+				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory},
 				Mounts: []*api.Mount{mpsMount()},
 			},
-			wantMissing: []string{"env:" + envGPUMemoryLimits},
+			wantMissing: []string{"env:" + injection.EnvGPUMemoryLimits},
 		},
 		{
 			name: "nothing injected reports every missing piece",
@@ -66,9 +67,9 @@ func TestDetectorViolations(t *testing.T) {
 				State: api.ContainerState_CONTAINER_RUNNING,
 			},
 			wantMissing: []string{
-				"env:" + envMPSPipeDirectory,
-				"env:" + envGPUMemoryLimits,
-				"env:" + envGPUMemoryRequests,
+				"env:" + injection.EnvMPSPipeDirectory,
+				"env:" + injection.EnvGPUMemoryLimits,
+				"env:" + injection.EnvGPUMemoryRequests,
 				"mount:" + configuration.DefaultMPSPipeDirectory,
 			},
 		},
@@ -78,10 +79,10 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    []string{envMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory},
+				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory},
 				Mounts: []*api.Mount{mpsMount()},
 			},
-			wantMissing: []string{"env:" + envGPUMemoryRequests},
+			wantMissing: []string{"env:" + injection.EnvGPUMemoryRequests},
 		},
 		{
 			name: "created state is enforceable",
@@ -91,8 +92,8 @@ func TestDetectorViolations(t *testing.T) {
 				State: api.ContainerState_CONTAINER_CREATED,
 			},
 			wantMissing: []string{
-				"env:" + envMPSPipeDirectory,
-				"env:" + envGPUMemoryLimits,
+				"env:" + injection.EnvMPSPipeDirectory,
+				"env:" + injection.EnvGPUMemoryLimits,
 				"mount:" + configuration.DefaultMPSPipeDirectory,
 			},
 		},
@@ -140,24 +141,24 @@ func TestDetectorViolations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newDetector().violations(
+			got := newDetector().violators(
 				[]*api.PodSandbox{tt.pod},
 				[]*api.Container{tt.ctr},
 			)
 
 			if tt.wantMissing == nil {
 				if len(got) != 0 {
-					t.Fatalf("expected no violation, got %+v", got)
+					t.Fatalf("expected no violator, got %+v", got)
 				}
 				return
 			}
 
 			if len(got) != 1 {
-				t.Fatalf("expected exactly one violation, got %d: %+v", len(got), got)
+				t.Fatalf("expected exactly one violator, got %d: %+v", len(got), got)
 			}
 			v := got[0]
 			if v.containerID != tt.ctr.GetId() || v.container != tt.ctr.GetName() {
-				t.Errorf("violation identity = %q/%q, want %q/%q", v.containerID, v.container, tt.ctr.GetId(), tt.ctr.GetName())
+				t.Errorf("violator identity = %q/%q, want %q/%q", v.containerID, v.container, tt.ctr.GetId(), tt.ctr.GetName())
 			}
 			assertSameSet(t, v.missing, tt.wantMissing)
 		})
@@ -167,7 +168,7 @@ func TestDetectorViolations(t *testing.T) {
 func TestDetectorViolationsSkipsContainerWithoutPod(t *testing.T) {
 	// A container whose PodSandboxId matches no pod in the snapshot must be
 	// skipped rather than panic or flagged.
-	got := newDetector().violations(
+	got := newDetector().violators(
 		nil,
 		[]*api.Container{{
 			Id: "c", Name: "trainer", PodSandboxId: "missing",
@@ -175,7 +176,7 @@ func TestDetectorViolationsSkipsContainerWithoutPod(t *testing.T) {
 		}},
 	)
 	if len(got) != 0 {
-		t.Fatalf("expected no violation for pod-less container, got %+v", got)
+		t.Fatalf("expected no violator for pod-less container, got %+v", got)
 	}
 }
 
@@ -190,7 +191,7 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
 			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEnv(true, false), Mounts: []*api.Mount{mpsMount()},
 		},
-		{ // p2: uninjected → violation
+		{ // p2: uninjected → violator
 			Id: "c2", Name: "trainer", PodSandboxId: "p2",
 			State: api.ContainerState_CONTAINER_RUNNING,
 		},
@@ -200,12 +201,12 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 		},
 	}
 
-	got := newDetector().violations(pods, containers)
+	got := newDetector().violators(pods, containers)
 	if len(got) != 1 {
-		t.Fatalf("expected exactly one violation, got %d: %+v", len(got), got)
+		t.Fatalf("expected exactly one violator, got %d: %+v", len(got), got)
 	}
 	if got[0].containerID != "c2" {
-		t.Fatalf("expected violation for c2, got %q", got[0].containerID)
+		t.Fatalf("expected violator for c2, got %q", got[0].containerID)
 	}
 }
 
@@ -225,12 +226,12 @@ func sharingPod(id, name, containerName, limit, request string) *api.PodSandbox 
 // injectedEnv returns the env keys buildAdjustment would add for the given
 // request/limit presence, so tests can construct a fully-injected container.
 func injectedEnv(limit, request bool) []string {
-	env := []string{envMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory}
+	env := []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory}
 	if limit {
-		env = append(env, envGPUMemoryLimits+"=4294")
+		env = append(env, injection.EnvGPUMemoryLimits+"=4294")
 	}
 	if request {
-		env = append(env, envGPUMemoryRequests+"=2147")
+		env = append(env, injection.EnvGPUMemoryRequests+"=2147")
 	}
 	return env
 }

@@ -26,7 +26,7 @@ const criStopSlack = 5 * time.Second
 //
 // The gRPC connection is dialed lazily on the first Stop and then reused. A dial
 // or RPC failure is returned as an error (never a panic) so the remediator logs
-// it and moves on to the next violation.
+// it and moves on to the next violator.
 type CRIStopper struct {
 	endpoint string        // CRI unix socket path, e.g. /run/containerd/containerd.sock
 	timeout  time.Duration // grace period handed to the runtime per stop
