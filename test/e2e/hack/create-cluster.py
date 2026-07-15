@@ -226,6 +226,10 @@ def install_fake_gpu_operator(config: ClusterConfig) -> None:
     log(f"Installing fake-gpu-operator {config.fake_gpu_operator_version}...")
 
     values = f"""
+# k3s pre-creates RuntimeClass "nvidia"; Helm can't adopt it (missing ownership
+# annotations). Disable — nvml-mock doesn't need it.
+runtimeClass:
+  enabled: false
 devicePlugin:
   enabled: true
 statusUpdater:

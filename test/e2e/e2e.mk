@@ -23,7 +23,7 @@
 E2E_CLUSTER_NAME              ?= gpu-sharing-e2e
 E2E_GPU_WORKER_NODES          ?= 2
 E2E_NON_GPU_WORKER_NODES      ?= 1
-E2E_FAKE_GPU_OPERATOR_VERSION ?=
+E2E_FAKE_GPU_OPERATOR_VERSION ?= 0.2.0
 PYTHON                        ?= python3
 
 # Namespace the operator chart is installed into (must match skaffold.yaml's
