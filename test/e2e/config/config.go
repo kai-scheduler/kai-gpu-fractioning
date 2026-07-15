@@ -7,8 +7,9 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
+
+	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 )
 
 // Config is read entirely from the environment.
@@ -63,19 +64,41 @@ type Config struct {
 	NVMLMock bool
 }
 
+const (
+	envKubeconfig            = "E2E_KUBECONFIG"
+	envOperatorNamespace     = "E2E_OPERATOR_NAMESPACE"
+	envGPUNodeSelector       = "E2E_GPU_NODE_SELECTOR"
+	envGPUNodeCount          = "E2E_GPU_NODE_COUNT"
+	envGPUMemoryMiB          = "E2E_GPU_MEMORY_MIB"
+	envGPUCountPerNode       = "E2E_GPU_COUNT_PER_NODE"
+	envNVMLMock              = "E2E_NVML_MOCK"
+	envPodReadyTimeout       = "E2E_POD_READY_TIMEOUT"
+	envPollInterval          = "E2E_POLL_INTERVAL"
+	envDaemonSetReadyTimeout = "E2E_DAEMONSET_READY_TIMEOUT"
+
+	defaultOperatorNamespace    = "gpu-sharing-operator"
+	defaultGPUNodeSelector      = "nvidia.com/gpu.present=true"
+	defaultGPUNodeCount         = 0
+	defaultGPUMemoryMiB         = 40960
+	defaultGPUCountPerNode      = 1
+	defaultPodReadyTimeout      = 2 * time.Minute
+	defaultPollInterval         = 2 * time.Second
+	defaultDaemonSetReadyTimeout = 3 * time.Minute
+)
+
 // Load builds a Config from environment variables.
 func Load() Config {
 	return Config{
-		Kubeconfig:            envOr("E2E_KUBECONFIG", defaultKubeconfig()),
-		OperatorNamespace:     envOr("E2E_OPERATOR_NAMESPACE", "gpu-sharing-operator"),
-		GPUNodeSelector:       envOr("E2E_GPU_NODE_SELECTOR", "nvidia.com/gpu.present=true"),
-		GPUNodeCount:          envIntOr("E2E_GPU_NODE_COUNT", 0),
-		GPUMemoryMiB:          envIntOr("E2E_GPU_MEMORY_MIB", 40960),
-		GPUCountPerNode:       envIntOr("E2E_GPU_COUNT_PER_NODE", 1),
-		NVMLMock:              os.Getenv("E2E_NVML_MOCK") == "1",
-		PodReadyTimeout:       envDurationOr("E2E_POD_READY_TIMEOUT", 2*time.Minute),
-		PollInterval:          envDurationOr("E2E_POLL_INTERVAL", 2*time.Second),
-		DaemonSetReadyTimeout: envDurationOr("E2E_DAEMONSET_READY_TIMEOUT", 3*time.Minute),
+		Kubeconfig:            env.String(envKubeconfig, defaultKubeconfig()),
+		OperatorNamespace:     env.String(envOperatorNamespace, defaultOperatorNamespace),
+		GPUNodeSelector:       env.String(envGPUNodeSelector, defaultGPUNodeSelector),
+		GPUNodeCount:          env.Int(envGPUNodeCount, defaultGPUNodeCount),
+		GPUMemoryMiB:          env.Int(envGPUMemoryMiB, defaultGPUMemoryMiB),
+		GPUCountPerNode:       env.Int(envGPUCountPerNode, defaultGPUCountPerNode),
+		NVMLMock:              env.Bool(envNVMLMock, false),
+		PodReadyTimeout:       env.Duration(envPodReadyTimeout, defaultPodReadyTimeout),
+		PollInterval:          env.Duration(envPollInterval, defaultPollInterval),
+		DaemonSetReadyTimeout: env.Duration(envDaemonSetReadyTimeout, defaultDaemonSetReadyTimeout),
 	}
 }
 
@@ -88,38 +111,4 @@ func defaultKubeconfig() string {
 		return ""
 	}
 	return filepath.Join(home, ".kube", "config")
-}
-
-// Small local env helpers. Intentionally not shared with sharing-manager/common/env:
-// that lives in the root module, and importing it would couple this separate e2e
-// module to the operator's entire dependency graph just for a few wrappers.
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func envIntOr(key string, fallback int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return fallback
-	}
-	return n
-}
-
-func envDurationOr(key string, fallback time.Duration) time.Duration {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return fallback
-	}
-	return d
 }

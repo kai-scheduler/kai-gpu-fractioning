@@ -11,7 +11,7 @@ SDK since this script never builds or pre-pulls images, no rich since plain
 stdout is enough for CI logs).
 
 Environment variables (E2E_ prefix, see ClusterConfig):
-    E2E_FAKE_GPU_OPERATOR_VERSION  (required) e.g. "0.14.0"
+    E2E_FAKE_GPU_OPERATOR_VERSION  (required) e.g. "0.2.0"
     E2E_CLUSTER_NAME               (default: gpu-sharing-e2e)
     E2E_GPU_WORKER_NODES           (default: 2)   # GPU worker nodes
     E2E_NON_GPU_WORKER_NODES       (default: 1)   # plain (no-GPU) worker nodes
@@ -28,8 +28,8 @@ docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
 own `k3d kubeconfig` retrieval. Every downstream e2e step reads that file.
 
 Usage:
-    E2E_FAKE_GPU_OPERATOR_VERSION=0.14.0 ./create-cluster.py
-    E2E_FAKE_GPU_OPERATOR_VERSION=0.14.0 E2E_GPU_WORKER_NODES=4 ./create-cluster.py
+    E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0 ./create-cluster.py
+    E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0 E2E_GPU_WORKER_NODES=4 ./create-cluster.py
     ./create-cluster.py --skip-fake-gpu-operator --skip-gpu-mock
     ./create-cluster.py --delete
 

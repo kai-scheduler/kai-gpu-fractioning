@@ -36,26 +36,32 @@ type e2eCollector struct {
 	log      *slog.Logger
 }
 
+type nvmlMockMemory struct {
+	TotalBytes uint64 `yaml:"total_bytes"`
+}
+
+type nvmlMockProcess struct {
+	PID           uint32 `yaml:"pid"`
+	UsedGPUMemory uint64 `yaml:"used_gpu_memory"`
+	SMUtil        uint32 `yaml:"sm_util"`
+}
+
+type nvmlMockDevice struct {
+	Index     int               `yaml:"index"`
+	UUID      string            `yaml:"uuid"`
+	Memory    nvmlMockMemory    `yaml:"memory"`
+	Processes []nvmlMockProcess `yaml:"processes"`
+}
+
+type nvmlMockDeviceDefaults struct {
+	Memory nvmlMockMemory `yaml:"memory"`
+}
+
 // nvmlMockConfigYAML mirrors the subset of the nvml-mock config.yaml that the
 // e2e collector needs: device UUIDs, total memory, and per-process entries.
 type nvmlMockConfigYAML struct {
-	DeviceDefaults struct {
-		Memory struct {
-			TotalBytes uint64 `yaml:"total_bytes"`
-		} `yaml:"memory"`
-	} `yaml:"device_defaults"`
-	Devices []struct {
-		Index  int    `yaml:"index"`
-		UUID   string `yaml:"uuid"`
-		Memory struct {
-			TotalBytes uint64 `yaml:"total_bytes"`
-		} `yaml:"memory"`
-		Processes []struct {
-			PID           uint32 `yaml:"pid"`
-			UsedGPUMemory uint64 `yaml:"used_gpu_memory"`
-			SMUtil        uint32 `yaml:"sm_util"`
-		} `yaml:"processes"`
-	} `yaml:"devices"`
+	DeviceDefaults nvmlMockDeviceDefaults `yaml:"device_defaults"`
+	Devices        []nvmlMockDevice       `yaml:"devices"`
 }
 
 // newCollector is the e2e build's implementation. It returns a ConfigMap-backed

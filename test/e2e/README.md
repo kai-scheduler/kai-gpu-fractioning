@@ -13,7 +13,7 @@ pods.)
 ## Quick start
 
 ```sh
-export E2E_FAKE_GPU_OPERATOR_VERSION=0.1.0   # see releases link below
+export E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0   # see releases link below
 make e2e
 ```
 
@@ -89,18 +89,18 @@ and nothing else, so the dependency list is just `typer`, `pydantic-settings`,
 
 All configurable via `E2E_*` environment variables:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `E2E_CLUSTER_NAME` | `gpu-sharing-e2e` | k3d cluster name |
-| `E2E_GPU_WORKER_NODES` | `2` | number of agent nodes, each labeled into the fake-GPU node pool |
-| `E2E_K3S_IMAGE` | `rancher/k3s:v1.31.5-k3s1` | k3s node image |
-| `E2E_GPU_NODE_POOL` | `default` | fake-gpu-operator node pool name |
-| `E2E_GPUS_PER_NODE` | `2` | GPUs advertised per node in that pool |
-| `E2E_GPU_PRODUCT` | `NVIDIA A100-SXM4-40GB` | simulated GPU product |
-| `E2E_GPU_MEMORY_MIB` | `40960` | simulated GPU memory (MiB) |
-| `E2E_FAKE_GPU_OPERATOR_VERSION` | *(required)* | fake-gpu-operator Helm chart version — see [releases](https://github.com/run-ai/fake-gpu-operator/releases) |
-| `E2E_MAX_RETRIES` | `3` | cluster-creation retry attempts |
-| `E2E_KUBECONFIG` | `~/.kube/<cluster>.yaml` | where the cluster's kubeconfig is written (see note below) |
+| Variable                        | Default                    | Purpose                                                                                                     |
+|---------------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------|
+| `E2E_CLUSTER_NAME`              | `gpu-sharing-e2e`          | k3d cluster name                                                                                            |
+| `E2E_GPU_WORKER_NODES`          | `2`                        | number of agent nodes, each labeled into the fake-GPU node pool                                             |
+| `E2E_K3S_IMAGE`                 | `rancher/k3s:v1.31.5-k3s1` | k3s node image                                                                                              |
+| `E2E_GPU_NODE_POOL`             | `default`                  | fake-gpu-operator node pool name                                                                            |
+| `E2E_GPUS_PER_NODE`             | `2`                        | GPUs advertised per node in that pool                                                                       |
+| `E2E_GPU_PRODUCT`               | `NVIDIA A100-SXM4-40GB`    | simulated GPU product                                                                                       |
+| `E2E_GPU_MEMORY_MIB`            | `40960`                    | simulated GPU memory (MiB)                                                                                  |
+| `E2E_FAKE_GPU_OPERATOR_VERSION` | *(required)*               | fake-gpu-operator Helm chart version — see [releases](https://github.com/run-ai/fake-gpu-operator/releases) |
+| `E2E_MAX_RETRIES`               | `3`                        | cluster-creation retry attempts                                                                             |
+| `E2E_KUBECONFIG`                | `~/.kube/<cluster>.yaml`   | where the cluster's kubeconfig is written (see note below)                                                  |
 
 > **Kubeconfig handling.** The NRI `config.toml.tmpl` volume this script mounts
 > (to let sharingd's NRI plugin run) breaks `k3d kubeconfig get/merge` — so the
@@ -114,7 +114,7 @@ All configurable via `E2E_*` environment variables:
 ```sh
 pip install -r test/e2e/hack/requirements.txt
 
-E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.1.0 test/e2e/hack/create-cluster.py
+E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0 test/e2e/hack/create-cluster.py
 test/e2e/hack/create-cluster.py --delete
 test/e2e/hack/create-cluster.py --skip-fake-gpu-operator   # cluster only, e.g. for iterating on the script itself
 ```

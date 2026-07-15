@@ -125,6 +125,7 @@ func TestCreateContainer(t *testing.T) {
 
 			if adj == nil {
 				t.Fatal("expected non-nil adjustment, got nil")
+				return
 			}
 
 			envKeys := make(map[string]bool)
