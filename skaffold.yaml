@@ -85,3 +85,9 @@ profiles:
           images.sharingd.pullPolicy: Never
           images.mpsd.pullPolicy: Never
           images.metricsd.pullPolicy: Never
+          metricsAgent.runtimeClassName: ""
+      # k3d has no "nvidia" RuntimeClass; clear runtimeClassName via a values file
+      # (skaffold drops empty-string setValues entries, so --set can't do this).
+      - op: add
+        path: /deploy/helm/releases/0/valuesFiles
+        value: ["operator/charts/e2e-values.yaml"]
