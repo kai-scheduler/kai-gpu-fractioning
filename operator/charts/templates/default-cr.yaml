@@ -12,3 +12,6 @@ spec:
     nvidia.com/gpu.present: "true"
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}
+    {{- if hasKey .Values.metricsAgent "runtimeClassName" }}
+    runtimeClassName: {{ .Values.metricsAgent.runtimeClassName | quote }}
+    {{- end }}

@@ -30,6 +30,10 @@ mpsd:
   # enabled and context-share always disabled.
   auditLog: true
 
+metricsAgent:
+  enabled: true
+  runtimeClassName: "nvidia"
+
 serviceAccount:
   create: true
   name: ""
@@ -47,6 +51,3 @@ resources:
 nodeSelector: {}
 tolerations: []
 affinity: {}
-
-metricsAgent:
-  enabled: true
