@@ -13,6 +13,7 @@ import (
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/audit"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
 )
 
@@ -26,15 +27,31 @@ func main() {
 	// so the kubelet readiness probe reflects actual NRI registration.
 	readyState := readiness.NewState()
 
-	plugin := internal.NewPlugin(internal.Config{
-		AnnotationPrefix: flags.annotationPrefix,
-		MPSPipeDirectory: flags.mpsPipeDir,
-		FailOpen:         flags.failOpen,
-		MapDir:           flags.mapDir,
-		LogPodEvents:     flags.logPodEvents,
-		Log:              logger,
-		Readiness:        readyState,
-	})
+	// Retroactive enforcement stops offending containers out of band through the
+	// CRI runtime socket (NRI has no stop call). Build the stopper only when the
+	// feature is on, and close it on exit.
+	var stopper audit.ContainerStopper
+	if flags.retroactiveEnforcement {
+		cri := audit.NewCRIStopper(flags.criSocket, flags.stopTimeout, logger)
+		defer func() { _ = cri.Close() }()
+		stopper = cri
+		logger.Info("retroactive enforcement enabled", "criSocket", flags.criSocket, "stopTimeout", flags.stopTimeout)
+	}
+
+	plugin, err := internal.NewPlugin(internal.Config{
+		AnnotationPrefix:       flags.annotationPrefix,
+		MPSPipeDirectory:       flags.mpsPipeDir,
+		FailOpen:               flags.failOpen,
+		RetroactiveEnforcement: flags.retroactiveEnforcement,
+		MapDir:                 flags.mapDir,
+		LogPodEvents:           flags.logPodEvents,
+		Log:                    logger,
+		Readiness:              readyState,
+	}, stopper)
+	if err != nil {
+		logger.Error("failed to create plugin", "error", err)
+		os.Exit(1)
+	}
 
 	logger.Info("container→pod mapping handoff directory", "mapDir", flags.mapDir)
 
@@ -51,7 +68,7 @@ func main() {
 		}()
 	}
 
-	err := runWithRetry(ctx, logger, plugin, readyState, flags)
+	err = runWithRetry(ctx, logger, plugin, readyState, flags)
 
 	// Drain any queued mapping writes before exiting so the last events reach the
 	// shared directory.

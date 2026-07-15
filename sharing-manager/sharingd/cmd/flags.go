@@ -12,6 +12,7 @@ import (
 
 const (
 	defaultNRISocketPath = "/var/run/nri/nri.sock"
+	defaultCRISocketPath = "/run/containerd/containerd.sock"
 
 	// defaultReadinessPort serves /readyz when --readiness-port is not passed.
 	// The operator only passes the flag when spec.readinessPort is set;
@@ -47,6 +48,12 @@ type cliFlags struct {
 	maxRetries int
 	// readinessPort is the port for the /readyz readiness endpoint (0 = disabled).
 	readinessPort int
+	// retroactiveEnforcement stops GPU-sharing containers missing injection on NRI reconnect.
+	retroactiveEnforcement bool
+	// criSocket is the CRI runtime socket used to stop containers during enforcement.
+	criSocket string
+	// stopTimeout is the grace period handed to the runtime per container stop.
+	stopTimeout time.Duration
 }
 
 func parseFlags() cliFlags {
@@ -64,6 +71,9 @@ func parseFlags() cliFlags {
 	flag.DurationVar(&f.stableThreshold, "stable-threshold", 5*time.Minute, "connection duration considered stable (resets retry budget)")
 	flag.IntVar(&f.maxRetries, "max-retries", 0, "max NRI connection retries (0 = unlimited)")
 	flag.IntVar(&f.readinessPort, "readiness-port", env.Int("READINESS_PORT", defaultReadinessPort), "port for the /readyz readiness endpoint (0 disables)")
+	flag.BoolVar(&f.retroactiveEnforcement, "retroactive-enforcement", env.Bool("RETROACTIVE_ENFORCEMENT", true), "on NRI (re)connect, stop GPU-sharing containers missing injection so kubelet recreates them correctly")
+	flag.StringVar(&f.criSocket, "cri-socket", env.String("CRI_SOCKET", defaultCRISocketPath), "CRI runtime socket used to stop containers during retroactive enforcement")
+	flag.DurationVar(&f.stopTimeout, "stop-timeout", 30*time.Second, "grace period handed to the runtime for each container stop during enforcement")
 	flag.Parse()
 	return f
 }

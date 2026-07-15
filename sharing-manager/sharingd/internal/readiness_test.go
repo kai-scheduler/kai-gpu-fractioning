@@ -15,11 +15,14 @@ var _ ReadinessSetter = (*readiness.State)(nil)
 
 func TestReadinessFollowsNRILifecycle(t *testing.T) {
 	state := readiness.NewState()
-	p := NewPlugin(Config{
+	p, err := NewPlugin(Config{
 		MapDir:    t.TempDir(),
 		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Readiness: state,
-	})
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewPlugin: %v", err)
+	}
 
 	if state.Ready() {
 		t.Fatal("plugin should start not-ready")
@@ -42,10 +45,13 @@ func TestReadinessFollowsNRILifecycle(t *testing.T) {
 }
 
 func TestReadinessNilStateIsSafe(t *testing.T) {
-	p := NewPlugin(Config{
+	p, err := NewPlugin(Config{
 		MapDir: t.TempDir(),
 		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewPlugin: %v", err)
+	}
 
 	// Without a configured readiness state the callbacks must not panic.
 	if _, err := p.Synchronize(context.Background(), nil, nil); err != nil {

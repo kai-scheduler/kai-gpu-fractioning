@@ -22,6 +22,7 @@ const (
 	defaultMetricsRuntimeClassName = "nvidia"
 	defaultMPSPipeDir              = "/run/nvidia-mps"
 	defaultNRISocketDir            = "/var/run/nri"
+	defaultCRISocketPath           = "/run/containerd/containerd.sock"
 	// containerPodMapDir is the shared handoff directory: sharingd writes the
 	// container→pod mapping here and the metricsd sidecar reads it. Must match
 	// sharingd's and metricsd's built-in default (fsstore.DefaultMapDir).
@@ -32,6 +33,7 @@ const (
 	volumeNRISocket = "nri-socket"
 	volumeMPSPipe   = "mps-pipe"
 	volumeMapDir    = "map-dir"
+	volumeCRISocket = "cri-socket"
 
 	// defaultReadinessPort must match the sharingd binary's default
 	// (sharing-manager/sharingd): it serves /readyz on --readiness-port. Used
@@ -214,6 +216,34 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		},
 	}
 
+	// Retroactive enforcement stops offending containers via the CRI runtime
+	// socket, so mount it into the (privileged) pod only when the feature is on.
+	// We mount the socket's PARENT DIRECTORY (DirectoryOrCreate), not the socket
+	// file with HostPathType: Socket: a Socket mount makes the kubelet refuse to
+	// start the pod whenever the socket is absent or at a non-default path (k3s
+	// and RKE2 keep containerd under /run/k3s/containerd), which would take down
+	// sharingd's core NRI injection too — not just enforcement. With the directory
+	// mount sharingd always starts; if the socket really isn't at the dialed path
+	// the CRIStopper just logs a dial error and enforcement no-ops. The binary
+	// still dials the full socket path.
+	if d.retroactiveEnforcementEnabled() {
+		dirType := corev1.HostPathDirectoryOrCreate
+		criSocketDir := filepath.Dir(d.criSocketPath())
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      volumeCRISocket,
+			MountPath: criSocketDir,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: volumeCRISocket,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: criSocketDir,
+					Type: &dirType,
+				},
+			},
+		})
+	}
+
 	return container, volumes
 }
 
@@ -317,6 +347,11 @@ func (d *daemon) buildArgs() []string {
 	if spec.ReadinessPort != nil {
 		args = append(args, "--readiness-port", strconv.Itoa(int(*spec.ReadinessPort)))
 	}
+	args = append(args, "--retroactive-enforcement="+strconv.FormatBool(spec.RetroactiveEnforcement))
+	// Override the CRI socket path used to stop containers during enforcement.
+	if spec.CRISocketPath != "" {
+		args = append(args, "--cri-socket", spec.CRISocketPath)
+	}
 
 	return args
 }
@@ -346,4 +381,24 @@ func pullPolicy(image v1alpha1.ImageSpec) corev1.PullPolicy {
 		return corev1.PullPolicy(image.ImagePullPolicy)
 	}
 	return corev1.PullIfNotPresent
+}
+
+// retroactiveEnforcementEnabled reports whether sharingd should stop offending
+// containers on reconnect, and thus whether the CRI socket must be mounted. The
+// authoritative default lives in the CRD schema (retroactiveEnforcement defaults
+// to true via +kubebuilder:default), so the API server sets it to true for any
+// CR that includes a sharingAgent block. A nil spec (no sharingAgent at all)
+// leaves it off, mirroring metricsEnabled.
+func (d *daemon) retroactiveEnforcementEnabled() bool {
+	return d.sharingSpec != nil && d.sharingSpec.RetroactiveEnforcement
+}
+
+// criSocketPath returns the CRI runtime socket path sharingd uses to stop
+// containers, mounted into the pod at the same path it is dialed on.
+func (d *daemon) criSocketPath() string {
+	if d.sharingSpec == nil || d.sharingSpec.CRISocketPath == "" {
+		return defaultCRISocketPath
+	}
+
+	return d.sharingSpec.CRISocketPath
 }

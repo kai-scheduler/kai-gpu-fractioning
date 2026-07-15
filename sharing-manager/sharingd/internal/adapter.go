@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
 
 	"github.com/containerd/nri/pkg/api"
 )
@@ -57,7 +58,7 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 			"container", container.GetName(),
 			"pod", pod.GetName(),
 			"namespace", pod.GetNamespace(),
-			"expectedAnnotation", containerMemoryAnnotationKey(a.annotationPrefix, container.GetName(), annotationSuffixLimit),
+			"expectedAnnotation", annotations.LimitAnnotationKey(a.annotationPrefix, container.GetName()),
 		)
 		return store.ContainerInfo{}, false
 	}
@@ -96,10 +97,10 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 // fail-closes on it (blocking container creation), so it must not be recorded in
 // the mapping either. This is the same signal the mutation path enforces on, so
 // a container is recorded for metrics iff it is also mutated.
-func (a adapter) isFractionalGPUContainer(pod *api.PodSandbox, containerName string) (GPUMemoryConfig, bool) {
-	cfg, err := ParseGPUMemoryAnnotations(pod.GetAnnotations(), containerName, a.annotationPrefix)
+func (a adapter) isFractionalGPUContainer(pod *api.PodSandbox, containerName string) (annotations.GPUMemoryConfig, bool) {
+	cfg, err := annotations.ParseGPUMemoryAnnotations(pod.GetAnnotations(), containerName, a.annotationPrefix)
 	if err != nil || cfg.IsEmpty() {
-		return GPUMemoryConfig{}, false
+		return annotations.GPUMemoryConfig{}, false
 	}
 	return cfg, true
 }

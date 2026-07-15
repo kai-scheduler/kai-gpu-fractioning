@@ -160,6 +160,12 @@ spec:
                       annotationPrefix is the prefix for GPU memory annotations on pods.
                       Default: "nvidia.com/gpu-memory.container."
                     type: string
+                  criSocketPath:
+                    description: |-
+                      criSocketPath is the path to the CRI runtime socket sharingd uses to stop
+                      containers during retroactive enforcement. It is mounted into the pod only
+                      when retroactiveEnforcement is enabled. Default: /run/containerd/containerd.sock.
+                    type: string
                   failOpen:
                     description: |-
                       failOpen controls behavior when annotation parsing fails.
@@ -211,6 +217,16 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                  retroactiveEnforcement:
+                    default: true
+                    description: |-
+                      retroactiveEnforcement controls whether sharingd, on (re)connect to NRI,
+                      stops GPU-sharing containers found running without passing through the NRI
+                      plugin. Those containers lack the proper GPU-sharing setup and may harm
+                      other containers on the GPU, so stopping them lets the kubelet recreate
+                      them correctly. When enabled, the CRI runtime socket (see criSocketPath) is
+                      mounted into the DaemonSet so sharingd can stop containers. Default: true.
+                    type: boolean
                   retryInterval:
                     description: |-
                       retryInterval is the initial wait duration before retrying a failed NRI connection.

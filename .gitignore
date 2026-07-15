@@ -4,6 +4,7 @@ cover.out
 *.test
 testbin/
 .gomod-cache/
+.cache/
 
 # Local dev/test files
 .local/
