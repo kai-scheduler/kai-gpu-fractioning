@@ -1,5 +1,5 @@
-REGISTRY ?= runai.jfrog.io/op-containers-lab-virt
-IMAGE ?= $(REGISTRY)/gpu-sharing-plugin
+REGISTRY ?= gcr.io/run-ai-prod
+IMAGE ?= $(REGISTRY)/metricsd
 TAG ?= dev
 PLATFORMS ?= linux/amd64,linux/arm64
 BIN_DIR ?= bin

@@ -243,8 +243,7 @@ func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric
 }
 
 // windowedSMUtil replaces each metric's SMUtilizationPercent with the average
-// of the last smUtilWindowSize samples (same approach as runai-container-toolkit:
-// window_size = max(1, window/interval)). Called only when smUtilWindowSize > 1.
+// of the last smUtilWindowSize samples. Called only when smUtilWindowSize > 1.
 // Buffer entries for series no longer present are pruned immediately.
 func (s *metricsEngine) windowedSMUtil(metrics []PodGPUMetric) []PodGPUMetric {
 	current := make(map[podGPUKey]struct{}, len(metrics))
