@@ -226,7 +226,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 // container at create time (the "utility" capability is sufficient for
 // read-only NVML; "compute" is not needed).
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
-	container := corev1.Container{
+	return corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
@@ -243,8 +243,6 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},
 		},
 	}
-
-	return container
 }
 
 // runtimeClassName returns the RuntimeClass to set on the pod when metricsd is

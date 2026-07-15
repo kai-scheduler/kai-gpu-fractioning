@@ -311,4 +311,3 @@ func hasMount(mounts []corev1.VolumeMount, name, path string, readOnly bool) boo
 	}
 	return false
 }
-

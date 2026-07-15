@@ -34,10 +34,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/mpsd"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/sharingd"
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 )
 
 const (
