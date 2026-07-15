@@ -16,7 +16,6 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/knqyf263/go-plugin v0.9.0 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
