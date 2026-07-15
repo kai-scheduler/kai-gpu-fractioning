@@ -83,6 +83,13 @@ spec:
                     description: 'path is the HTTP path on which metrics are served.
                       Default: /metrics.'
                     type: string
+                  runtimeClassName:
+                    description: |-
+                      runtimeClassName sets the RuntimeClass for the sharingd+metricsd pod so
+                      the NVIDIA container runtime injects libnvidia-ml.so (required for NVML).
+                      Defaults to "nvidia". Set to "" to use the node's default runtime class
+                      (only safe when the default runtime already injects NVIDIA driver libraries).
+                    type: string
                 type: object
               mpsDaemon:
                 description: mpsDaemon configures the MPS daemon supervisor (mpsd).
