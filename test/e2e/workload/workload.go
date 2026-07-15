@@ -68,10 +68,15 @@ func DefaultMarker(namespace, name string) string {
 }
 
 // Apply creates the namespace (if missing) and the pod, and waits for the
-// pod to reach Running. The caller is responsible for calling Delete.
+// pod to reach Running. Any existing pod with the same name is deleted first so
+// stale pods from a previous (interrupted) test run never cause "already exists"
+// errors. The caller is responsible for calling Delete at the end of the test.
 func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.Pod, error) {
 	if err := ensureNamespace(ctx, c, spec.Namespace); err != nil {
 		return nil, fmt.Errorf("ensure namespace %s: %w", spec.Namespace, err)
+	}
+	if err := Delete(ctx, c, spec.Namespace, spec.Name); err != nil {
+		return nil, fmt.Errorf("pre-create cleanup of stale pod %s/%s: %w", spec.Namespace, spec.Name, err)
 	}
 
 	nodeSelector := spec.NodeSelector
@@ -163,13 +168,22 @@ func WaitRunning(ctx context.Context, c *cluster.Client, namespace, name string,
 // full default grace period) and waits for it to actually disappear, so a
 // subsequent Apply with the same name doesn't collide with a
 // still-terminating pod. Safe to call on an already-deleted pod.
+//
+// After the Pod object is gone from the API server, a short extra pause lets
+// the container runtime finish killing the process. Without it, HostPID can
+// find two processes with the same marker when a pod is recreated immediately:
+// the old process (still visible in /proc on the host) and the new one.
 func Delete(ctx context.Context, c *cluster.Client, namespace, name string) error {
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
-	if err := c.Ctrl.Delete(ctx, pod, ctrlclient.GracePeriodSeconds(0)); err != nil && !apierrors.IsNotFound(err) {
+	err := c.Ctrl.Delete(ctx, pod, ctrlclient.GracePeriodSeconds(0))
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("delete pod %s/%s: %w", namespace, name, err)
 	}
 
-	return waiter.PollUntil(ctx, 30*time.Second, time.Second,
+	if err := waiter.PollUntil(ctx, 30*time.Second, time.Second,
 		fmt.Sprintf("pod %s/%s to be gone", namespace, name),
 		func(ctx context.Context) (bool, error) {
 			err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Namespace: namespace, Name: name}, &corev1.Pod{})
@@ -177,7 +191,16 @@ func Delete(ctx context.Context, c *cluster.Client, namespace, name string) erro
 				return true, nil
 			}
 			return false, err
-		})
+		}); err != nil {
+		return err
+	}
+
+	// The Pod object is gone but the container process may still be briefly
+	// visible in /proc on the host node. HostPID greps /proc to find process
+	// markers; without this pause it can match both the dying old process and
+	// the new one when a pod is re-created with the same marker immediately.
+	time.Sleep(2 * time.Second)
+	return nil
 }
 
 // EnsureNamespace creates the namespace if it does not already exist.

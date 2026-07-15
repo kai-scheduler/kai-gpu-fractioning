@@ -51,12 +51,6 @@ spec:
               value: {{ .Values.images.mpsd.pullPolicy | quote }}
             - name: MPSD_AUDIT_LOG
               value: {{ .Values.mpsd.auditLog | quote }}
-            - name: METRICSD_INJECT_ENV
-              value: {{ .Values.metricsAgent.injectEnv | toJson | quote }}
-            - name: METRICSD_INJECT_VOLUME_MOUNTS
-              value: {{ .Values.metricsAgent.injectVolumeMounts | toJson | quote }}
-            - name: METRICSD_INJECT_VOLUMES
-              value: {{ .Values.metricsAgent.injectVolumes | toJson | quote }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect

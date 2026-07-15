@@ -1,18 +1,17 @@
-// Package nvmlmock drives the nvml-mock DaemonSet so per-pod GPU metrics are
+// Package nvmlmock drives the nvml-mock ConfigMap so per-pod GPU metrics are
 // deterministic in the e2e suite.
 //
-// nvml-mock ships a real libnvidia-ml.so that answers NVML calls from a static
-// config (see sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml):
-// it reports exactly the GPU processes listed under devices[].processes, keyed
-// by PID. There is no dynamic host-process discovery, so to make NVML attribute
-// memory to a real pod this package:
+// The metricsd e2e binary (Dockerfile.e2e, compiled with -tags e2e) replaces
+// the NVML collector with a ConfigMap-backed collector that polls
+// gpu-operator/nvml-mock-config on every collection cycle. To make NVML
+// attribute memory to a real pod this package:
 //
 //  1. resolves the workload container's host-namespace PID (HostPID), and
-//  2. rewrites the nvml-mock config so that PID appears as a GPU process on a
-//     chosen device UUID, then restarts nvml-mock and the plugin (SetProcesses).
+//  2. rewrites the nvml-mock ConfigMap so that PID appears as a GPU process on
+//     a chosen device UUID (SetProcesses).
 //
-// The plugin then reads NVML -> {PID, UUID, memory}, maps PID -> cgroup -> pod
-// (via /host/proc), and exports gpu_sharing_gpu_memory_used_bytes for that pod.
+// The e2e collector picks up the new config within one collection interval
+// (~5 s) without requiring any DaemonSet restarts.
 package nvmlmock
 
 import (
@@ -20,15 +19,12 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/waiter"
 )
 
 const (
@@ -42,11 +38,6 @@ const (
 	// Container is the nvml-mock pod's container name; it runs hostPID: true and
 	// privileged, so an exec into it sees the whole node's process table.
 	Container = "nvml-mock"
-
-	// SharingdDaemonSet is the operator-managed DaemonSet that hosts the metricsd
-	// sidecar under test. It's restarted after a config change so the sidecar's
-	// loaded NVML .so re-reads it. Its namespace is c.Config.OperatorNamespace.
-	SharingdDaemonSet = "gpu-sharing-sharingd"
 )
 
 // Device UUIDs baked into the nvml-mock config. Callers pin a Proc to one of
@@ -109,11 +100,11 @@ func HostPID(ctx context.Context, c *cluster.Client, nodeName, marker string) (u
 	return uint32(pid), nil
 }
 
-// SetProcesses rewrites the nvml-mock config for GPU model gpu (a Profiles key,
-// e.g. "a100"; "" selects DefaultGPU) so its devices carry procs, then restarts
-// nvml-mock (to re-run setup.sh and rewrite driver/config/config.yaml) and the
-// gpu-sharing-plugin (so its loaded NVML .so re-reads the config), and waits for
-// both rollouts. Passing an empty procs slice resets the mock to idle.
+// SetProcesses rewrites the nvml-mock ConfigMap for GPU model gpu (a Profiles
+// key, e.g. "a100"; "" selects DefaultGPU) so its devices carry procs. The
+// metricsd e2e collector polls this ConfigMap on each collection cycle (~5 s)
+// and picks up the change without requiring any DaemonSet restarts. Passing an
+// empty procs slice resets the mock to idle.
 func SetProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []Proc) error {
 	if gpu == "" {
 		gpu = DefaultGPU
@@ -133,15 +124,6 @@ func SetProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []Pr
 	cm.Data["config.yaml"] = renderConfig(profile, procs)
 	if err := c.Ctrl.Update(ctx, &cm); err != nil {
 		return fmt.Errorf("update configmap %s/%s: %w", Namespace, ConfigMapName, err)
-	}
-
-	// nvml-mock first (rewrites the on-disk config the sidecar's .so reads),
-	// then sharingd (reloads the .so). Order matters.
-	if err := restartNVMLMock(ctx, c); err != nil {
-		return fmt.Errorf("restart %s/%s: %w", Namespace, DaemonSet, err)
-	}
-	if err := rolloutRestart(ctx, c, c.Config.OperatorNamespace, SharingdDaemonSet); err != nil {
-		return fmt.Errorf("restart %s/%s: %w", c.Config.OperatorNamespace, SharingdDaemonSet, err)
 	}
 	return nil
 }
@@ -215,132 +197,4 @@ devices:
 		}
 	}
 	return b.String()
-}
-
-// rolloutRestart bumps a template annotation to force a DaemonSet rollout, then
-// waits for it to complete — the controller-runtime equivalent of
-// `kubectl rollout restart` + `kubectl rollout status`.
-func rolloutRestart(ctx context.Context, c *cluster.Client, ns, name string) error {
-	if err := bumpRestartAnnotation(ctx, c, ns, name); err != nil {
-		return err
-	}
-	return waiter.PollUntil(ctx, c.Config.DaemonSetReadyTimeout, c.Config.PollInterval,
-		fmt.Sprintf("daemonset %s/%s rollout", ns, name),
-		func(ctx context.Context) (bool, error) { return daemonSetReady(ctx, c, ns, name) })
-}
-
-// restartNVMLMock restarts the nvml-mock DaemonSet like rolloutRestart, but
-// re-applies the GPU node label on every poll tick while it waits.
-//
-// nvml-mock's preStop hook (cleanup.sh) runs `kubectl label node ...
-// nvidia.com/gpu.present-` on shutdown, stripping the very label its own
-// nodeSelector requires. That label is bootstrapped only once, at cluster
-// creation (k3d --k3s-node-label), and k3s never re-adds it. So a plain rolling
-// restart deletes the old pod, the label vanishes, no node matches the
-// nodeSelector, the replacement never schedules (DesiredNumberScheduled drops to
-// 0), and the rollout deadlocks until the timeout. Re-labelling the GPU nodes on
-// each tick lets the replacement schedule; setup.sh re-applies the label too
-// once it runs, but we can't wait for that — scheduling has to happen first.
-func restartNVMLMock(ctx context.Context, c *cluster.Client) error {
-	key, value, err := parseEqualsSelector(c.Config.GPUNodeSelector)
-	if err != nil {
-		return err
-	}
-	// Capture the GPU nodes now, while the label is still present — once it's
-	// stripped we can no longer select them by it.
-	nodes, err := gpuNodeNames(ctx, c, key, value)
-	if err != nil {
-		return err
-	}
-	if len(nodes) == 0 {
-		return fmt.Errorf("no nodes match GPU selector %q before restart", c.Config.GPUNodeSelector)
-	}
-
-	if err := bumpRestartAnnotation(ctx, c, Namespace, DaemonSet); err != nil {
-		return err
-	}
-	return waiter.PollUntil(ctx, c.Config.DaemonSetReadyTimeout, c.Config.PollInterval,
-		fmt.Sprintf("daemonset %s/%s rollout", Namespace, DaemonSet),
-		func(ctx context.Context) (bool, error) {
-			if err := relabelNodes(ctx, c, nodes, key, value); err != nil {
-				return false, err
-			}
-			return daemonSetReady(ctx, c, Namespace, DaemonSet)
-		})
-}
-
-// bumpRestartAnnotation writes a fresh timestamp into the DaemonSet's pod
-// template, which the controller treats as a rollout trigger.
-func bumpRestartAnnotation(ctx context.Context, c *cluster.Client, ns, name string) error {
-	var ds appsv1.DaemonSet
-	if err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, &ds); err != nil {
-		return err
-	}
-	if ds.Spec.Template.Annotations == nil {
-		ds.Spec.Template.Annotations = map[string]string{}
-	}
-	ds.Spec.Template.Annotations["nvmlmock.e2e/restartedAt"] = time.Now().Format(time.RFC3339Nano)
-	return c.Ctrl.Update(ctx, &ds)
-}
-
-// daemonSetReady reports whether every desired pod of a DaemonSet is updated,
-// ready, and available at the DaemonSet's current generation.
-func daemonSetReady(ctx context.Context, c *cluster.Client, ns, name string) (bool, error) {
-	var ds appsv1.DaemonSet
-	if err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Namespace: ns, Name: name}, &ds); err != nil {
-		return false, err
-	}
-	s := ds.Status
-	ready := s.ObservedGeneration >= ds.Generation &&
-		s.DesiredNumberScheduled > 0 &&
-		s.UpdatedNumberScheduled == s.DesiredNumberScheduled &&
-		s.NumberReady == s.DesiredNumberScheduled &&
-		s.NumberUnavailable == 0
-	return ready, nil
-}
-
-// parseEqualsSelector splits a single "key=value" label selector (the form of
-// config.GPUNodeSelector) into its key and value.
-func parseEqualsSelector(sel string) (key, value string, err error) {
-	k, v, ok := strings.Cut(sel, "=")
-	if !ok || k == "" {
-		return "", "", fmt.Errorf("GPU node selector %q is not a simple key=value selector", sel)
-	}
-	return k, v, nil
-}
-
-// gpuNodeNames returns the names of nodes currently carrying key=value.
-func gpuNodeNames(ctx context.Context, c *cluster.Client, key, value string) ([]string, error) {
-	var list corev1.NodeList
-	if err := c.Ctrl.List(ctx, &list, ctrlclient.MatchingLabels{key: value}); err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(list.Items))
-	for i := range list.Items {
-		names = append(names, list.Items[i].Name)
-	}
-	return names, nil
-}
-
-// relabelNodes ensures each named node carries key=value, patching only those
-// that don't already (so a steady state is a cheap no-op).
-func relabelNodes(ctx context.Context, c *cluster.Client, names []string, key, value string) error {
-	for _, name := range names {
-		var node corev1.Node
-		if err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Name: name}, &node); err != nil {
-			return err
-		}
-		if node.Labels[key] == value {
-			continue
-		}
-		patch := ctrlclient.MergeFrom(node.DeepCopy())
-		if node.Labels == nil {
-			node.Labels = map[string]string{}
-		}
-		node.Labels[key] = value
-		if err := c.Ctrl.Patch(ctx, &node, patch); err != nil {
-			return err
-		}
-	}
-	return nil
 }

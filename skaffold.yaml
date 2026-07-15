@@ -71,11 +71,15 @@ deploy:
 profiles:
   - name: e2e
     patches:
-      # metricsd: build the fake-GPU-aware binary for the host arch (E2E_ARCH env).
+      # metricsd: use the e2e Dockerfile which bakes in the nvml-mock library
+      # so NVML resolves on fake-GPU k3d clusters without operator code changes.
+      - op: replace
+        path: /build/artifacts/3/docker/dockerfile
+        value: sharing-manager/metricsd/Dockerfile.e2e
+      # Pass the host arch so cgo compiles natively under QEMU emulation.
       - op: add
         path: /build/artifacts/3/docker/buildArgs
         value:
-          GO_TAGS: e2e
           TARGETARCH: "{{.E2E_ARCH}}"
       # Locally loaded images have no registry to pull from.
       - op: add
@@ -85,9 +89,7 @@ profiles:
           images.sharingd.pullPolicy: Never
           images.mpsd.pullPolicy: Never
           images.metricsd.pullPolicy: Never
-      # e2e-only overlay: wire the metricsd sidecar to the nvml-mock driver so
-      # NVML resolves against the mock lib on the fake-GPU cluster. Path is
-      # relative to this skaffold.yaml (repo root).
+      # e2e-only overlay: disable the nvidia RuntimeClass (k3d has none).
       - op: add
         path: /deploy/helm/releases/0/valuesFiles
         value:

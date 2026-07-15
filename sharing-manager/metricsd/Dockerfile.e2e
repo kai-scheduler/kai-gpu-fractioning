@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1.7
+#
+# E2E-only Dockerfile — extends the production metricsd build with the
+# nvml-mock library baked in so NVML resolves on fake-GPU k3d clusters
+# without hostPath volume injection from the operator.
+#
+# NEVER use this image in production.
+#
+# Build with repo root as context (same as the production Dockerfile):
+#   docker build -f sharing-manager/metricsd/Dockerfile.e2e .
+
+FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
+# Always compile with e2e tag: this Dockerfile is the e2e variant.
+ARG GO_TAGS=e2e
+
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+COPY pkg/ pkg/
+COPY sharing-manager/ sharing-manager/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd sharing-manager/metricsd && \
+    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath -tags="${GO_TAGS}" \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+    -o /out/metricsd ./cmd
+
+# Extract libnvidia-ml.so from the nvml-mock image. The nvml-mock DaemonSet
+# copies it to the host at runtime; here we capture it at its pre-copy location
+# inside the image so it can be baked into the metricsd container directly.
+FROM ghcr.io/nvidia/nvml-mock:latest AS nvml-mock
+RUN find / -name "libnvidia-ml.so*" \
+    -not -path "*/proc/*" -not -path "*/sys/*" -not -path "*/host/*" \
+    2>/dev/null | head -1 | xargs -I{} cp {} /libnvidia-ml.so.1
+
+FROM gcr.io/distroless/base-debian12
+
+USER 0:0
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+# Point the dynamic loader at the baked-in mock library.
+ENV LD_LIBRARY_PATH=/usr/lib/nvml-mock
+
+COPY --from=build /out/metricsd /usr/local/bin/metricsd
+COPY --from=nvml-mock /libnvidia-ml.so.1 /usr/lib/nvml-mock/libnvidia-ml.so.1
+
+ENTRYPOINT ["/usr/local/bin/metricsd"]

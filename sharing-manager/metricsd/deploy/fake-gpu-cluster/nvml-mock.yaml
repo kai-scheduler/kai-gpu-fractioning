@@ -193,3 +193,31 @@ spec:
           hostPath:
             path: /run/nvidia
             type: DirectoryOrCreate
+---
+# Grant the metricsd sidecar (running as the default SA in gpu-sharing-operator)
+# permission to read the nvml-mock ConfigMap. The e2e collector polls it directly
+# via the k8s API instead of using NVML — no DaemonSet restarts needed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: metricsd-nvml-mock-config-reader
+  namespace: gpu-operator
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["nvml-mock-config"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: metricsd-nvml-mock-config-reader
+  namespace: gpu-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: metricsd-nvml-mock-config-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: gpu-sharing-operator

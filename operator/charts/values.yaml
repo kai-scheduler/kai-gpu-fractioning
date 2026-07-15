@@ -30,15 +30,8 @@ mpsd:
   # enabled and context-share always disabled.
   auditLog: true
 
-# metricsAgent configures the metricsd sidecar. injectEnv/injectVolumeMounts/
-# injectVolumes are operator-level overrides injected via the operator pod's
-# own env vars (not the CRD API). Empty by default; the e2e overlay sets them
-# to wire the nvml-mock driver into metricsd on fake-GPU clusters.
 metricsAgent:
   enabled: true
-  injectEnv: []
-  injectVolumeMounts: []
-  injectVolumes: []
 
 serviceAccount:
   create: true

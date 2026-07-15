@@ -18,10 +18,8 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -36,10 +34,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/mpsd"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/sharingd"
+	"github.com/run-ai/gpu-sharing-operator/pkg/env"
 )
 
 const (
@@ -77,11 +75,6 @@ type GpuSharingConfigReconciler struct {
 	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
-
-	// MetricsInject holds operator-level env/volume overrides injected into the
-	// metricsd sidecar at DaemonSet build time. Read from the operator pod's own
-	// environment (set via Helm) so the GpuSharingConfig CRD stays unaffected.
-	MetricsInject sharingd.MetricsInject
 }
 
 // NewGpuSharingConfigReconciler creates a reconciler with safe defaults.
@@ -93,7 +86,6 @@ func NewGpuSharingConfigReconciler(
 	namespace string,
 	defaultImages map[string]v1alpha1.ImageSpec,
 	defaultMpsdAuditLog bool,
-	metricsInject sharingd.MetricsInject,
 ) *GpuSharingConfigReconciler {
 	return &GpuSharingConfigReconciler{
 		Client:              c,
@@ -103,15 +95,14 @@ func NewGpuSharingConfigReconciler(
 		Namespace:           namespace,
 		DefaultImages:       defaultImages,
 		DefaultMpsdAuditLog: defaultMpsdAuditLog,
-		MetricsInject:       metricsInject,
 	}
 }
 
 // buildDaemons constructs the managed daemons from the current CRD spec,
 // so each reconcile sees the latest configuration.
-func buildDaemons(spec *v1alpha1.GpuSharingConfigSpec, mpsdAuditLog bool, metricsInject sharingd.MetricsInject) []daemonmgr.ManagedDaemon {
+func buildDaemons(spec *v1alpha1.GpuSharingConfigSpec, mpsdAuditLog bool) []daemonmgr.ManagedDaemon {
 	return []daemonmgr.ManagedDaemon{
-		sharingd.NewSharingdDaemon(spec.SharingAgent, spec.MetricsAgent, metricsInject),
+		sharingd.NewSharingdDaemon(spec.SharingAgent, spec.MetricsAgent),
 		mpsd.NewMpsdDaemon(spec.MpsDaemon, mpsdAuditLog),
 	}
 }
@@ -148,7 +139,7 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Reconcile each managed daemon and collect health + conditions.
 	var needsRequeue bool
-	daemons := buildDaemons(&config.Spec, r.DefaultMpsdAuditLog, r.MetricsInject)
+	daemons := buildDaemons(&config.Spec, r.DefaultMpsdAuditLog)
 
 	opts := r.buildOptions(&config)
 	for _, daemon := range daemons {
@@ -385,26 +376,6 @@ func ReadImageFromEnv(prefix string) v1alpha1.ImageSpec {
 		Tag:             env.String(prefix+"_TAG", ""),
 		ImagePullPolicy: env.String(prefix+"_PULL_POLICY", ""),
 	}
-}
-
-// ReadMetricsInjectFromEnv reads METRICSD_INJECT_ENV, METRICSD_INJECT_VOLUME_MOUNTS,
-// and METRICSD_INJECT_VOLUMES from the operator pod's environment (JSON-encoded
-// Kubernetes types, set via Helm). All are optional and empty by default.
-func ReadMetricsInjectFromEnv() sharingd.MetricsInject {
-	var inject sharingd.MetricsInject
-	jsonDecode := func(varName string, dst any) {
-		raw := os.Getenv(varName)
-		if raw == "" {
-			return
-		}
-		if err := json.Unmarshal([]byte(raw), dst); err != nil {
-			fmt.Fprintf(os.Stderr, "WARNING: invalid JSON in %s: %v\n", varName, err)
-		}
-	}
-	jsonDecode("METRICSD_INJECT_ENV", &inject.Env)
-	jsonDecode("METRICSD_INJECT_VOLUME_MOUNTS", &inject.VolumeMounts)
-	jsonDecode("METRICSD_INJECT_VOLUMES", &inject.Volumes)
-	return inject
 }
 
 func isConditionTrue(conditions []metav1.Condition, condType string) bool {

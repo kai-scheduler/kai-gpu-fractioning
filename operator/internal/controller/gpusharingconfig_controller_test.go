@@ -33,7 +33,6 @@ import (
 
 	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/sharingd"
 )
 
 var _ = Describe("GpuSharingConfig Controller", func() {
@@ -71,7 +70,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			// deletion only completes after another reconcile releases it.
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true, sharingd.MetricsInject{},
+				"default", nil, true,
 			)
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -87,7 +86,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true, sharingd.MetricsInject{},
+				"default", nil, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -99,7 +98,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should update observedGeneration on reconcile", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true, sharingd.MetricsInject{},
+				"default", nil, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -115,7 +114,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should handle not-found resources gracefully", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true, sharingd.MetricsInject{},
+				"default", nil, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -223,7 +222,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			}
 			reconciler = NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(20),
-				namespace, defaultImages, true, sharingd.MetricsInject{},
+				namespace, defaultImages, true,
 			)
 			createdNodes = nil
 		})
