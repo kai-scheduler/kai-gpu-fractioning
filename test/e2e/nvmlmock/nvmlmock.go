@@ -15,10 +15,13 @@
 package nvmlmock
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
+	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,13 +30,17 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
 )
 
+//go:embed config.yaml.tmpl
+var configYAMLTemplate string
+
+var configTmpl = template.Must(template.New("nvml-mock-config").Parse(configYAMLTemplate))
+
 const (
-	// Namespace / ConfigMapName / DaemonSet identify the nvml-mock objects
-	// installed by test/e2e/hack/create-cluster.py from
+	// Namespace / ConfigMapName identify the nvml-mock objects installed by
+	// test/e2e/hack/create-cluster.py from
 	// sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml.
 	Namespace     = "gpu-operator"
 	ConfigMapName = "nvml-mock-config"
-	DaemonSet     = "nvml-mock"
 
 	// Container is the nvml-mock pod's container name; it runs hostPID: true and
 	// privileged, so an exec into it sees the whole node's process table.
@@ -141,60 +148,35 @@ func podOnNode(ctx context.Context, c *cluster.Client, nodeName string) (string,
 	return "", fmt.Errorf("no nvml-mock pod scheduled on node %q", nodeName)
 }
 
-// renderConfig emits an nvml-mock config for the given GPU profile with two
-// devices, attaching each Proc to the device whose uuid it names. Schema mirrors
-// sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml.
+type deviceEntry struct {
+	Index int
+	UUID  string
+	Bus   string
+	Procs []Proc
+}
+
+// renderConfig renders the nvml-mock ConfigMap YAML for the given GPU profile
+// with two devices, attaching each Proc to the device whose UUID it names.
 func renderConfig(profile GPUProfile, procs []Proc) string {
 	byUUID := map[string][]Proc{}
 	for _, p := range procs {
 		byUUID[p.UUID] = append(byUUID[p.UUID], p)
 	}
 
-	devices := []struct {
-		index int
-		uuid  string
-		bus   string
+	data := struct {
+		Profile GPUProfile
+		Devices []deviceEntry
 	}{
-		{0, Device0UUID, "0000:07:00.0"},
-		{1, Device1UUID, "0000:0F:00.0"},
+		Profile: profile,
+		Devices: []deviceEntry{
+			{0, Device0UUID, "0000:07:00.0", byUUID[Device0UUID]},
+			{1, Device1UUID, "0000:0F:00.0", byUUID[Device1UUID]},
+		},
 	}
 
-	var b strings.Builder
-	// Writes to strings.Builder never fail; blank-assign to satisfy errcheck
-	// without the QF1012 churn of WriteString(fmt.Sprintf(...)).
-	_, _ = fmt.Fprintf(&b, `version: "1.0"
-system:
-  driver_version: %q
-  nvml_version: %q
-  cuda_version: %q
-device_defaults:
-  name: %q
-  memory:
-    total_bytes: %d
-    reserved_bytes: %d
-    free_bytes: %d
-    used_bytes: %d
-  utilization:
-    gpu: 0
-    memory: 0
-  compute_mode: "default"
-  persistence_mode: "enabled"
-  processes: []
-devices:
-`, profile.DriverVersion, profile.NVMLVersion, profile.CUDAVersion, profile.Name,
-		profile.MemoryTotalBytes, profile.MemoryReservedBytes, profile.MemoryFreeBytes, profile.MemoryUsedBytes)
-	for _, d := range devices {
-		_, _ = fmt.Fprintf(&b, "  - index: %d\n    uuid: %q\n    pci:\n      bus_id: %q\n    minor_number: %d\n    processes:\n",
-			d.index, d.uuid, d.bus, d.index)
-		ps := byUUID[d.uuid]
-		if len(ps) == 0 {
-			b.WriteString("      []\n")
-			continue
-		}
-		for _, p := range ps {
-			_, _ = fmt.Fprintf(&b, "      - pid: %d\n        used_gpu_memory: %d\n        sm_util: %d\n        type: C\n",
-				p.PID, p.UsedGPUMemory, p.SMUtil)
-		}
+	var b bytes.Buffer
+	if err := configTmpl.Execute(&b, data); err != nil {
+		panic(fmt.Sprintf("renderConfig: %v", err))
 	}
 	return b.String()
 }

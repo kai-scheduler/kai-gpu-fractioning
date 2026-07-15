@@ -1,0 +1,37 @@
+version: "1.0"
+system:
+  driver_version: "{{.Profile.DriverVersion}}"
+  nvml_version: "{{.Profile.NVMLVersion}}"
+  cuda_version: "{{.Profile.CUDAVersion}}"
+device_defaults:
+  name: "{{.Profile.Name}}"
+  memory:
+    total_bytes: {{.Profile.MemoryTotalBytes}}
+    reserved_bytes: {{.Profile.MemoryReservedBytes}}
+    free_bytes: {{.Profile.MemoryFreeBytes}}
+    used_bytes: {{.Profile.MemoryUsedBytes}}
+  utilization:
+    gpu: 0
+    memory: 0
+  compute_mode: "default"
+  persistence_mode: "enabled"
+  processes: []
+devices:
+{{- range .Devices}}
+  - index: {{.Index}}
+    uuid: "{{.UUID}}"
+    pci:
+      bus_id: "{{.Bus}}"
+    minor_number: {{.Index}}
+    processes:
+{{- if .Procs}}
+{{- range .Procs}}
+      - pid: {{.PID}}
+        used_gpu_memory: {{.UsedGPUMemory}}
+        sm_util: {{.SMUtil}}
+        type: C
+{{- end}}
+{{- else}}
+      []
+{{- end}}
+{{- end}}
