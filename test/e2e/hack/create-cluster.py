@@ -10,9 +10,10 @@ Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
 stdout is enough for CI logs).
 
-Environment variables (all optional, E2E_ prefix, see ClusterConfig):
+Environment variables (E2E_ prefix, see ClusterConfig):
+    E2E_FAKE_GPU_OPERATOR_VERSION  (required) e.g. "0.14.0"
     E2E_CLUSTER_NAME               (default: gpu-sharing-e2e)
-    E2E_GPU_WORKER_NODES               (default: 2)   # GPU worker nodes
+    E2E_GPU_WORKER_NODES           (default: 2)   # GPU worker nodes
     E2E_NON_GPU_WORKER_NODES       (default: 1)   # plain (no-GPU) worker nodes
     E2E_K3S_IMAGE                  (default: rancher/k3s:v1.31.5-k3s1)
     E2E_GPU_NODE_POOL              (default: default)
@@ -27,12 +28,12 @@ docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
 own `k3d kubeconfig` retrieval. Every downstream e2e step reads that file.
 
 Usage:
-    ./create-cluster.py
-    E2E_GPU_WORKER_NODES=4 ./create-cluster.py
-    ./create-cluster.py --skip-gpu-mock
+    E2E_FAKE_GPU_OPERATOR_VERSION=0.14.0 ./create-cluster.py
+    E2E_FAKE_GPU_OPERATOR_VERSION=0.14.0 E2E_GPU_WORKER_NODES=4 ./create-cluster.py
+    ./create-cluster.py --skip-fake-gpu-operator --skip-gpu-mock
     ./create-cluster.py --delete
 
-Requires: k3d, kubectl.
+Requires: k3d, kubectl, docker, helm (unless --skip-fake-gpu-operator).
 """
 
 import os
@@ -48,7 +49,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 app = typer.Typer(help="k3d cluster setup for gpu-sharing-operator e2e tests")
 
-# nvml-mock: NVIDIA's mock libnvidia-ml.so DaemonSet (replaces fake-gpu-operator).
+FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator"
+
+# nvml-mock: NVIDIA's mock libnvidia-ml.so DaemonSet (supplements fake-gpu-operator).
 # Applied as a static manifest — its setup.sh self-labels nodes
 # nvidia.com/gpu.present=true (the gpu-sharing-plugin nodeSelector) and installs a
 # real libnvidia-ml.so into /var/lib/nvml-mock/driver, so the plugin's NVML calls
@@ -219,6 +222,68 @@ def wait_for_nodes(config: ClusterConfig) -> None:
     log("All nodes are ready.")
 
 
+def install_fake_gpu_operator(config: ClusterConfig) -> None:
+    log(f"Installing fake-gpu-operator {config.fake_gpu_operator_version}...")
+
+    values = f"""
+devicePlugin:
+  enabled: true
+statusUpdater:
+  enabled: true
+statusExporter:
+  enabled: true
+topologyServer:
+  enabled: false
+draPlugin:
+  enabled: false
+kwokDraPlugin:
+  enabled: false
+kwokGpuDevicePlugin:
+  enabled: false
+migFaker:
+  enabled: false
+gpuOperator:
+  enabled: false
+computeDomainController:
+  enabled: false
+computeDomainDraPlugin:
+  enabled: false
+kwokComputeDomainDraPlugin:
+  enabled: false
+topology:
+  nodePoolLabelKey: run.ai/simulated-gpu-node-pool
+  nodePools:
+    {config.gpu_node_pool}:
+      gpuProduct: "{config.gpu_product}"
+      gpuCount: {config.gpus_per_node}
+      gpuMemory: {config.gpu_memory_mib}
+"""
+
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+        f.write(values)
+        values_path = f.name
+
+    try:
+        sh.helm(
+            "upgrade", "-i", "fake-gpu-operator",
+            FAKE_GPU_OPERATOR_CHART,
+            "--version", config.fake_gpu_operator_version,
+            "--namespace", "gpu-operator",
+            "--create-namespace",
+            "-f", values_path,
+        )
+    finally:
+        Path(values_path).unlink(missing_ok=True)
+
+    log("Waiting for status-updater to be ready...")
+    sh.kubectl("wait", "--for=condition=Ready", "pod", "-l", "app=status-updater", "-n", "gpu-operator", "--timeout=120s")
+
+    log("Waiting for device-plugin daemonset rollout...")
+    sh.kubectl("rollout", "status", "daemonset/device-plugin", "-n", "gpu-operator", "--timeout=180s")
+
+    wait_for_gpu_node_labels(config)
+
+
 def install_nvml_mock(config: ClusterConfig) -> None:
     log("Installing nvml-mock (real mock libnvidia-ml.so + node labels)...")
 
@@ -272,11 +337,14 @@ def wait_for_gpu_node_labels(config: ClusterConfig, max_retries: int = 30, inter
 @app.command()
 def main(
     delete: bool = typer.Option(False, "--delete", help="Delete the cluster and exit"),
+    skip_fake_gpu_operator: bool = typer.Option(
+        False, "--skip-fake-gpu-operator", help="Skip fake-gpu-operator install"
+    ),
     skip_gpu_mock: bool = typer.Option(
-        False, "--skip-gpu-mock", help="Create the cluster only, skip nvml-mock install"
+        False, "--skip-gpu-mock", help="Skip nvml-mock install"
     ),
 ) -> None:
-    """Create (or delete) a k3d cluster with nvml-mock for gpu-sharing-operator e2e tests."""
+    """Create (or delete) a k3d cluster with fake-gpu-operator and nvml-mock for gpu-sharing-operator e2e tests."""
     config = ClusterConfig()
     if not config.kubeconfig:
         config.kubeconfig = str(Path.home() / ".kube" / f"{config.cluster_name}.yaml")
@@ -284,6 +352,13 @@ def main(
     require_command("k3d")
     require_command("kubectl")
     require_command("docker")
+
+    if not skip_fake_gpu_operator:
+        require_command("helm")
+        if not config.fake_gpu_operator_version:
+            log("E2E_FAKE_GPU_OPERATOR_VERSION must be set (or pass --skip-fake-gpu-operator).")
+            log("See https://github.com/run-ai/fake-gpu-operator/releases for available versions.")
+            raise typer.Exit(1)
 
     if delete:
         delete_cluster(config)
@@ -298,13 +373,11 @@ def main(
 
     wait_for_nodes(config)
 
-    if skip_gpu_mock:
-        log("Skipping nvml-mock installation (--skip-gpu-mock).")
-        log(f"Cluster '{config.cluster_name}' is ready.")
-        log(f"  export KUBECONFIG={config.kubeconfig}")
-        return
+    if not skip_fake_gpu_operator:
+        install_fake_gpu_operator(config)
 
-    install_nvml_mock(config)
+    if not skip_gpu_mock:
+        install_nvml_mock(config)
 
     log(f"Cluster '{config.cluster_name}' is ready for e2e tests.")
     log("Next steps (make targets set KUBECONFIG for you):")
