@@ -32,6 +32,7 @@ mpsd:
 
 metricsAgent:
   enabled: true
+  runtimeClassName: "nvidia"
 
 serviceAccount:
   create: true
