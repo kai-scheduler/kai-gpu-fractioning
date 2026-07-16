@@ -55,14 +55,17 @@ devices:
     minor_number: 0
     processes:
       - pid: 1001
-        used_gpu_memory: 1073741824   # 1 GiB
+        used_memory_mib: 1024         # 1 GiB → UsedGpuMemory = 1073741824 bytes
         type: C
+        sm_util: 75
       - pid: 1002
-        used_gpu_memory: 2147483648   # 2 GiB
+        used_memory_mib: 2048         # 2 GiB → UsedGpuMemory = 2147483648 bytes
         type: C
+        sm_util: 30
       - pid: 1003
-        used_gpu_memory: 18446744073709551615  # nvmlValueNotAvailable = ^uint64(0)
+        used_memory_mib: 0            # sentinel test: nvml-mock can't emit ^uint64(0) via MiB config
         type: C
+        sm_util: 0
 
   # Device 1: one compute process and one graphics process (exercises
   # GetGraphicsRunningProcesses separately from GetComputeRunningProcesses).
@@ -73,8 +76,10 @@ devices:
     minor_number: 1
     processes:
       - pid: 2001
-        used_gpu_memory: 3221225472   # 3 GiB — compute
+        used_memory_mib: 3072         # 3 GiB → UsedGpuMemory = 3221225472 bytes
         type: C
+        sm_util: 60
       - pid: 2002
-        used_gpu_memory: 536870912    # 512 MiB — graphics
+        used_memory_mib: 512          # 512 MiB → UsedGpuMemory = 536870912 bytes
         type: G
+        sm_util: 20

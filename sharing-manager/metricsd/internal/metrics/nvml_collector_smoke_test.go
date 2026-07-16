@@ -21,11 +21,17 @@ const (
 	smokeTotalMemory = uint64(42949672960) // 40 GiB, matches testdata config
 
 	// PIDs declared in testdata/nvml_smoke_config.yaml.
-	smokePID1001 = uint32(1001) // device 0, compute,  1 GiB
-	smokePID1002 = uint32(1002) // device 0, compute,  2 GiB
-	smokePID1003 = uint32(1003) // device 0, compute,  nvmlValueNotAvailable sentinel
-	smokePID2001 = uint32(2001) // device 1, compute,  3 GiB
-	smokePID2002 = uint32(2002) // device 1, graphics, 512 MiB
+	smokePID1001 = uint32(1001) // device 0, compute,  1 GiB,   sm_util 75
+	smokePID1002 = uint32(1002) // device 0, compute,  2 GiB,   sm_util 30
+	smokePID1003 = uint32(1003) // device 0, compute,  nvmlValueNotAvailable sentinel, sm_util 0
+	smokePID2001 = uint32(2001) // device 1, compute,  3 GiB,   sm_util 60
+	smokePID2002 = uint32(2002) // device 1, graphics, 512 MiB, sm_util 20
+
+	// SM utilization percentages matching testdata/nvml_smoke_config.yaml.
+	smokeSMUtil1001 = uint32(75)
+	smokeSMUtil1002 = uint32(30)
+	smokeSMUtil2001 = uint32(60)
+	smokeSMUtil2002 = uint32(20)
 )
 
 // smokeCollector creates a production NVML collector pointed at the smoke test
@@ -150,21 +156,24 @@ func TestNVMLSmokeGraphicsProcess(t *testing.T) {
 	}
 }
 
-// TestNVMLSmokeNVMLValueNotAvailable verifies that the nvmlValueNotAvailable
-// sentinel (^uint64(0)) returned for UsedGpuMemory is not stored verbatim.
-// The process must appear in the snapshot but with UsedGPUMemoryBytes == 0.
+// TestNVMLSmokeNVMLValueNotAvailable verifies that a process with zero
+// used_memory_mib appears in the snapshot with UsedGPUMemoryBytes == 0 (not
+// the nvmlValueNotAvailable sentinel). The ^uint64(0) sentinel path is covered
+// by mergeRunningProcesses unit tests; nvml-mock's used_memory_mib config
+// cannot produce that sentinel value.
 func TestNVMLSmokeNVMLValueNotAvailable(t *testing.T) {
 	snap := smokeCollector(t).Snapshot()
 	byPID := procsByPID(snap.Processes)
 
 	m, ok := byPID[smokePID1003]
 	if !ok {
-		// nvml-mock may not support uint64 max in YAML config; that case is
-		// covered by mergeRunningProcesses unit tests. Skip rather than fail.
-		t.Skip("sentinel PID 1003 not reported by nvml-mock (mock may not parse uint64 max)")
+		t.Skip("PID 1003 not reported by nvml-mock")
 	}
 	if m.UsedGPUMemoryBytes == nvmlValueNotAvailable {
 		t.Errorf("PID %d: UsedGPUMemoryBytes stores the sentinel %d; should be 0", smokePID1003, nvmlValueNotAvailable)
+	}
+	if m.UsedGPUMemoryBytes != 0 {
+		t.Errorf("PID %d: want 0 bytes (used_memory_mib: 0), got %d", smokePID1003, m.UsedGPUMemoryBytes)
 	}
 }
 
@@ -228,21 +237,31 @@ func TestNVMLSmokeNoProcessDuplication(t *testing.T) {
 	}
 }
 
-// TestNVMLSmokeProcessUtilizationUnavailable verifies that the collector
-// handles ERROR_NOT_FOUND / ERROR_NOT_SUPPORTED from GetProcessUtilization
-// gracefully: memory entries must still appear and SM util defaults to 0.
-func TestNVMLSmokeProcessUtilizationUnavailable(t *testing.T) {
+// TestNVMLSmokeProcessUtilization verifies that GetProcessUtilization is called
+// and its sm_util values are stored in SMUtilizationPercent for each process.
+// nvml-mock implements GetProcessUtilization end-to-end (engine/device.go) and
+// returns one sample per configured process with the sm_util from the YAML config.
+func TestNVMLSmokeProcessUtilization(t *testing.T) {
 	snap := smokeCollector(t).Snapshot()
 	byPID := procsByPID(snap.Processes)
 
-	for _, pid := range []uint32{smokePID1001, smokePID1002, smokePID2001, smokePID2002} {
-		if _, ok := byPID[pid]; !ok {
-			t.Errorf("PID %d missing (GetProcessUtilization unavailable must not drop memory entries)", pid)
-		}
+	cases := []struct {
+		pid         uint32
+		wantSMUtil  uint32
+	}{
+		{smokePID1001, smokeSMUtil1001},
+		{smokePID1002, smokeSMUtil1002},
+		{smokePID2001, smokeSMUtil2001},
+		{smokePID2002, smokeSMUtil2002},
 	}
-	for _, m := range snap.Processes {
-		if m.SMUtilizationPercent != 0 {
-			t.Errorf("PID %d: SMUtilizationPercent want 0 (mock provides none), got %d", m.PID, m.SMUtilizationPercent)
+	for _, tc := range cases {
+		m, ok := byPID[tc.pid]
+		if !ok {
+			t.Errorf("PID %d not in snapshot", tc.pid)
+			continue
+		}
+		if m.SMUtilizationPercent != tc.wantSMUtil {
+			t.Errorf("PID %d: SMUtilizationPercent want %d, got %d", tc.pid, tc.wantSMUtil, m.SMUtilizationPercent)
 		}
 	}
 }
