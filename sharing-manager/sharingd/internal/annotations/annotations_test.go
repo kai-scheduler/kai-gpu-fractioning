@@ -50,6 +50,58 @@ func TestParseToDecimalMB(t *testing.T) {
 	}
 }
 
+func TestParseVisibleDevices(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    string
+	}{
+		{
+			name:        "single UUID",
+			annotations: map[string]string{VisibleDevicesAnnotation: "GPU-abc123"},
+			expected:    "GPU-abc123",
+		},
+		{
+			name:        "comma-separated UUIDs passed through verbatim",
+			annotations: map[string]string{VisibleDevicesAnnotation: "GPU-abc123,GPU-def456"},
+			expected:    "GPU-abc123,GPU-def456",
+		},
+		{
+			name:        "surrounding whitespace trimmed",
+			annotations: map[string]string{VisibleDevicesAnnotation: "  GPU-abc123  "},
+			expected:    "GPU-abc123",
+		},
+		{
+			name:        "index value passed through",
+			annotations: map[string]string{VisibleDevicesAnnotation: "0"},
+			expected:    "0",
+		},
+		{
+			name:        "absent annotation yields empty",
+			annotations: map[string]string{"other": "value"},
+			expected:    "",
+		},
+		{
+			name:        "blank annotation yields empty",
+			annotations: map[string]string{VisibleDevicesAnnotation: "   "},
+			expected:    "",
+		},
+		{
+			name:        "nil annotations yields empty",
+			annotations: nil,
+			expected:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseVisibleDevices(tt.annotations); got != tt.expected {
+				t.Errorf("ParseVisibleDevices() = %q, expected %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestParseGPUMemoryAnnotations(t *testing.T) {
 	tests := []struct {
 		name            string

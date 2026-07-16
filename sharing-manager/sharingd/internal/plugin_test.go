@@ -58,6 +58,26 @@ func TestCreateContainer(t *testing.T) {
 			expectedMount:   true,
 		},
 		{
+			name: "injects assigned GPU devices alongside memory config",
+			annotations: map[string]string{
+				"nvidia.com/gpu-memory.container.trainer.limit": "4Gi",
+				"nvidia.com/gpus.devices":                       "GPU-abc123,GPU-def456",
+			},
+			containerName:   "trainer",
+			expectedNil:     false,
+			expectedEnvKeys: []string{injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory, injection.EnvVisibleDevices},
+			expectedEnvVals: map[string]string{injection.EnvVisibleDevices: "GPU-abc123,GPU-def456"},
+			expectedMount:   true,
+		},
+		{
+			name: "device assignment without memory annotation is not injected",
+			annotations: map[string]string{
+				"nvidia.com/gpus.devices": "GPU-abc123",
+			},
+			containerName: "trainer",
+			expectedNil:   true,
+		},
+		{
 			name:          "no GPU annotations returns nil",
 			annotations:   map[string]string{"some-other/annotation": "value"},
 			containerName: "main",

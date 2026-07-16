@@ -66,7 +66,9 @@ type Config struct {
 //
 //  1. Mutation: on CreateContainer it evaluates the pod's GPU-memory annotations
 //     and injects the NVIDIA_GPU_MEMORY_* env vars, CUDA_MPS_PIPE_DIRECTORY, and
-//     the MPS pipe bind mount.
+//     the MPS pipe bind mount. When the scheduler also recorded a GPU
+//     device-assignment annotation on the pod it injects NVIDIA_VISIBLE_DEVICES
+//     so the fractional container sees the GPU the scheduler picked.
 //  2. Mapping: it records a container→pod mapping (plus assigned GPU devices and
 //     requested fraction) to a shared directory via an async events processor and
 //     fsstore writer. The metricsd sidecar reads that mapping to attribute GPU
@@ -211,7 +213,9 @@ func (p *Plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *ap
 
 // buildAdjustment contains the GPU-memory / MPS mutation logic. It returns a nil
 // adjustment when the container has no GPU memory annotations, and an error only
-// when annotation parsing fails while FailOpen is false.
+// when annotation parsing fails while FailOpen is false. For a GPU-sharing
+// container it additionally injects NVIDIA_VISIBLE_DEVICES from the pod's device
+// assignment annotation when present.
 func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, error) {
 	gpuMemoryCfg, err := annotations.ParseGPUMemoryAnnotations(pod.Annotations, ctr.Name, p.AnnotationPrefix)
 	if err != nil {
@@ -248,11 +252,22 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 		Options:     []string{"bind", "rw"},
 	})
 
+	// Promote the scheduler's GPU device assignment to NVIDIA_VISIBLE_DEVICES.
+	// A fractional container does not request the nvidia.com/gpu resource, so the
+	// NVIDIA device plugin never sets this env var; without it the container would
+	// see all GPUs or none. When the annotation is absent we leave the env var
+	// untouched (the device plugin or the image may already set it).
+	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations)
+	if visibleDevices != "" {
+		adj.AddEnv(injection.EnvVisibleDevices, visibleDevices)
+	}
+
 	p.Log.Info("adjusting container with GPU memory config",
 		"container", ctr.Name,
 		"pod", pod.Name,
 		"request", gpuMemoryCfg.Request,
 		"limit", gpuMemoryCfg.Limit,
+		"visibleDevices", visibleDevices,
 	)
 
 	return adj, nil
