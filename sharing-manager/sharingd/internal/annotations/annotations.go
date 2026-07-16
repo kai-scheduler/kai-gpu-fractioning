@@ -3,6 +3,7 @@ package annotations
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -11,6 +12,16 @@ const (
 	// Annotation key suffixes appended after the container name.
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
+
+	// VisibleDevicesAnnotation is the pod-level annotation key the scheduler
+	// (KAI/Run:ai) sets to the physical GPU device(s) it assigned to a fractional
+	// GPU-sharing pod: a comma-separated list of NVIDIA GPU UUIDs (or indices),
+	// e.g. "GPU-abc123,GPU-def456". A fractional pod does not request the
+	// nvidia.com/gpu resource, so the NVIDIA device plugin never injects
+	// NVIDIA_VISIBLE_DEVICES into its containers; sharingd reads this annotation
+	// and injects it (as injection.EnvVisibleDevices) so the container gets access
+	// to exactly the GPU the scheduler picked.
+	VisibleDevicesAnnotation = "nvidia.com/gpus.devices"
 
 	// Minimum value in decimal MB that MPS can meaningfully enforce.
 	minDecimalMB = 1
@@ -96,6 +107,17 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 	}
 
 	return config, nil
+}
+
+// ParseVisibleDevices returns the GPU device assignment the scheduler recorded in
+// the pod's VisibleDevicesAnnotation, trimmed of surrounding whitespace. It
+// returns "" when the annotation is absent or blank, which the caller treats as
+// "no assignment to inject" (so a pod scheduled by a device plugin that already
+// sets NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
+// verbatim otherwise — its format (UUID list, index list, or "all") is the
+// NVIDIA container runtime's contract, not this operator's.
+func ParseVisibleDevices(annotations map[string]string) string {
+	return strings.TrimSpace(annotations[VisibleDevicesAnnotation])
 }
 
 // quantityToDecimalMB converts a Kubernetes Quantity string to decimal megabytes.

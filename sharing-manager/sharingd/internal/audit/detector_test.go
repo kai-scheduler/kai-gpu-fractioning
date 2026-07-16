@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
 )
 
@@ -83,6 +84,37 @@ func TestDetectorViolations(t *testing.T) {
 				Mounts: []*api.Mount{mpsMount()},
 			},
 			wantMissing: []string{"env:" + injection.EnvGPUMemoryRequests},
+		},
+		{
+			name: "missing NVIDIA_VISIBLE_DEVICES env (device assigned) is a violator",
+			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "GPU-abc123"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    injectedEnv(true, false),
+				Mounts: []*api.Mount{mpsMount()},
+			},
+			wantMissing: []string{"env:" + injection.EnvVisibleDevices},
+		},
+		{
+			name: "assigned device fully injected is not a violator",
+			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "GPU-abc123"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    append(injectedEnv(true, false), injection.EnvVisibleDevices+"=GPU-abc123"),
+				Mounts: []*api.Mount{mpsMount()},
+			},
+		},
+		{
+			name: "no device assignment does not expect NVIDIA_VISIBLE_DEVICES",
+			pod:  sharingPod("p", "pod", "trainer", "4Gi", ""),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    injectedEnv(true, false),
+				Mounts: []*api.Mount{mpsMount()},
+			},
 		},
 		{
 			name: "created state is enforceable",
@@ -221,6 +253,16 @@ func sharingPod(id, name, containerName, limit, request string) *api.PodSandbox 
 		ann[configuration.DefaultAnnotationPrefix+containerName+".request"] = request
 	}
 	return &api.PodSandbox{Id: id, Name: name, Namespace: "default", Uid: id + "-uid", Annotations: ann}
+}
+
+// withVisibleDevices records a GPU device assignment on the pod, as the scheduler
+// would, so the detector expects NVIDIA_VISIBLE_DEVICES to be injected.
+func withVisibleDevices(pod *api.PodSandbox, value string) *api.PodSandbox {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[annotations.VisibleDevicesAnnotation] = value
+	return pod
 }
 
 // injectedEnv returns the env keys buildAdjustment would add for the given

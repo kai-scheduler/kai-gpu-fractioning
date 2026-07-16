@@ -101,7 +101,8 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 		return violator{}, false
 	}
 
-	missing := d.missingInjection(cfg, container)
+	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations())
+	missing := d.missingInjection(cfg, visibleDevices, container)
 	if len(missing) == 0 {
 		return violator{}, false
 	}
@@ -115,12 +116,14 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 	}, true
 }
 
-// missingInjection compares the expected injection (derived from cfg exactly as
-// buildAdjustment would) against the live container's env and mounts, returning
-// the expected pieces that are absent. Presence-based, not value-equality: a
-// mis-set value is out of scope and would risk false positives from formatting
-// differences.
-func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, container *api.Container) []string {
+// missingInjection compares the expected injection (derived from cfg and the
+// pod's device assignment exactly as buildAdjustment would) against the live
+// container's env and mounts, returning the expected pieces that are absent.
+// Presence-based, not value-equality: a mis-set value is out of scope and would
+// risk false positives from formatting differences. visibleDevices is the pod's
+// GPU device assignment ("" when unassigned); NVIDIA_VISIBLE_DEVICES is expected
+// only when it is set, matching buildAdjustment's conditional injection.
+func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, visibleDevices string, container *api.Container) []string {
 	env := presentEnv(container.GetEnv())
 
 	var missing []string
@@ -133,6 +136,9 @@ func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, container *a
 	}
 	if cfg.Request != "" && !env[injection.EnvGPUMemoryRequests] {
 		missing = append(missing, "env:"+injection.EnvGPUMemoryRequests)
+	}
+	if visibleDevices != "" && !env[injection.EnvVisibleDevices] {
+		missing = append(missing, "env:"+injection.EnvVisibleDevices)
 	}
 	if !hasMountDestination(container.GetMounts(), d.mpsPipeDirectory) {
 		missing = append(missing, "mount:"+d.mpsPipeDirectory)
@@ -151,14 +157,18 @@ func (d detector) logger() *slog.Logger {
 // of the injected keys (and only those) are present. A token without '=' is
 // treated as a bare key.
 func presentEnv(env []string) map[string]bool {
-	present := make(map[string]bool, 3)
+	injected := make(map[string]struct{}, len(injection.AllEnvKeys))
+	for _, k := range injection.AllEnvKeys {
+		injected[k] = struct{}{}
+	}
+
+	present := make(map[string]bool, len(injection.AllEnvKeys))
 	for _, kv := range env {
 		k := kv
 		if i := strings.IndexByte(kv, '='); i >= 0 {
 			k = kv[:i]
 		}
-		switch k {
-		case injection.EnvMPSPipeDirectory, injection.EnvGPUMemoryLimits, injection.EnvGPUMemoryRequests:
+		if _, ok := injected[k]; ok {
 			present[k] = true
 		}
 	}
