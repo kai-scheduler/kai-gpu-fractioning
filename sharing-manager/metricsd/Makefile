@@ -14,18 +14,50 @@ VERSION ?= $(TAG)
 COMMIT ?= $(shell git -C .. rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: fmt test test-e2e build clean docker-build docker-buildx
+NVML_MOCK_IMAGE  ?= ghcr.io/nvidia/nvml-mock:latest
+# Path where the nvml-mock DaemonSet installs libnvidia-ml.so on the host.
+# Override if extracting the .so from the image into a local directory.
+NVML_MOCK_SO_DIR ?= /var/lib/nvml-mock/driver/usr/lib64
+
+.PHONY: fmt test test-e2e smoke-nvml build clean docker-build docker-buildx
 
 fmt:
 	gofmt -w ./cmd ./internal
 
 test:
-	go test ./...
+	go test -v ./...
 
 # Runs the unit tests with the fake-GPU detection compiled in (the e2e-tagged
 # tests in internal/plugin). Does not require a cluster.
 test-e2e:
-	go test -tags e2e ./...
+	go test -tags e2e -v ./...
+
+# Pulls the nvml-mock image, extracts libnvidia-ml.so into a temp directory,
+# runs the production NVML collector smoke tests against it, then cleans up.
+# Requires Docker and a Linux host (the .so is a Linux ELF shared library).
+smoke-nvml:
+	@SO_DIR=$$(mktemp -d); \
+	echo ">>> Pulling $(NVML_MOCK_IMAGE)"; \
+	docker pull -q $(NVML_MOCK_IMAGE); \
+	echo ">>> Extracting libnvidia-ml.so"; \
+	docker run --rm --entrypoint sh \
+		-v $$SO_DIR:/out \
+		$(NVML_MOCK_IMAGE) \
+		-c 'find / -maxdepth 10 -name "libnvidia-ml.so*" 2>/dev/null | xargs -I{} cp -f {} /out/ 2>/dev/null; true'; \
+	if [ -z "$$(ls $$SO_DIR 2>/dev/null)" ]; then \
+		echo "ERROR: libnvidia-ml.so not found in $(NVML_MOCK_IMAGE)"; \
+		rm -rf $$SO_DIR; \
+		exit 1; \
+	fi; \
+	echo "Extracted: $$(ls $$SO_DIR)"; \
+	ls $$SO_DIR/libnvidia-ml.so > /dev/null 2>&1 || \
+		ln -sf $$(ls $$SO_DIR/libnvidia-ml.so.* | head -1) $$SO_DIR/libnvidia-ml.so; \
+	echo ">>> Running smoke tests (LD_LIBRARY_PATH=$$SO_DIR)"; \
+	LD_LIBRARY_PATH=$$SO_DIR CGO_ENABLED=1 \
+		go test -tags nvml_smoke -v -count=1 ./internal/metrics/; \
+	STATUS=$$?; \
+	rm -rf $$SO_DIR; \
+	exit $$STATUS
 
 build:
 	mkdir -p $(BIN_DIR)
