@@ -45,7 +45,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State: api.ContainerState_CONTAINER_RUNNING,
-				Env:   injectedEnv(true, true),
+				Env:   injectedEqualEnv(),
 			},
 			wantMissing: []string{"mount:" + configuration.DefaultMPSPipeDirectory},
 		},
@@ -93,7 +93,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    injectedEnv(true, true),
+				Env:    injectedEqualEnv(),
 				Mounts: []*api.Mount{mpsMount()},
 			},
 			wantMissing: []string{"env:" + injection.EnvVisibleDevices},
@@ -104,7 +104,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    append(injectedEnv(true, true), injection.EnvVisibleDevices+"=GPU-abc123"),
+				Env:    append(injectedEqualEnv(), injection.EnvVisibleDevices+"=GPU-abc123"),
 				Mounts: []*api.Mount{mpsMount()},
 			},
 		},
@@ -114,7 +114,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    injectedEnv(true, true),
+				Env:    injectedEqualEnv(),
 				Mounts: []*api.Mount{mpsMount()},
 			},
 		},
@@ -224,7 +224,7 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 	containers := []*api.Container{
 		{ // p1: injected → ok
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
-			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEnv(true, true), Mounts: []*api.Mount{mpsMount()},
+			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEqualEnv(), Mounts: []*api.Mount{mpsMount()},
 		},
 		{ // p2: uninjected → violator
 			Id: "c2", Name: "trainer", PodSandboxId: "p2",
@@ -279,6 +279,19 @@ func injectedEnv(limit, request bool) []string {
 		env = append(env, injection.EnvGPUMemoryRequests+"=2147")
 	}
 	return env
+}
+
+// injectedEqualEnv returns the fully-injected env for a container whose request
+// and limit resolve to the same value — the real post-injection state of a
+// request-only or limit-only pod after ApplyDefaults (both default to the 4Gi /
+// 4294 MB value injectedEnv uses for the limit). Use this instead of
+// injectedEnv(true, true) for such pods so fixtures match reality.
+func injectedEqualEnv() []string {
+	return []string{
+		injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory,
+		injection.EnvGPUMemoryLimits + "=4294",
+		injection.EnvGPUMemoryRequests + "=4294",
+	}
 }
 
 func mpsMount() *api.Mount {
