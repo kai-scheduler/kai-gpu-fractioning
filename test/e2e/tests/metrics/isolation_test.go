@@ -141,7 +141,7 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 	}
 
 	// 1. Positive assertion: each pod's series appears on its assigned device.
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		seriesA, err := waitForSeries(ctx, c, metricName, matchA)
 		if err != nil {
 			t.Errorf("%s: pod-a series on Device0 never appeared: %v", metricName, err)
@@ -170,6 +170,9 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 
 	// 2. Negative assertion: no cross-device contamination.
 	// pod-a's pod_uid must never appear under Device1UUID, and vice versa.
+	// assertNeverAppears (sustained window) is used instead of waitForAbsence:
+	// these series never existed, so waitForAbsence passes on the first poll
+	// before a contamination bug even has time to produce a series.
 	crossA := map[string]string{
 		"pod_uid":  string(podA.UID),
 		"gpu_uuid": nvmlmock.Device1UUID,
@@ -178,12 +181,8 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 		"pod_uid":  string(podB.UID),
 		"gpu_uuid": nvmlmock.Device0UUID,
 	}
-	for _, metricName := range bothMetricNames {
-		if err := waitForAbsence(ctx, c, metricName, crossA); err != nil {
-			t.Errorf("%s: pod-a (pod_uid=%s) bled onto Device1: %v", metricName, podA.UID, err)
-		}
-		if err := waitForAbsence(ctx, c, metricName, crossB); err != nil {
-			t.Errorf("%s: pod-b (pod_uid=%s) bled onto Device0: %v", metricName, podB.UID, err)
-		}
+	for _, metricName := range allMetricNames {
+		assertNeverAppears(ctx, t, c, metricName, crossA, 15*time.Second, c.Config.PollInterval)
+		assertNeverAppears(ctx, t, c, metricName, crossB, 15*time.Second, c.Config.PollInterval)
 	}
 }

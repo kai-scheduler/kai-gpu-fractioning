@@ -124,7 +124,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	}
 	mu.Unlock()
 
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		if err := waitForAbsence(ctx, c, metricName, match); err != nil {
 			t.Errorf("%s: series for deleted pod never pruned: %v", metricName, err)
 		}

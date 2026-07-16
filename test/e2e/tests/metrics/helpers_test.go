@@ -29,9 +29,10 @@ const (
 	normMetricName = "gpu_sharing_gpu_sm_utilization_percent_normalized"
 )
 
-// bothMetricNames is the pair every attribution/exclusion test case checks —
-// a pod is expected to appear (or not appear) on both, never just one.
-var bothMetricNames = []string{memMetricName, smMetricName}
+// allMetricNames is the full set of per-pod series every test must cover —
+// mem, raw SM, and normalized SM. All three share the same label set and
+// lifecycle: they are emitted and pruned together by the exporter.
+var allMetricNames = []string{memMetricName, smMetricName, normMetricName}
 
 // waitForSeries polls every gpu-sharing-plugin pod's /metrics until a series
 // for metricName matches every label in match, or times out.
@@ -140,6 +141,9 @@ func assertNeverAppears(ctx context.Context, t *testing.T, c *cluster.Client, me
 	for {
 		series, err := findSeriesAcrossPluginPods(ctx, c, metricName, match)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			t.Fatalf("scrape plugin pods: %v", err)
 		}
 		if len(series) > 0 {

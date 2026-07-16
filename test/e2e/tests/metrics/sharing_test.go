@@ -146,7 +146,7 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	// GetComputeRunningProcesses_v3 always returns usedGpuMemory=0 regardless
 	// of the configured used_gpu_memory — value assertion is deferred until
 	// the mock gains per-process memory fidelity (see attribution_test.go NOTE).
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		seriesA, err := waitForSeries(ctx, c, metricName, matchA)
 		if err != nil {
 			t.Errorf("%s: pod-a series never appeared: %v", metricName, err)

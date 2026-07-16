@@ -116,6 +116,16 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 		t.Errorf("idle phase: %s want 0, got %.2f", smMetricName, gotIdle)
 	}
 
+	idleMemSeries, err := waitForSeries(ctx, c, memMetricName, matchPod)
+	if err != nil {
+		t.Fatalf("idle phase: %s series never appeared: %v", memMetricName, err)
+	}
+	gotIdleMem := metrics.GaugeValue(idleMemSeries)
+	t.Logf("idle phase: %s = %.2f (want 0)", memMetricName, gotIdleMem)
+	if gotIdleMem != 0 {
+		t.Errorf("idle phase: %s want 0, got %.2f", memMetricName, gotIdleMem)
+	}
+
 	// ── Phase 2: active ───────────────────────────────────────────────────────
 	// Bump SMUtil — the series must update in place (same label set, new value)
 	// and there must be exactly one series per metric family for this pod at any
@@ -155,8 +165,8 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 		t.Fatalf("delete pod: %v", err)
 	}
 
-	for _, metricName := range bothMetricNames {
-		if err := waitForAbsence(ctx, c, metricName, matchActive); err != nil {
+	for _, metricName := range allMetricNames {
+		if err := waitForAbsence(ctx, c, metricName, matchPod); err != nil {
 			t.Errorf("gone phase: %s series for deleted pod never pruned: %v", metricName, err)
 		}
 	}

@@ -106,7 +106,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 		"namespace": attributionTestNamespace,
 		"pod_uid":   oldUID,
 	}
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		if err := waitForAbsence(ctx, c, metricName, oldMatch); err != nil {
 			t.Errorf("[gen1 prune] %s: series for old pod_uid=%s never pruned: %v",
 				metricName, oldUID, err)
@@ -123,7 +123,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 	t.Logf("gen2 pod_uid=%s (distinct from gen1 %s)", newUID, oldUID)
 
 	// The old UID series must not have reappeared under the new pod's name.
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		series, err := findSeriesAcrossPluginPods(ctx, c, metricName, oldMatch)
 		if err != nil {
 			t.Errorf("[gen2 check] scrape error: %v", err)

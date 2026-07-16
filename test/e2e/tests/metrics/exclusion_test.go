@@ -43,7 +43,7 @@ func TestE2E_FullGPUPodIsExcludedFromMetrics(t *testing.T) {
 		"pod":       spec.Name,
 		"pod_uid":   string(pod.UID),
 	}
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		assertNeverAppears(ctx, t, c, metricName, match, 15*time.Second, c.Config.PollInterval)
 	}
 }
@@ -90,7 +90,7 @@ func TestE2E_MalformedAnnotationIsIgnoredNotFatal(t *testing.T) {
 		"pod":       spec.Name,
 		"pod_uid":   string(pod.UID),
 	}
-	for _, metricName := range bothMetricNames {
+	for _, metricName := range allMetricNames {
 		assertNeverAppears(ctx, t, c, metricName, match, 15*time.Second, c.Config.PollInterval)
 	}
 

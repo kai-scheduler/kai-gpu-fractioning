@@ -4,7 +4,6 @@ package metrics
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -42,8 +41,8 @@ func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 
 	// Each marker is unique to its own container — no overlap in any process's
 	// /proc/<pid>/cmdline, so HostPID returns exactly one match per marker.
-	marker1 := fmt.Sprintf("gpumock-%s-%s-c1", attributionTestNamespace, podName)
-	marker2 := fmt.Sprintf("gpumock-%s-%s-c2", attributionTestNamespace, podName)
+	marker1 := multiContainerMarker(attributionTestNamespace, podName, "c1")
+	marker2 := multiContainerMarker(attributionTestNamespace, podName, "c2")
 
 	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
 	if err != nil {
