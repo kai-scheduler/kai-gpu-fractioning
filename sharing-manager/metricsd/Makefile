@@ -46,7 +46,7 @@ smoke-nvml:
 	ls $$SO_DIR/libnvidia-ml.so > /dev/null 2>&1 || \
 		ln -sf $$(ls $$SO_DIR/libnvidia-ml.so.* | head -1) $$SO_DIR/libnvidia-ml.so; \
 	echo ">>> Running smoke tests (LD_LIBRARY_PATH=$$SO_DIR)"; \
-	LD_LIBRARY_PATH=$$SO_DIR CGO_ENABLED=1 \
+	LD_LIBRARY_PATH=$$SO_DIR MOCK_NVML_CONFIG=$$PWD/internal/metrics/testdata/nvml_smoke_config.yaml CGO_ENABLED=1 \
 		go test -tags nvml_smoke -v -count=1 ./internal/metrics/; \
 	STATUS=$$?; \
 	rm -rf $$SO_DIR; \
