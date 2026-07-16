@@ -23,6 +23,8 @@ import (
 // on scaffolding this e2e cluster may not have.
 const attributionTestNamespace = "metricsd-e2e"
 
+const skipNoNVMLMock = "requires nvml-mock (set E2E_NVML_MOCK=1)"
+
 const (
 	memMetricName  = "gpu_sharing_gpu_memory_used_bytes"
 	smMetricName   = "gpu_sharing_gpu_sm_utilization_percent"

@@ -21,6 +21,9 @@ import (
 // plugin attributes the pod's memory and SM-utilization series to it. See the
 // NOTE at the assertion below on why the exact memory value isn't asserted.
 func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
+	if !s.Client.Config.NVMLMock {
+		t.Skip(skipNoNVMLMock)
+	}
 	// Two nvml-mock + plugin DaemonSet rollouts (inside SetProcesses) plus a
 	// collection cycle — give it well over the single-rollout budget.
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)

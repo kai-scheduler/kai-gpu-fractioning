@@ -30,7 +30,7 @@ import (
 // utilization injection is available).
 func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip(skipNoNVMLMock)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

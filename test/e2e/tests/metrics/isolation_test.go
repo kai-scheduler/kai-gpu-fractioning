@@ -36,6 +36,9 @@ import (
 //  2. Negative: pod-a's pod_uid never appears under Device1UUID; pod-b's
 //     pod_uid never appears under Device0UUID.
 func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
+	if !s.Client.Config.NVMLMock {
+		t.Skip(skipNoNVMLMock)
+	}
 	if s.Client.Config.GPUCountPerNode < 2 {
 		t.Skipf("requires GPUCountPerNode >= 2, have %d (set E2E_GPU_COUNT_PER_NODE=2 for nvml-mock clusters)",
 			s.Client.Config.GPUCountPerNode)

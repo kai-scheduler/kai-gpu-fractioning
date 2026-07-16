@@ -31,7 +31,7 @@ import (
 //   - gpu_sharing_gpu_sm_utilization_percent = Σ(per-container sm_util), clamped at 100
 func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip(skipNoNVMLMock)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)

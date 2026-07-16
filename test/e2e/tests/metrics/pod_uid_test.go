@@ -22,6 +22,9 @@ import (
 // confirm series pruned → recreate same name (gen2, new UID) → inject PID →
 // confirm new series → assert old UID series remains absent.
 func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
+	if !s.Client.Config.NVMLMock {
+		t.Skip(skipNoNVMLMock)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 

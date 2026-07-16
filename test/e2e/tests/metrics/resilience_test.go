@@ -20,6 +20,9 @@ import (
 // right today, easy to break in a future refactor), and the deleted pod's
 // series must eventually disappear rather than leak forever.
 func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
+	if !s.Client.Config.NVMLMock {
+		t.Skip(skipNoNVMLMock)
+	}
 	// Two DaemonSet rollouts (inside SetProcesses) plus a collection cycle and
 	// the post-delete prune wait — give it well over the single-rollout budget,
 	// matching the attribution test budget.

@@ -24,7 +24,7 @@ import (
 // Requires: E2E_NVML_MOCK=1.
 func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip(skipNoNVMLMock)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -115,7 +115,7 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 // Requires: E2E_NVML_MOCK=1.
 func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
-		t.Skip("requires nvml-mock (set E2E_NVML_MOCK=1)")
+		t.Skip(skipNoNVMLMock)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

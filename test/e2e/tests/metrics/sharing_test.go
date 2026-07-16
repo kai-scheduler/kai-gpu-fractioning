@@ -38,6 +38,9 @@ import (
 // partitions memory in this system, and a single active pod may legitimately
 // report up to 100% SM utilisation while the idle co-tenant reports 0.
 func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
+	if !s.Client.Config.NVMLMock {
+		t.Skip(skipNoNVMLMock)
+	}
 	// Two DaemonSet rollouts (inside SetProcesses) plus collection cycles for
 	// two pods — match the attribution/resilience test budget.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
