@@ -159,25 +159,19 @@ func (p *Processor) apply(ev event) {
 	case upsert:
 		info, ok := ev.adapt()
 		if !ok {
-			p.log.Debug("upsert: adapter returned ok=false; container not recorded (no GPU-memory annotation or empty ID)")
 			return
 		}
 		p.writer.Upsert(info)
-		p.log.Debug("upsert: wrote container mapping",
-			"container", info.Container, "pod", info.Pod, "namespace", info.Namespace,
-			"containerID", info.ContainerID, "cgroupPath", info.CgroupPath)
 		if logEnabled {
 			p.logContainer("recorded container mapping", info)
 		}
 	case remove:
-		p.log.Debug("remove: deleting container mapping", "containerID", ev.containerID)
 		p.writer.Delete(ev.containerID)
 		if logEnabled {
 			p.log.Info("removed container from metrics mapping", "containerID", ev.containerID)
 		}
 	case replace:
 		infos := ev.syncAdapt()
-		p.log.Debug("replace: calling fsstore Replace", "containers", len(infos))
 		p.writer.Replace(infos)
 		if logEnabled {
 			for _, info := range infos {
