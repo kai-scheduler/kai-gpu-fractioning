@@ -71,7 +71,7 @@ func waitForSeriesVerbose(ctx context.Context, t *testing.T, c *cluster.Client, 
 	err := waiter.PollUntil(ctx, c.Config.PodReadyTimeout, c.Config.PollInterval,
 		fmt.Sprintf("metric series %s matching %v", metricName, match),
 		func(ctx context.Context) (bool, error) {
-			allFamilies, err := plugin.ScrapeAll(ctx, c)
+			allFamilies, err := plugin.ScrapeFrom(ctx, c, s.PluginPods)
 			if err != nil {
 				t.Logf("[poll] ScrapeAll error: %v", err)
 				return false, err
@@ -163,7 +163,7 @@ func assertNeverAppears(ctx context.Context, t *testing.T, c *cluster.Client, me
 }
 
 func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricName string, match map[string]string) ([]*dto.Metric, error) {
-	allFamilies, err := plugin.ScrapeAll(ctx, c)
+	allFamilies, err := plugin.ScrapeFrom(ctx, c, s.PluginPods)
 	if err != nil {
 		return nil, err
 	}
