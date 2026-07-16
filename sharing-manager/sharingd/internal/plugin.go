@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/containerd/nri/pkg/api"
 
@@ -257,8 +258,17 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	// NVIDIA device plugin never sets this env var; without it the container would
 	// see all GPUs or none. When the annotation is absent we leave the env var
 	// untouched (the device plugin or the image may already set it).
+	//
+	// The container may already carry NVIDIA_VISIBLE_DEVICES (e.g. set to "void"
+	// by an admission plugin precisely because the pod does not request
+	// nvidia.com/gpu). Our assignment must win: remove any existing value first so
+	// NRI applies the override instead of rejecting it as a conflict, and the
+	// container ends up with a single, correct value rather than a duplicate.
 	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations)
 	if visibleDevices != "" {
+		if containerHasEnv(ctr, injection.EnvVisibleDevices) {
+			adj.RemoveEnv(injection.EnvVisibleDevices)
+		}
 		adj.AddEnv(injection.EnvVisibleDevices, visibleDevices)
 	}
 
@@ -271,6 +281,19 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	)
 
 	return adj, nil
+}
+
+// containerHasEnv reports whether the container's spec already defines the given
+// environment variable (as "KEY=VALUE" or a bare "KEY"), so the caller can
+// replace it rather than append a duplicate.
+func containerHasEnv(ctr *api.Container, key string) bool {
+	prefix := key + "="
+	for _, kv := range ctr.GetEnv() {
+		if kv == key || strings.HasPrefix(kv, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // RemoveContainer drops the container's mapping when the runtime removes it.

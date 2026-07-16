@@ -157,14 +157,18 @@ func (d detector) logger() *slog.Logger {
 // of the injected keys (and only those) are present. A token without '=' is
 // treated as a bare key.
 func presentEnv(env []string) map[string]bool {
-	present := make(map[string]bool, 4)
+	injected := make(map[string]struct{}, len(injection.AllEnvKeys))
+	for _, k := range injection.AllEnvKeys {
+		injected[k] = struct{}{}
+	}
+
+	present := make(map[string]bool, len(injection.AllEnvKeys))
 	for _, kv := range env {
 		k := kv
 		if i := strings.IndexByte(kv, '='); i >= 0 {
 			k = kv[:i]
 		}
-		switch k {
-		case injection.EnvMPSPipeDirectory, injection.EnvGPUMemoryLimits, injection.EnvGPUMemoryRequests, injection.EnvVisibleDevices:
+		if _, ok := injected[k]; ok {
 			present[k] = true
 		}
 	}

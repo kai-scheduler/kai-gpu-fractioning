@@ -22,3 +22,14 @@ const (
 	// injection contract.
 	EnvVisibleDevices = "NVIDIA_VISIBLE_DEVICES"
 )
+
+// AllEnvKeys lists every env-var key the create hook may inject. Consumers that
+// need to recognize injected env (e.g. the audit's presentEnv) should range over
+// this single list so a newly added key is never missed in one place while being
+// added in another.
+var AllEnvKeys = []string{
+	EnvGPUMemoryRequests,
+	EnvGPUMemoryLimits,
+	EnvMPSPipeDirectory,
+	EnvVisibleDevices,
+}

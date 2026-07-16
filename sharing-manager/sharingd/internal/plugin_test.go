@@ -181,6 +181,57 @@ func TestCreateContainer(t *testing.T) {
 	}
 }
 
+func TestCreateContainerOverwritesExistingVisibleDevices(t *testing.T) {
+	p := newTestPlugin(t)
+	pod := &api.PodSandbox{
+		Name: "test-pod",
+		Annotations: map[string]string{
+			"nvidia.com/gpu-memory.container.trainer.limit": "4Gi",
+			"nvidia.com/gpus.devices":                       "GPU-assigned",
+		},
+	}
+	// The container already carries NVIDIA_VISIBLE_DEVICES (e.g. "void" injected
+	// by an admission plugin because the pod does not request nvidia.com/gpu).
+	// Our assignment must overwrite it, leaving a single value once NRI applies
+	// the adjustment.
+	ctr := &api.Container{
+		Name: "trainer",
+		Env:  []string{injection.EnvVisibleDevices + "=void"},
+	}
+
+	adj, _, err := p.CreateContainer(context.Background(), pod, ctr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if adj == nil {
+		t.Fatal("expected non-nil adjustment, got nil")
+	}
+
+	var setValues []string
+	removed := false
+	for _, kv := range adj.Env {
+		if key, marked := kv.IsMarkedForRemoval(); marked {
+			if key == injection.EnvVisibleDevices {
+				removed = true
+			}
+			continue
+		}
+		if kv.Key == injection.EnvVisibleDevices {
+			setValues = append(setValues, kv.Value)
+		}
+	}
+
+	if !removed {
+		t.Error("expected existing NVIDIA_VISIBLE_DEVICES to be removed before re-adding")
+	}
+	if len(setValues) != 1 {
+		t.Fatalf("expected exactly one NVIDIA_VISIBLE_DEVICES set entry, got %d: %v", len(setValues), setValues)
+	}
+	if setValues[0] != "GPU-assigned" {
+		t.Errorf("NVIDIA_VISIBLE_DEVICES = %q, want %q", setValues[0], "GPU-assigned")
+	}
+}
+
 func TestCreateContainer_FailOpenLogsWarning(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -310,6 +361,42 @@ func TestSynchronizeEnforcesRetroactively(t *testing.T) {
 
 	if got := fake.stoppedIDs(); !slices.Equal(got, []string{"c2"}) {
 		t.Fatalf("stopped = %v, want [c2]", got)
+	}
+}
+
+func TestSynchronizeEnforcesMissingVisibleDevices(t *testing.T) {
+	fake := &fakeStopper{}
+	p := enforcingPlugin(t, fake)
+
+	// A sharing container whose pod was assigned a GPU device but which is running
+	// without NVIDIA_VISIBLE_DEVICES: it holds all the memory injection yet cannot
+	// see the correct GPU, so retroactive enforcement must stop it.
+	pods := []*api.PodSandbox{
+		{Id: "p1", Name: "pod1", Namespace: "default", Annotations: map[string]string{
+			configuration.DefaultAnnotationPrefix + "trainer.limit": "4Gi",
+			"nvidia.com/gpus.devices":                               "GPU-abc123",
+		}},
+	}
+	containers := []*api.Container{
+		{
+			Id: "c1", Name: "trainer", PodSandboxId: "p1",
+			State: api.ContainerState_CONTAINER_RUNNING,
+			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4294"},
+			Mounts: []*api.Mount{{
+				Source:      configuration.DefaultMPSPipeDirectory,
+				Destination: configuration.DefaultMPSPipeDirectory,
+				Type:        "bind",
+			}},
+		},
+	}
+
+	if _, err := p.Synchronize(context.Background(), pods, containers); err != nil {
+		t.Fatalf("Synchronize returned error: %v", err)
+	}
+	p.Flush() // wait for async remediation
+
+	if got := fake.stoppedIDs(); !slices.Equal(got, []string{"c1"}) {
+		t.Fatalf("stopped = %v, want [c1]", got)
 	}
 }
 
