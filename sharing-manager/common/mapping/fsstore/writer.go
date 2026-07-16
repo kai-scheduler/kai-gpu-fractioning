@@ -74,14 +74,22 @@ func (w *Writer) Delete(containerID string) {
 
 // Replace reconciles the directory against the full container set delivered by an
 // NRI Synchronize: it (re)writes every current file and unlinks any stale file
-// for a container no longer present. This is what makes the shared volume
-// rebuildable — an ephemeral emptyDir is fully repopulated on
-// reconnect, so it never needs to survive a pod restart.
+// for a container no longer present.
+//
+// When containers is empty the pruning step is skipped. An empty Synchronize
+// indicates that containerd restarted and has not yet replayed existing
+// containers to the plugin (observed in k3s/k3d on plugin reconnect). Pruning
+// in that case would wipe all existing mapping files — causing a metric gap for
+// every running GPU workload — whereas skipping preserves attribution across the
+// reconnect window. A subsequent non-empty Synchronize, or individual
+// Upsert/Delete events as containers come and go, will reconcile the directory.
 func (w *Writer) Replace(containers []store.ContainerInfo) {
 	if err := os.MkdirAll(w.dir, dirPerm); err != nil {
 		w.log.Warn("failed to create mapping directory", "dir", w.dir, "error", err)
 		return
 	}
+
+	w.log.Debug("NRI Synchronize: reconciling fsstore", "containers", len(containers))
 
 	desired := make(map[string]struct{}, len(containers))
 	for _, info := range containers {
@@ -92,6 +100,10 @@ func (w *Writer) Replace(containers []store.ContainerInfo) {
 		if err := w.writeRecord(info); err != nil {
 			w.log.Warn("failed to write container mapping file during sync", "containerID", info.ContainerID, "error", err)
 		}
+	}
+
+	if len(desired) == 0 {
+		return
 	}
 
 	entries, err := os.ReadDir(w.dir)

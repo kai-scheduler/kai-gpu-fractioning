@@ -111,8 +111,8 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 	// This is the deterministic multi-device assignment in nvml-mock — in a
 	// real cluster the device plugin would assign different physical GPUs.
 	procs := []nvmlmock.Proc{
-		{UUID: nvmlmock.Device0UUID, PID: pidA, UsedGPUMemory: uint64(c.Config.GPUMemoryMiB/2) * 1024 * 1024, SMUtil: 70},
-		{UUID: nvmlmock.Device1UUID, PID: pidB, UsedGPUMemory: uint64(c.Config.GPUMemoryMiB/2) * 1024 * 1024, SMUtil: 30},
+		{UUID: nvmlmock.Device0UUID, PID: pidA, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 70},
+		{UUID: nvmlmock.Device1UUID, PID: pidB, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 30},
 	}
 	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)

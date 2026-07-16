@@ -6,3 +6,13 @@ metricsAgent:
   # Verbose logging so attribution/collection steps are observable when a
   # metrics test fails.
   logLevel: debug
+  # Mount the nvml-mock config so the baked-in libnvidia-ml.so reads the
+  # test-controlled process list via MOCK_NVML_CONFIG at nvmlInit time.
+  volumes:
+    - name: nvml-mock-cfg
+      configMap:
+        name: nvml-mock-config
+  volumeMounts:
+    - name: nvml-mock-cfg
+      mountPath: /etc/nvml-mock
+      readOnly: true

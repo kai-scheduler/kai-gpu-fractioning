@@ -2,16 +2,15 @@
 #
 # Source: https://github.com/NVIDIA/k8s-test-infra/tree/main/deployments/nvml-mock
 #
-# The mock library is written to /var/lib/nvml-mock/driver/usr/lib64/ on the host.
-# gpu-sharing-plugin mounts that directory and uses LD_LIBRARY_PATH to find it,
-# so NVML initialises successfully and returns the fake process data below.
+# Each process that loads libnvidia-ml.so gets its own NVML state driven by
+# MOCK_NVML_CONFIG:
+#   - nvml-mock DaemonSet binary: reads gpu-operator/nvml-mock-config (below)
+#   - metricsd sidecar: reads gpu-sharing-operator/nvml-mock-config (also below),
+#     mounted via metricsAgent.nvmlMockConfigMap in the GPUSharingConfig CRD.
+#     Tests call nvmlmock.SetProcesses() to update that ConfigMap and restart the
+#     metricsd pod, causing nvmlInit to re-read the new process list.
 #
-# GPU UUIDs must match MOCK_NVIDIA_VISIBLE_DEVICES injected by fake-gpu-operator:
-#   gpu-frac-a/trainer → 2881be89-519e-4b30-8d25-b9032893e6f9 (host PID 17052)
-#   gpu-frac-b/worker  → 1a1fb9fb-a857-4986-8b0f-d0d664ba0364 (host PID 17059)
-#
-# The fake process PIDs are the real host-namespace PIDs of the busybox sleep
-# processes, so the sweeper's cgroup→container matching (via /host/proc) works.
+# GPU UUIDs must match Device0UUID/Device1UUID in test/e2e/nvmlmock/nvmlmock.go.
 #
 # Usage:
 #   kubectl apply -f deploy/nvml-mock.yaml
@@ -194,30 +193,58 @@ spec:
             path: /run/nvidia
             type: DirectoryOrCreate
 ---
-# Grant the metricsd sidecar (running as the default SA in gpu-sharing-operator)
-# permission to read the nvml-mock ConfigMap. The e2e collector polls it directly
-# via the k8s API instead of using NVML — no DaemonSet restarts needed.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+# Idle nvml-mock config for the metricsd sidecar (gpu-sharing-operator namespace).
+# nvmlmock.SetProcesses() updates this ConfigMap and restarts the metricsd pod
+# so the baked-in libnvidia-ml.so re-reads it at nvmlInit time.
+# UUIDs must match Device0UUID/Device1UUID in test/e2e/nvmlmock/nvmlmock.go.
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: metricsd-nvml-mock-config-reader
-  namespace: gpu-operator
-rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    resourceNames: ["nvml-mock-config"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: metricsd-nvml-mock-config-reader
-  namespace: gpu-operator
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: metricsd-nvml-mock-config-reader
-subjects:
-  - kind: ServiceAccount
-    name: default
-    namespace: gpu-sharing-operator
+  name: nvml-mock-config
+  namespace: gpu-sharing-operator
+data:
+  config.yaml: |
+    version: "1.0"
+    system:
+      driver_version: "550.163.01"
+      nvml_version: "12.550.163.01"
+      cuda_version: "12.4"
+      cuda_version_major: 12
+      cuda_version_minor: 4
+    device_defaults:
+      name: "NVIDIA A100-SXM4-40GB"
+      brand: "nvidia"
+      architecture: "ampere"
+      compute_capability:
+        major: 8
+        minor: 0
+      memory:
+        total_bytes: 42949672960
+        reserved_bytes: 611319808
+        free_bytes: 42338353152
+        used_bytes: 0
+      utilization:
+        gpu: 0
+        memory: 0
+      compute_mode: "default"
+      persistence_mode: "enabled"
+      performance_state: "P0"
+      ecc:
+        mode_current: "enabled"
+      mig:
+        mode_current: "disabled"
+        max_gpu_instances: 7
+      processes: []
+    devices:
+      - index: 0
+        uuid: "2881be89-519e-4b30-8d25-b9032893e6f9"
+        pci:
+          bus_id: "0000:07:00.0"
+        minor_number: 0
+        processes: []
+      - index: 1
+        uuid: "1a1fb9fb-a857-4986-8b0f-d0d664ba0364"
+        pci:
+          bus_id: "0000:0F:00.0"
+        minor_number: 1
+        processes: []

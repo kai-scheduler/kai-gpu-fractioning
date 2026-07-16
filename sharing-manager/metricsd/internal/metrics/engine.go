@@ -125,13 +125,27 @@ func (s *metricsEngine) collect(ctx context.Context) {
 	// hit the resulting in-memory store rather than the filesystem.
 	pods := s.pods.Snapshot()
 	activePodUIDs := pods.ActivePodUIDs()
-	if len(pods.ActiveContainers()) == 0 {
+	activeContainers := pods.ActiveContainers()
+	s.log.DebugContext(ctx, "collect: fsstore snapshot", "activeContainers", len(activeContainers))
+	for _, c := range activeContainers {
+		s.log.DebugContext(ctx, "collect: active container",
+			"pod", c.Namespace+"/"+c.Pod, "containerID", c.ContainerID,
+			"cgroupPath", c.CgroupPath, "gpuDevices", c.GPUDevices)
+	}
+	if len(activeContainers) == 0 {
 		s.setSnapshot(nil, activePodUIDs)
 		s.log.DebugContext(ctx, "skipped GPU metrics collection because no pods are using GPUs")
 		return
 	}
 
 	snapshot := s.collector.Snapshot()
+	s.log.DebugContext(ctx, "collect: NVML snapshot",
+		"processes", len(snapshot.Processes), "deviceUUIDs", snapshot.DeviceUUIDs)
+	for _, proc := range snapshot.Processes {
+		s.log.DebugContext(ctx, "collect: NVML process",
+			"pid", proc.PID, "gpu_uuid", proc.GPUUUID, "gpu_index", proc.GPUIndex,
+			"usedMemoryBytes", proc.UsedGPUMemoryBytes, "smUtil", proc.SMUtilizationPercent)
+	}
 	if snapshot.DeviceErrors != nil {
 		// Partial result: some devices failed but others succeeded. Surface the
 		// failure but still publish what we have so healthy GPUs keep reporting.

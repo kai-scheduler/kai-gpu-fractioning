@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,15 +37,26 @@ var configYAMLTemplate string
 var configTmpl = template.Must(template.New("nvml-mock-config").Parse(configYAMLTemplate))
 
 const (
-	// Namespace / ConfigMapName identify the nvml-mock objects installed by
-	// test/e2e/hack/create-cluster.py from
-	// sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml.
-	Namespace     = "gpu-operator"
-	ConfigMapName = "nvml-mock-config"
+	// MockNamespace / MockConfigMapName identify the nvml-mock DaemonSet objects
+	// in the gpu-operator namespace — used only for HostPID resolution.
+	MockNamespace     = "gpu-operator"
+	MockConfigMapName = "nvml-mock-config"
 
 	// Container is the nvml-mock pod's container name; it runs hostPID: true and
 	// privileged, so an exec into it sees the whole node's process table.
 	Container = "nvml-mock"
+
+	// MetricsdNamespace / MetricsdConfigMapName identify the ConfigMap that the
+	// metricsd sidecar mounts as MOCK_NVML_CONFIG. SetProcesses updates this
+	// ConfigMap and restarts the metricsd pod so the production NVML collector
+	// reads the new process list at nvmlInit time.
+	MetricsdNamespace     = "gpu-sharing-operator"
+	MetricsdConfigMapName = "nvml-mock-config"
+
+	// metricsdComponent is the app.kubernetes.io/component label value on sharingd pods.
+	metricsdComponent = "sharingd"
+	// metricsdContainer is the container name of the metricsd sidecar.
+	metricsdContainer = "metricsd"
 )
 
 // Device UUIDs baked into the nvml-mock config. Callers pin a Proc to one of
@@ -58,7 +70,7 @@ const (
 type Proc struct {
 	UUID          string // must equal a device uuid below (Device0UUID/Device1UUID)
 	PID           uint32 // real host-namespace PID (from HostPID)
-	UsedGPUMemory uint64 // bytes; surfaced via nvmlDeviceGetComputeRunningProcesses
+	UsedMemoryMiB uint64 // MiB; nvml-mock stores used_memory_mib (not bytes) in its YAML config
 	// SMUtil is the per-process SM utilization percent (0–100) reported via
 	// GetProcessUtilization. Non-zero values produce a non-zero
 	// gpu_sharing_gpu_sm_utilization_percent metric.
@@ -88,10 +100,10 @@ func HostPID(ctx context.Context, c *cluster.Client, nodeName, marker string) (u
 	// read its /proc/<pid>/cmdline; grep then exits 2 (error) even though it
 	// printed the real match. Swallow that so the exec succeeds — the match-count
 	// check below is the real validation.
-	out, err := pods.ExecStdin(ctx, c, Namespace, mockPod, Container,
+	out, err := pods.ExecStdin(ctx, c, MockNamespace, mockPod, Container,
 		[]string{"sh", "-c", "grep -laF -f /dev/stdin /proc/[0-9]*/cmdline 2>/dev/null || true"}, marker)
 	if err != nil {
-		return 0, fmt.Errorf("scan /proc for marker %q in %s/%s: %w", marker, Namespace, mockPod, err)
+		return 0, fmt.Errorf("scan /proc for marker %q in %s/%s: %w", marker, MockNamespace, mockPod, err)
 	}
 
 	lines := strings.Fields(strings.TrimSpace(out))
@@ -107,11 +119,11 @@ func HostPID(ctx context.Context, c *cluster.Client, nodeName, marker string) (u
 	return uint32(pid), nil
 }
 
-// SetProcesses rewrites the nvml-mock ConfigMap for GPU model gpu (a Profiles
-// key, e.g. "a100"; "" selects DefaultGPU) so its devices carry procs. The
-// metricsd e2e collector polls this ConfigMap on each collection cycle (~5 s)
-// and picks up the change without requiring any DaemonSet restarts. Passing an
-// empty procs slice resets the mock to idle.
+// SetProcesses rewrites the metricsd nvml-mock ConfigMap (gpu-sharing-operator
+// namespace) for GPU model gpu (a Profiles key, e.g. "a100"; "" selects
+// DefaultGPU) so its devices carry procs, then restarts the metricsd pod on
+// each node so the production NVML collector re-reads the config at nvmlInit.
+// Passing an empty procs slice resets the mock to idle.
 func SetProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []Proc) error {
 	if gpu == "" {
 		gpu = DefaultGPU
@@ -122,21 +134,74 @@ func SetProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []Pr
 	}
 
 	var cm corev1.ConfigMap
-	if err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Namespace: Namespace, Name: ConfigMapName}, &cm); err != nil {
-		return fmt.Errorf("get configmap %s/%s: %w", Namespace, ConfigMapName, err)
+	if err := c.Ctrl.Get(ctx, ctrlclient.ObjectKey{Namespace: MetricsdNamespace, Name: MetricsdConfigMapName}, &cm); err != nil {
+		return fmt.Errorf("get configmap %s/%s: %w", MetricsdNamespace, MetricsdConfigMapName, err)
 	}
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
 	cm.Data["config.yaml"] = renderConfig(profile, procs)
 	if err := c.Ctrl.Update(ctx, &cm); err != nil {
-		return fmt.Errorf("update configmap %s/%s: %w", Namespace, ConfigMapName, err)
+		return fmt.Errorf("update configmap %s/%s: %w", MetricsdNamespace, MetricsdConfigMapName, err)
 	}
-	return nil
+
+	return restartMetricsd(ctx, c)
+}
+
+// restartMetricsd deletes all sharingd pods (which contain the metricsd sidecar)
+// so the DaemonSet controller recreates them with the latest ConfigMap data.
+// The new pods call nvmlInit and read MOCK_NVML_CONFIG fresh, picking up the
+// updated process list.
+func restartMetricsd(ctx context.Context, c *cluster.Client) error {
+	var podList corev1.PodList
+	if err := c.Ctrl.List(ctx, &podList,
+		ctrlclient.InNamespace(MetricsdNamespace),
+		ctrlclient.MatchingLabels{"app.kubernetes.io/component": metricsdComponent}); err != nil {
+		return fmt.Errorf("list metricsd pods: %w", err)
+	}
+
+	// Track which pods we deleted so the wait loop ignores terminating copies
+	// of the same pods — terminating pods can briefly still show cs.Ready=true
+	// during their grace period, causing a premature return before replacement
+	// pods are created.
+	deleted := make(map[string]struct{}, len(podList.Items))
+	for i := range podList.Items {
+		deleted[podList.Items[i].Name] = struct{}{}
+		if err := c.Ctrl.Delete(ctx, &podList.Items[i]); err != nil {
+			return fmt.Errorf("delete pod %s: %w", podList.Items[i].Name, err)
+		}
+	}
+
+	// Wait until at least one REPLACEMENT pod (not one we just deleted) has
+	// the metricsd container Ready.
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		var updated corev1.PodList
+		if err := c.Ctrl.List(ctx, &updated,
+			ctrlclient.InNamespace(MetricsdNamespace),
+			ctrlclient.MatchingLabels{"app.kubernetes.io/component": metricsdComponent}); err != nil {
+			continue
+		}
+		for _, pod := range updated.Items {
+			if _, wasDeleted := deleted[pod.Name]; wasDeleted {
+				continue // skip old (possibly still-terminating) pods
+			}
+			if pod.DeletionTimestamp != nil {
+				continue // skip any other terminating pods
+			}
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.Name == metricsdContainer && cs.Ready {
+					return nil
+				}
+			}
+		}
+	}
+	return fmt.Errorf("timed out waiting for metricsd pod to become ready after restart")
 }
 
 func podOnNode(ctx context.Context, c *cluster.Client, nodeName string) (string, error) {
-	mockPods, err := pods.ListByLabel(ctx, c, Namespace, "app=nvml-mock")
+	mockPods, err := pods.ListByLabel(ctx, c, MockNamespace, "app=nvml-mock")
 	if err != nil {
 		return "", fmt.Errorf("list nvml-mock pods: %w", err)
 	}

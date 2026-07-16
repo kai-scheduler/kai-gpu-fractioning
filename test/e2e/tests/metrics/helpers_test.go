@@ -5,6 +5,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,58 @@ func waitForSeries(ctx context.Context, c *cluster.Client, metricName string, ma
 			}
 			if len(series) > 0 {
 				found = series[0]
+				return true, nil
+			}
+			return false, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+// waitForSeriesVerbose is like waitForSeries but logs, on every poll, ALL
+// series found for metricName across every pod (regardless of label match).
+// This surfaces label mismatches and attribution gaps while waiting, rather
+// than only revealing them on timeout via debugScrapeAll.
+func waitForSeriesVerbose(ctx context.Context, t *testing.T, c *cluster.Client, metricName string, match map[string]string) (*dto.Metric, error) {
+	t.Helper()
+	var found *dto.Metric
+
+	err := waiter.PollUntil(ctx, c.Config.PodReadyTimeout, c.Config.PollInterval,
+		fmt.Sprintf("metric series %s matching %v", metricName, match),
+		func(ctx context.Context) (bool, error) {
+			allFamilies, err := plugin.ScrapeAll(ctx, c)
+			if err != nil {
+				t.Logf("[poll] ScrapeAll error: %v", err)
+				return false, err
+			}
+
+			var anyForMetric bool
+			for podName, families := range allFamilies {
+				fam, ok := families[metricName]
+				if !ok {
+					continue
+				}
+				for _, m := range fam.GetMetric() {
+					anyForMetric = true
+					var lbls []string
+					for _, lp := range m.GetLabel() {
+						lbls = append(lbls, lp.GetName()+"="+lp.GetValue())
+					}
+					t.Logf("[poll] pod %s: %s{%s}=%v", podName, metricName, strings.Join(lbls, ","), m.GetGauge().GetValue())
+				}
+			}
+			if !anyForMetric {
+				t.Logf("[poll] no %s series found across all pods", metricName)
+			}
+
+			var matched []*dto.Metric
+			for _, families := range allFamilies {
+				matched = append(matched, metrics.FindSeries(families, metricName, match)...)
+			}
+			if len(matched) > 0 {
+				found = matched[0]
 				return true, nil
 			}
 			return false, nil
@@ -114,6 +167,51 @@ func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricNa
 	}
 	return out, nil
 }
+
+// debugScrapeAll scrapes every metricsd pod and logs all gpu_sharing_ metric
+// families and their label sets. Call after SetProcesses to diagnose attribution
+// failures: the output shows whether metricsd is reachable, whether it has any
+// gpu_sharing_ series at all, and what labels those series carry.
+func debugScrapeAll(ctx context.Context, t *testing.T, c *cluster.Client) {
+	t.Helper()
+	allFamilies, err := plugin.ScrapeAll(ctx, c)
+	if err != nil {
+		t.Logf("[debug] ScrapeAll error: %v", err)
+		return
+	}
+	if len(allFamilies) == 0 {
+		t.Logf("[debug] ScrapeAll returned 0 pods")
+		return
+	}
+	for podName, families := range allFamilies {
+		totalSeries := 0
+		for _, fam := range families {
+			totalSeries += len(fam.GetMetric())
+		}
+		var gpuFamilies []string
+		for name, fam := range families {
+			if !strings.HasPrefix(name, "gpu_sharing") {
+				continue
+			}
+			for _, m := range fam.GetMetric() {
+				var labels []string
+				for _, lp := range m.GetLabel() {
+					labels = append(labels, lp.GetName()+"="+lp.GetValue())
+				}
+				gpuFamilies = append(gpuFamilies, fmt.Sprintf("  %s{%s}=%v", name, strings.Join(labels, ","), m.GetGauge().GetValue()))
+			}
+		}
+		if len(gpuFamilies) == 0 {
+			t.Logf("[debug] pod %s: no gpu_sharing_ series (total series in /metrics: %d)", podName, totalSeries)
+		} else {
+			t.Logf("[debug] pod %s: %d gpu_sharing_ series (total: %d)", podName, len(gpuFamilies), totalSeries)
+			for _, s := range gpuFamilies {
+				t.Log(s)
+			}
+		}
+	}
+}
+
 
 // pluginPodRestartCounts returns each gpu-sharing-plugin pod's total
 // container restart count, keyed by pod name. A crash (e.g. a panic from a

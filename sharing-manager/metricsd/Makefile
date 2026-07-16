@@ -5,9 +5,7 @@ PLATFORMS ?= linux/amd64,linux/arm64
 BIN_DIR ?= bin
 CGO_ENABLED ?= 1
 DOCKER ?= docker
-# GO_TAGS selects optional build tags. Empty = production. "e2e" compiles the
-# fake-GPU detection (internal/plugin/adapter_fakegpu_e2e.go) for testing on
-# GPU-less clusters. Passed to both `go build` and the docker image build.
+# GO_TAGS selects optional build tags for `go build` and docker image builds.
 GO_TAGS ?=
 
 VERSION ?= $(TAG)
@@ -19,18 +17,13 @@ NVML_MOCK_IMAGE  ?= ghcr.io/nvidia/nvml-mock:latest
 # Override if extracting the .so from the image into a local directory.
 NVML_MOCK_SO_DIR ?= /var/lib/nvml-mock/driver/usr/lib64
 
-.PHONY: fmt test test-e2e smoke-nvml build clean docker-build docker-buildx
+.PHONY: fmt test smoke-nvml build clean docker-build docker-buildx
 
 fmt:
 	gofmt -w ./cmd ./internal
 
 test:
 	go test -v ./...
-
-# Runs the unit tests with the fake-GPU detection compiled in (the e2e-tagged
-# tests in internal/plugin). Does not require a cluster.
-test-e2e:
-	go test -tags e2e -v ./...
 
 # Pulls the nvml-mock image, extracts libnvidia-ml.so into a temp directory,
 # runs the production NVML collector smoke tests against it, then cleans up.

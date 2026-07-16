@@ -114,8 +114,8 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	// choose the assignment directly rather than relying on a device plugin.
 	const gpuUUID = nvmlmock.Device0UUID
 	procs := []nvmlmock.Proc{
-		{UUID: gpuUUID, PID: pidA, UsedGPUMemory: uint64(c.Config.GPUMemoryMiB/2) * 1024 * 1024, SMUtil: 60},
-		{UUID: gpuUUID, PID: pidB, UsedGPUMemory: uint64(c.Config.GPUMemoryMiB/2) * 1024 * 1024, SMUtil: 40},
+		{UUID: gpuUUID, PID: pidA, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 60},
+		{UUID: gpuUUID, PID: pidB, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 40},
 	}
 	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)

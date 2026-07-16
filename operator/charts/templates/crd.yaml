@@ -122,6 +122,18 @@ spec:
                         pod. Defaults to "nvidia" when unset. Set to "" to use the
                         node default (required on clusters without the nvidia runtime).
                       type: string
+                    volumes:
+                      description: volumes are additional volumes to add to the metricsd pod.
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    volumeMounts:
+                      description: volumeMounts are additional volume mounts to add to the metricsd container.
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                 mpsDaemon:
                   description: mpsDaemon configures the MPS daemon supervisor (mpsd).
                   type: object

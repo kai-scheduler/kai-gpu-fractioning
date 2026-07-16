@@ -17,7 +17,7 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
 # Always compile with e2e tag: this Dockerfile is the e2e variant.
-ARG GO_TAGS=e2e
+ARG GO_TAGS=
 
 WORKDIR /workspace
 
@@ -48,6 +48,9 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 # Point the dynamic loader at the baked-in mock library.
 ENV LD_LIBRARY_PATH=/usr/lib/nvml-mock
+# Default MOCK_NVML_CONFIG path; overridden at runtime by the ConfigMap mount
+# injected via metricsAgent.nvmlMockConfigMap in the GPUSharingConfig CRD.
+ENV MOCK_NVML_CONFIG=/etc/nvml-mock/config.yaml
 
 COPY --from=build /out/metricsd /usr/local/bin/metricsd
 COPY --from=nvml-mock /libnvidia-ml.so.1 /usr/lib/nvml-mock/libnvidia-ml.so.1

@@ -294,9 +294,10 @@ def install_nvml_mock(config: ClusterConfig) -> None:
     # test/e2e/hack -> repo root (hack, e2e, test, <root>).
     manifest = Path(__file__).resolve().parents[3] / NVML_MOCK_MANIFEST
 
-    # The manifest is namespaced to gpu-operator; create it up-front so apply
-    # doesn't race the namespace. _ok_code tolerates AlreadyExists.
+    # The manifest spans gpu-operator and gpu-sharing-operator namespaces; create
+    # both up-front so apply doesn't race. _ok_code tolerates AlreadyExists.
     sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
+    sh.kubectl("create", "namespace", "gpu-sharing-operator", _ok_code=[0, 1])
     sh.kubectl("apply", "-f", str(manifest))
 
     # Guard against a silent no-op: a DaemonSet whose nodeSelector matches zero

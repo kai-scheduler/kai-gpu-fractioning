@@ -27,7 +27,7 @@ devices:
 {{- if .Procs}}
 {{- range .Procs}}
       - pid: {{.PID}}
-        used_gpu_memory: {{.UsedGPUMemory}}
+        used_memory_mib: {{.UsedMemoryMiB}}
         sm_util: {{.SMUtil}}
         type: C
 {{- end}}

@@ -64,15 +64,20 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve host PID for %s/%s: %v", spec.Namespace, spec.Name, err)
 	}
+	t.Logf("resolved host PID for %s/%s on node %s: pid=%d", spec.Namespace, spec.Name, targetNode, pid)
 
 	const (
-		gpuUUID   = nvmlmock.Device0UUID
-		wantBytes = 8 * 1024 * 1024 * 1024 // 8 GiB
+		gpuUUID       = nvmlmock.Device0UUID
+		wantMemoryMiB = uint64(8 * 1024) // 8 GiB in MiB
+		wantBytes     = wantMemoryMiB * 1024 * 1024
 	)
-	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, UsedGPUMemory: wantBytes}}
+	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, UsedMemoryMiB: wantMemoryMiB}}
+	t.Logf("configuring nvml-mock: pid=%d gpu_uuid=%s used_memory_mib=%d", pid, gpuUUID, wantMemoryMiB)
 	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
+	t.Log("nvml-mock configured and metricsd restarted; scraping initial metrics state:")
+	debugScrapeAll(ctx, t, c)
 	t.Cleanup(func() {
 		// Reset the mock to idle so a stale process entry (pointing at a PID that
 		// no longer exists once the pod is gone) doesn't leak into later tests.
@@ -87,20 +92,21 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 		"pod_uid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
+	t.Logf("waiting for series %s with labels %v", memMetricName, matchLabels)
 
-	// Assert the pod is attributed on the GPU whose UUID we pinned in nvml-mock:
-	// the memory series appears with this pod's namespace/pod/pod_uid and the
-	// pinned gpu_uuid.
-	//
-	// NOTE: this asserts attribution (presence), not the exact byte value. The
-	// per-process used_gpu_memory we set in nvml-mock (wantBytes) is not surfaced
-	// through NVML GetComputeRunningProcesses by the current nvml-mock image, so
-	// the exported gauge is correctly attributed to the pod but reads 0 — the
-	// value isn't reproducible end-to-end here. See TODO(nvml-mock memory
-	// fidelity) / tracking ticket. Once the mock reports per-process memory,
-	// restore the exact-value assertion (got == wantBytes via metrics.GaugeValue).
-	if _, err := waitForSeries(ctx, c, memMetricName, matchLabels); err != nil {
+	// Assert the pod is attributed on the GPU whose UUID we pinned in nvml-mock,
+	// and that the reported memory matches what we configured (used_memory_mib →
+	// GetComputeRunningProcesses returns MiB*1024*1024 bytes).
+	// waitForSeriesVerbose logs every series found for this metric on each poll
+	// so label mismatches are visible during the wait, not only on timeout.
+	m, err := waitForSeriesVerbose(ctx, t, c, memMetricName, matchLabels)
+	if err != nil {
+		t.Logf("series not found; dumping current metrics state for diagnosis:")
+		debugScrapeAll(ctx, t, c)
 		t.Fatalf("%s: %v", memMetricName, err)
+	}
+	if got := uint64(m.GetGauge().GetValue()); got != wantBytes {
+		t.Errorf("%s: want %d bytes, got %d", memMetricName, wantBytes, got)
 	}
 
 	// The same attributed process also produces the SM-utilization series for
