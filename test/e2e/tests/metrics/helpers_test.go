@@ -71,7 +71,7 @@ func waitForSeriesVerbose(ctx context.Context, t *testing.T, c *cluster.Client, 
 	err := waiter.PollUntil(ctx, c.Config.PodReadyTimeout, c.Config.PollInterval,
 		fmt.Sprintf("metric series %s matching %v", metricName, match),
 		func(ctx context.Context) (bool, error) {
-			allFamilies, err := plugin.ScrapeFrom(ctx, c, s.PluginPods)
+			allFamilies, err := scrapeFreshFamilies(ctx, c)
 			if err != nil {
 				t.Logf("[poll] ScrapeAll error: %v", err)
 				return false, err
@@ -162,8 +162,34 @@ func assertNeverAppears(ctx context.Context, t *testing.T, c *cluster.Client, me
 	}
 }
 
-func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricName string, match map[string]string) ([]*dto.Metric, error) {
+// scrapeFreshFamilies scrapes /metrics from the cached sharingd pods. If all
+// cached pods are unreachable (empty result — e.g. pods were replaced by a
+// nvmlmock.SetProcesses restart and s.PluginPods is stale), it re-lists pods
+// once, updates s.PluginPods for subsequent polls, and retries. This keeps
+// the happy-path poll-loop free of ListByLabel calls while self-healing after
+// pod restarts without overloading the API server with per-poll list requests.
+func scrapeFreshFamilies(ctx context.Context, c *cluster.Client) (map[string]map[string]*dto.MetricFamily, error) {
 	allFamilies, err := plugin.ScrapeFrom(ctx, c, s.PluginPods)
+	if err != nil {
+		return nil, err
+	}
+	// len == 0 means every cached pod's port-forward failed: the list is stale.
+	// Re-list once and update the cache so subsequent polls skip this branch.
+	if len(allFamilies) == 0 && len(s.PluginPods) > 0 {
+		freshPods, listErr := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
+		if listErr == nil && len(freshPods) > 0 {
+			s.PluginPods = freshPods
+			allFamilies, err = plugin.ScrapeFrom(ctx, c, freshPods)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return allFamilies, nil
+}
+
+func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricName string, match map[string]string) ([]*dto.Metric, error) {
+	allFamilies, err := scrapeFreshFamilies(ctx, c)
 	if err != nil {
 		return nil, err
 	}

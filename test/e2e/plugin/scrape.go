@@ -37,22 +37,15 @@ func ScrapeAll(ctx context.Context, c *cluster.Client) (map[string]map[string]*d
 // from the API server. Pass the pod list cached at suite setup to avoid
 // repeated pod-list API calls in tight poll loops.
 //
-// If none of the provided pods are reachable (port-forward fails for all),
-// this falls back to ScrapeAll with a live pod listing. This self-heals when
-// nvmlmock.SetProcesses restarts the sharingd pods and the caller's cached
-// pod list becomes stale — new pods have new names that the old objects don't
-// know about, so a fresh listing is needed to reach them.
+// If a pod's port-forward or scrape fails it is silently skipped. Callers that
+// need stale-pod healing should use the scrapeFreshFamilies helper in the test
+// package, which re-lists once when all cached pods are unreachable and updates
+// the suite's pod cache for subsequent polls.
 func ScrapeFrom(ctx context.Context, c *cluster.Client, sharingdPods []corev1.Pod) (map[string]map[string]*dto.MetricFamily, error) {
 	if len(sharingdPods) == 0 {
 		return nil, fmt.Errorf("no sharingd pods provided")
 	}
-	result := scrapeFromPods(ctx, c, sharingdPods)
-	if len(result) > 0 {
-		return result, nil
-	}
-	// No pod was reachable — the cached list is stale (pods were replaced by
-	// nvmlmock.SetProcesses or a DaemonSet rollout). Fall back to a live listing.
-	return ScrapeAll(ctx, c)
+	return scrapeFromPods(ctx, c, sharingdPods), nil
 }
 
 // scrapeFromPods port-forwards to each pod and scrapes /metrics. Pods that
