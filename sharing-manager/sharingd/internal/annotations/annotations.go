@@ -48,6 +48,28 @@ func (c GPUMemoryConfig) IsEmpty() bool {
 	return c.Request == "" && c.Limit == ""
 }
 
+// ApplyDefaults fills a missing request or limit from the other so a container
+// that specified only one of the two ends up with both, and with request ==
+// limit. This makes enforcement symmetric with the whole-GPU path:
+//
+//   - request only: the limit defaults to the request, so the memory cap
+//     (NVIDIA_GPU_MEMORY_LIMITS) is enforced at the requested size instead of
+//     being unbounded.
+//   - limit only: the request defaults to the limit, so the requested size
+//     (NVIDIA_GPU_MEMORY_REQUESTS, used for metrics/fraction accounting) is
+//     populated.
+//
+// A config with neither set (IsEmpty) is returned unchanged.
+func (c GPUMemoryConfig) ApplyDefaults() GPUMemoryConfig {
+	if c.Request == "" {
+		c.Request = c.Limit
+	}
+	if c.Limit == "" {
+		c.Limit = c.Request
+	}
+	return c
+}
+
 // EffectiveMemoryMB returns the container's allocated GPU memory in decimal MB:
 // the limit if set, otherwise the request, otherwise 0. Request and Limit are
 // already decimal-MB strings (see parseToDecimalMB), so this just parses one back

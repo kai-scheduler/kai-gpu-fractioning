@@ -236,6 +236,11 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 		return nil, nil
 	}
 
+	// A container that specified only a request or only a limit gets the missing
+	// value defaulted from the other (request == limit), so the memory limit is
+	// always enforced and the request is always populated for metrics.
+	gpuMemoryCfg = gpuMemoryCfg.ApplyDefaults()
+
 	adj := &api.ContainerAdjustment{}
 
 	if gpuMemoryCfg.Request != "" {

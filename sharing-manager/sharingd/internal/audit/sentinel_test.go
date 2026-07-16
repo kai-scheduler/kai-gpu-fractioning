@@ -24,7 +24,7 @@ func TestAuditStopsOnlyViolations(t *testing.T) {
 	containers := []*api.Container{
 		{ // injected → ok
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
-			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEnv(true, false), Mounts: []*api.Mount{mpsMount()},
+			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEqualEnv(), Mounts: []*api.Mount{mpsMount()},
 		},
 		{ // uninjected → violator
 			Id: "c2", Name: "trainer", PodSandboxId: "p2",
@@ -45,7 +45,7 @@ func TestAuditNoViolationsNoStops(t *testing.T) {
 	pods := []*api.PodSandbox{sharingPod("p1", "pod1", "trainer", "4Gi", "")}
 	containers := []*api.Container{{
 		Id: "c1", Name: "trainer", PodSandboxId: "p1",
-		State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEnv(true, false), Mounts: []*api.Mount{mpsMount()},
+		State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEqualEnv(), Mounts: []*api.Mount{mpsMount()},
 	}}
 
 	e.Audit(context.Background(), pods, containers)
