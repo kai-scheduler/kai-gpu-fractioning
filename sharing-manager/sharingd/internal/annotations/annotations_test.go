@@ -267,3 +267,26 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyDefaults(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          GPUMemoryConfig
+		wantRequest string
+		wantLimit   string
+	}{
+		{"both set unchanged", GPUMemoryConfig{Request: "3221", Limit: "6442"}, "3221", "6442"},
+		{"request only defaults limit", GPUMemoryConfig{Request: "4294"}, "4294", "4294"},
+		{"limit only defaults request", GPUMemoryConfig{Limit: "6442"}, "6442", "6442"},
+		{"empty stays empty", GPUMemoryConfig{}, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.in.ApplyDefaults()
+			if got.Request != tt.wantRequest || got.Limit != tt.wantLimit {
+				t.Errorf("ApplyDefaults(%+v) = {Request:%q Limit:%q}, want {Request:%q Limit:%q}",
+					tt.in, got.Request, got.Limit, tt.wantRequest, tt.wantLimit)
+			}
+		})
+	}
+}

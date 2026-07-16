@@ -38,23 +38,25 @@ func TestCreateContainer(t *testing.T) {
 			expectedMount:   true,
 		},
 		{
-			name: "only limit",
+			name: "only limit defaults request to the limit",
 			annotations: map[string]string{
 				"nvidia.com/gpu-memory.container.main.limit": "4Gi",
 			},
 			containerName:   "main",
 			expectedNil:     false,
-			expectedEnvKeys: []string{injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "4294", injection.EnvGPUMemoryLimits: "4294"},
 			expectedMount:   true,
 		},
 		{
-			name: "only request",
+			name: "only request defaults limit to the request",
 			annotations: map[string]string{
 				"nvidia.com/gpu-memory.container.worker.request": "1Gi",
 			},
 			containerName:   "worker",
 			expectedNil:     false,
-			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvMPSPipeDirectory},
+			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "1073", injection.EnvGPUMemoryLimits: "1073"},
 			expectedMount:   true,
 		},
 		{
@@ -331,10 +333,10 @@ func syncSnapshot() ([]*api.PodSandbox, []*api.Container) {
 		}},
 	}
 	containers := []*api.Container{
-		{ // injected → not a violation
+		{ // injected → not a violation (limit-only annotation ⇒ request env defaulted too)
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
 			State: api.ContainerState_CONTAINER_RUNNING,
-			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4294"},
+			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4294", injection.EnvGPUMemoryRequests + "=4294"},
 			Mounts: []*api.Mount{{
 				Source:      configuration.DefaultMPSPipeDirectory,
 				Destination: configuration.DefaultMPSPipeDirectory,

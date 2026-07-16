@@ -100,6 +100,9 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 		// Not a GPU-sharing container — never touch it.
 		return violator{}, false
 	}
+	// Mirror buildAdjustment: a request-only or limit-only container has the
+	// missing value defaulted from the other, so both env vars are expected.
+	cfg = cfg.ApplyDefaults()
 
 	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations())
 	missing := d.missingInjection(cfg, visibleDevices, container)
