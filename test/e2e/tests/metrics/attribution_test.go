@@ -104,7 +104,8 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	// so label mismatches are visible during the wait, not only on timeout.
 	m, err := waitForSeriesVerbose(ctx, t, c, memMetricName, matchLabels)
 	if err != nil {
-		t.Logf("series not found; dumping current metrics state for diagnosis:")
+		t.Logf("series not found; dumping cluster state for diagnosis:")
+		debugClusterState(ctx, t, c, targetNode)
 		debugScrapeAll(ctx, t, c)
 		t.Fatalf("%s: %v", memMetricName, err)
 	}
