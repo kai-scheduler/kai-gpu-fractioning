@@ -172,8 +172,12 @@ func restartMetricsd(ctx context.Context, c *cluster.Client) error {
 		}
 	}
 
-	// Wait until at least one REPLACEMENT pod (not one we just deleted) has
-	// the metricsd container Ready.
+	// Wait until ALL replacement pods (one per deleted pod) have their metricsd
+	// container Ready. Waiting for only one is insufficient: NRI Synchronize fires
+	// after a pod reports Ready, so a pod that just became Ready may not have
+	// attributed any pre-existing containers yet. Waiting for all N pods ensures
+	// the full DaemonSet is up before callers start polling metrics.
+	want := len(deleted)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
@@ -183,6 +187,7 @@ func restartMetricsd(ctx context.Context, c *cluster.Client) error {
 			ctrlclient.MatchingLabels{"app.kubernetes.io/component": metricsdComponent}); err != nil {
 			continue
 		}
+		ready := 0
 		for _, pod := range updated.Items {
 			if _, wasDeleted := deleted[pod.Name]; wasDeleted {
 				continue // skip old (possibly still-terminating) pods
@@ -192,12 +197,16 @@ func restartMetricsd(ctx context.Context, c *cluster.Client) error {
 			}
 			for _, cs := range pod.Status.ContainerStatuses {
 				if cs.Name == metricsdContainer && cs.Ready {
-					return nil
+					ready++
+					break
 				}
 			}
 		}
+		if ready >= want {
+			return nil
+		}
 	}
-	return fmt.Errorf("timed out waiting for metricsd pod to become ready after restart")
+	return fmt.Errorf("timed out waiting for %d metricsd pod(s) to become ready after restart", want)
 }
 
 func podOnNode(ctx context.Context, c *cluster.Client, nodeName string) (string, error) {
