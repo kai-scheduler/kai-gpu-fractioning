@@ -41,7 +41,7 @@ RUN find / -name "libnvidia-ml.so*" \
     -not -path "*/proc/*" -not -path "*/sys/*" -not -path "*/host/*" \
     2>/dev/null | head -1 | xargs -I{} cp {} /libnvidia-ml.so.1
 
-FROM gcr.io/distroless/base-debian12
+FROM gcr.io/distroless/cc-debian12
 
 USER 0:0
 ENV NVIDIA_VISIBLE_DEVICES=all
