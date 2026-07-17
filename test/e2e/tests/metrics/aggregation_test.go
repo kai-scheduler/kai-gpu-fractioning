@@ -140,6 +140,9 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 			t.Errorf("reset nvml-mock: %v", err)
 		}
 	})
+	t.Logf("target node: %s, pids: a/c1=%d a/c2=%d b/c1=%d b/c2=%d b/c3=%d", targetNode, pidA1, pidA2, pidB1, pidB2, pidB3)
+	t.Log("nvml-mock configured and metricsd restarted; initial metrics state:")
+	debugScrapeAll(ctx, t, c)
 
 	matchA := map[string]string{
 		"namespace": attributionTestNamespace,
@@ -162,10 +165,20 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	// always returns usedGpuMemory=0 regardless of the configured UsedMemoryMiB,
 	// so exact-byte assertions would always fail. Exact-value coverage is deferred
 	// until the mock gains per-process memory fidelity (see attribution_test.go NOTE).
-	if _, err := waitForSeries(ctx, c, memMetricName, matchA); err != nil {
+	dumpedState := false
+	if _, err := waitForSeriesVerbose(ctx, t, c, memMetricName, matchA); err != nil {
+		t.Logf("series not found; dumping cluster state for diagnosis:")
+		debugClusterState(ctx, t, c, targetNode)
+		debugScrapeAll(ctx, t, c)
+		dumpedState = true
 		t.Errorf("%s pod-a: series never appeared: %v", memMetricName, err)
 	}
-	if _, err := waitForSeries(ctx, c, memMetricName, matchB); err != nil {
+	if _, err := waitForSeriesVerbose(ctx, t, c, memMetricName, matchB); err != nil {
+		if !dumpedState {
+			t.Logf("series not found; dumping cluster state for diagnosis:")
+			debugClusterState(ctx, t, c, targetNode)
+			debugScrapeAll(ctx, t, c)
+		}
 		t.Errorf("%s pod-b: series never appeared: %v", memMetricName, err)
 	}
 

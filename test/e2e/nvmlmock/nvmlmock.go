@@ -10,8 +10,10 @@
 //  2. rewrites the nvml-mock ConfigMap so that PID appears as a GPU process on
 //     a chosen device UUID (SetProcesses).
 //
-// The e2e collector picks up the new config within one collection interval
-// (~5 s) without requiring any DaemonSet restarts.
+// Changing the ConfigMap requires metricsd pod restarts to take effect:
+// the baked-in libnvidia-ml.so reads MOCK_NVML_CONFIG at nvmlInit() time,
+// not on each NVML API call, so a new pod is required for the updated
+// config to be loaded. SetProcesses calls restartMetricsd automatically.
 package nvmlmock
 
 import (
