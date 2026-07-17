@@ -14,6 +14,7 @@ import (
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/waiter"
 )
@@ -266,4 +267,24 @@ func pluginPodRestartCounts(ctx context.Context, c *cluster.Client) (map[string]
 		counts[pod.Name] = total
 	}
 	return counts, nil
+}
+
+// setProcesses wraps nvmlmock.SetProcesses and immediately refreshes
+// s.PluginPods to the current sharingd pods after the restart. Without this,
+// s.PluginPods still points to the terminating pre-restart pods. In CI those
+// pods stay reachable long enough that scrapeFromPods returns non-empty results
+// (bypassing the automatic re-list) and every poll sees 0 gpu_sharing_ series
+// until the old pods finally terminate. Cleanup calls that use
+// context.Background() should call nvmlmock.SetProcesses directly — they run
+// after assertions and do not need a fresh pod cache.
+func setProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []nvmlmock.Proc) error {
+	if err := nvmlmock.SetProcesses(ctx, c, gpu, procs); err != nil {
+		return err
+	}
+	freshPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
+	if err != nil {
+		return fmt.Errorf("list sharingd pods after restart: %w", err)
+	}
+	s.PluginPods = freshPods
+	return nil
 }

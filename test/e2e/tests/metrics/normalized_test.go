@@ -75,7 +75,7 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 	}
 
 	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, SMUtil: wantSMUtil}}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock: %v", err)
 	}
 	t.Cleanup(func() {
@@ -166,7 +166,7 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	}
 
 	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, SMUtil: wantSMUtil}}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock: %v", err)
 	}
 	t.Cleanup(func() {

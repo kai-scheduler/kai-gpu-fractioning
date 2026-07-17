@@ -132,7 +132,7 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 		{UUID: gpuUUID, PID: pidB2, UsedMemoryMiB: memB2MiB, SMUtil: smB2},
 		{UUID: gpuUUID, PID: pidB3, UsedMemoryMiB: memB3MiB, SMUtil: smB3},
 	}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock: %v", err)
 	}
 	t.Cleanup(func() {

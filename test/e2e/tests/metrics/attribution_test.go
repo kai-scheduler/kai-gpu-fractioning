@@ -76,7 +76,7 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	)
 	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, UsedMemoryMiB: wantMemoryMiB}}
 	t.Logf("configuring nvml-mock: pid=%d gpu_uuid=%s used_memory_mib=%d", pid, gpuUUID, wantMemoryMiB)
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
 	t.Log("nvml-mock configured and metricsd restarted; scraping initial metrics state:")

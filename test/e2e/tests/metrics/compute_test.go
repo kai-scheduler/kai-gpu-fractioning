@@ -88,7 +88,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	)
 
 	procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, SMUtil: wantSMUtil}}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock: %v", err)
 	}
 	t.Cleanup(func() {

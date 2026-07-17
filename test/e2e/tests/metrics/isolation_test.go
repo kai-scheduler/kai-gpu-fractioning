@@ -117,7 +117,7 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 		{UUID: nvmlmock.Device0UUID, PID: pidA, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 70},
 		{UUID: nvmlmock.Device1UUID, PID: pidB, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 30},
 	}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
 	t.Cleanup(func() {

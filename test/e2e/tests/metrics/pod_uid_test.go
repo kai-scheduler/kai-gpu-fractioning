@@ -69,7 +69,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 			t.Fatalf("[%s] resolve host PID: %v", genLabel, err)
 		}
 		procs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid}}
-		if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+		if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 			t.Fatalf("[%s] configure nvml-mock: %v", genLabel, err)
 		}
 
@@ -101,7 +101,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 	if err := workload.Delete(ctx, c, attributionTestNamespace, podName); err != nil {
 		t.Fatalf("delete gen1 pod: %v", err)
 	}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, nil); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, nil); err != nil {
 		t.Fatalf("reset nvml-mock after gen1: %v", err)
 	}
 

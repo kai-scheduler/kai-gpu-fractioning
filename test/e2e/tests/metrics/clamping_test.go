@@ -115,7 +115,7 @@ func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 		{UUID: nvmlmock.Device0UUID, PID: pid1, SMUtil: 70},
 		{UUID: nvmlmock.Device0UUID, PID: pid2, SMUtil: 60},
 	}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
 	t.Cleanup(func() {

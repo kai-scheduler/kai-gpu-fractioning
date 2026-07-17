@@ -94,7 +94,7 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	// PID in nvml-mock with SMUtil=0 — series must appear with value 0.
 	// SMUtil defaults to zero on a Proc with no SMUtil set.
 	idleProcs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid}}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, idleProcs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, idleProcs); err != nil {
 		t.Fatalf("configure nvml-mock (idle): %v", err)
 	}
 	t.Cleanup(func() {
@@ -131,7 +131,7 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	// and there must be exactly one series per metric family for this pod at any
 	// moment (no duplicate from a stale idle placeholder).
 	activeProcs := []nvmlmock.Proc{{UUID: gpuUUID, PID: pid, SMUtil: activeSMUtil}}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, activeProcs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, activeProcs); err != nil {
 		t.Fatalf("configure nvml-mock (active): %v", err)
 	}
 

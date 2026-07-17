@@ -68,7 +68,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 		t.Fatalf("resolve host PID for %s/%s: %v", spec.Namespace, spec.Name, err)
 	}
 	procs := []nvmlmock.Proc{{UUID: nvmlmock.Device0UUID, PID: pid, UsedMemoryMiB: 8 * 1024}}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
 	t.Cleanup(func() {

@@ -120,7 +120,7 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 		{UUID: gpuUUID, PID: pidA, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 60},
 		{UUID: gpuUUID, PID: pidB, UsedMemoryMiB: uint64(c.Config.GPUMemoryMiB / 2), SMUtil: 40},
 	}
-	if err := nvmlmock.SetProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
+	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
 	t.Cleanup(func() {
