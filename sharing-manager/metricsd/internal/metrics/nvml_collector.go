@@ -83,8 +83,10 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 	count, ret := nvml.DeviceGetCount()
 	if !errors.Is(ret, nvml.SUCCESS) {
 		// Total failure — keep previous snapshot rather than blanking it out.
+		c.log.Debug("NVML DeviceGetCount failed; retaining previous snapshot", "nvml_return", ret)
 		return
 	}
+	c.log.Debug("NVML DeviceGetCount", "count", count)
 
 	joined := map[gpuProcessKey]GPUProcessMetric{}
 	deviceUUIDs := map[int]string{}
@@ -257,6 +259,7 @@ func cloneGPUProcessSnapshot(in GPUProcessSnapshot) GPUProcessSnapshot {
 // NVML is always present, so the fallback path is exercised only in CI.
 func newCollector(ctx context.Context, interval time.Duration, logger *slog.Logger) collector {
 	if c, err := newNVMLProcessCollector(interval, logger); err == nil {
+		logger.InfoContext(ctx, "NVML initialized; GPU process metrics enabled")
 		return c
 	} else {
 		logger.WarnContext(ctx, "NVML unavailable; GPU process metrics will be zero (pod labels still reported)", "error", err)
