@@ -8,9 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"os"
-
-	"github.com/NVIDIA/go-nvml/pkg/dl"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
 
@@ -31,33 +28,6 @@ type gpuProcessKey struct {
 }
 
 func newNVMLProcessCollector(interval time.Duration, logger *slog.Logger) (*nvmlProcessCollector, error) {
-	// Diagnostic: log the file permissions of the library before dlopen so we
-	// can verify the chmod 755 in the Dockerfile actually reached the runtime image.
-	const nvmlLib = "/usr/lib/nvml-mock/libnvidia-ml.so.1"
-	if fi, err := os.Stat(nvmlLib); err != nil {
-		if logger != nil {
-			logger.Debug("NVML library stat failed", "path", nvmlLib, "error", err)
-		}
-	} else {
-		if logger != nil {
-			logger.Debug("NVML library stat", "path", nvmlLib, "mode", fi.Mode().String(), "size", fi.Size())
-		}
-	}
-	// Diagnostic: call dlopen directly so the raw dlerror string is logged.
-	// go-nvml's Init() maps any dlopen failure to ERROR_LIBRARY_NOT_FOUND,
-	// discarding the actual reason; this surfaces it at DEBUG level.
-	if diag := dl.New("libnvidia-ml.so.1", dl.RTLD_LAZY|dl.RTLD_GLOBAL); diag != nil {
-		if err := diag.Open(); err != nil {
-			if logger != nil {
-				logger.Debug("dlopen diagnostic failed", "library", "libnvidia-ml.so.1", "error", err)
-			}
-		} else {
-			if logger != nil {
-				logger.Debug("dlopen diagnostic succeeded", "library", "libnvidia-ml.so.1")
-			}
-			_ = diag.Close()
-		}
-	}
 	ret := nvml.Init()
 	if !errors.Is(ret, nvml.SUCCESS) && !errors.Is(ret, nvml.ERROR_ALREADY_INITIALIZED) {
 		return nil, fmt.Errorf("initialize NVML: %s", ret.Error())
@@ -116,7 +86,6 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 		c.log.Debug("NVML DeviceGetCount failed; retaining previous snapshot", "nvml_return", ret)
 		return
 	}
-	c.log.Debug("NVML DeviceGetCount", "count", count)
 
 	joined := map[gpuProcessKey]GPUProcessMetric{}
 	deviceUUIDs := map[int]string{}

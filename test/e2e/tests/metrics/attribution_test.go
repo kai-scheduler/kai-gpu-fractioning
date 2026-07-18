@@ -79,8 +79,6 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
-	t.Log("nvml-mock configured and metricsd restarted; scraping initial metrics state:")
-	debugScrapeAll(ctx, t, c)
 	t.Cleanup(func() {
 		// Reset the mock to idle so a stale process entry (pointing at a PID that
 		// no longer exists once the pod is gone) doesn't leak into later tests.
@@ -95,18 +93,11 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 		"pod_uid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
-	t.Logf("waiting for series %s with labels %v", memMetricName, matchLabels)
-
 	// Assert the pod is attributed on the GPU whose UUID we pinned in nvml-mock,
 	// and that the reported memory matches what we configured (used_memory_mib →
 	// GetComputeRunningProcesses returns MiB*1024*1024 bytes).
-	// waitForSeriesVerbose logs every series found for this metric on each poll
-	// so label mismatches are visible during the wait, not only on timeout.
-	m, err := waitForSeriesVerbose(ctx, t, c, memMetricName, matchLabels)
+	m, err := waitForSeries(ctx, c, memMetricName, matchLabels)
 	if err != nil {
-		t.Logf("series not found; dumping cluster state for diagnosis:")
-		debugClusterState(ctx, t, c, targetNode)
-		debugScrapeAll(ctx, t, c)
 		t.Fatalf("%s: %v", memMetricName, err)
 	}
 	if got := uint64(m.GetGauge().GetValue()); got != wantBytes {
