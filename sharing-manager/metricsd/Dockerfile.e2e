@@ -47,7 +47,7 @@ RUN find / -name "libnvidia-ml.so*" \
     chmod 755 /libnvidia-ml.so.1 && \
     test -x /libnvidia-ml.so.1
 
-FROM gcr.io/distroless/base-debian12
+FROM gcr.io/distroless/cc-debian12
 
 USER 0:0
 ENV NVIDIA_VISIBLE_DEVICES=all

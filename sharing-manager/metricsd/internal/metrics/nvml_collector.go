@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"os"
+
 	"github.com/NVIDIA/go-nvml/pkg/dl"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
@@ -29,6 +31,18 @@ type gpuProcessKey struct {
 }
 
 func newNVMLProcessCollector(interval time.Duration, logger *slog.Logger) (*nvmlProcessCollector, error) {
+	// Diagnostic: log the file permissions of the library before dlopen so we
+	// can verify the chmod 755 in the Dockerfile actually reached the runtime image.
+	const nvmlLib = "/usr/lib/nvml-mock/libnvidia-ml.so.1"
+	if fi, err := os.Stat(nvmlLib); err != nil {
+		if logger != nil {
+			logger.Debug("NVML library stat failed", "path", nvmlLib, "error", err)
+		}
+	} else {
+		if logger != nil {
+			logger.Debug("NVML library stat", "path", nvmlLib, "mode", fi.Mode().String(), "size", fi.Size())
+		}
+	}
 	// Diagnostic: call dlopen directly so the raw dlerror string is logged.
 	// go-nvml's Init() maps any dlopen failure to ERROR_LIBRARY_NOT_FOUND,
 	// discarding the actual reason; this surfaces it at DEBUG level.
