@@ -37,17 +37,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # copies it to the host at runtime; here we capture it at its pre-copy location
 # inside the image so it can be baked into the metricsd container directly.
 FROM ghcr.io/nvidia/nvml-mock:latest AS nvml-mock
-# cp preserves the source file's permission bits; the library is stored as
-# rw-r--r-- (644) in the image, but glibc's dynamic linker requires at least
-# one execute bit to dlopen a regular file (dl-load.c: EPERM check on
-# S_IXUSR|S_IXGRP|S_IXOTH). chmod 755 makes it loadable.
-RUN find / -name "libnvidia-ml.so*" \
-    -not -path "*/proc/*" -not -path "*/sys/*" -not -path "*/host/*" \
-    2>/dev/null | head -1 | xargs -I{} cp {} /libnvidia-ml.so.1 && \
+# The image ships both libnvidia-ml.so.1 (14 MiB ELF) and .h header files
+# whose names also match "libnvidia-ml.so*". Copying by exact soname path
+# avoids find|head-1 picking a .h file by inode order (which is an invalid
+# ELF and makes dlopen fail with "invalid ELF header").
+# The library is stored 644 in the image; chmod 755 so glibc's dl-load.c
+# EPERM check (requires at least one execute bit) lets dlopen succeed.
+RUN cp /usr/local/lib/libnvidia-ml.so.1 /libnvidia-ml.so.1 && \
     chmod 755 /libnvidia-ml.so.1 && \
     test -x /libnvidia-ml.so.1
 
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/base-debian12
 
 USER 0:0
 ENV NVIDIA_VISIBLE_DEVICES=all
