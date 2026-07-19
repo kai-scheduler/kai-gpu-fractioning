@@ -41,10 +41,12 @@ type MetricNames struct {
 	GPUSMUtilizationPercentNormalized string `json:"gpuSmUtilizationPercentNormalized"`
 }
 
-// DefaultMetricNames returns the built-in metric names used when none are
-// configured. Pod identity is carried in labels (namespace, pod, pod_uid), so
-// the names describe the measurement and unit only, per Prometheus convention.
-func DefaultMetricNames() MetricNames {
+// defaultMetricNames returns the built-in metric names used when none are
+// configured. Pod identity is carried in labels (namespace, pod, pod_uuid, gpu),
+// so the names describe the measurement and unit only, per Prometheus convention.
+// It is unexported on purpose: callers obtain defaults through WithDefaults so a
+// MetricNames value is always the entry point (MetricNames{}.WithDefaults()).
+func defaultMetricNames() MetricNames {
 	return MetricNames{
 		GPUMemoryUsedBytes:                "gpu_sharing_gpu_memory_used_bytes",
 		GPUSMUtilizationPercent:           "gpu_sharing_gpu_sm_utilization_percent",
@@ -55,7 +57,7 @@ func DefaultMetricNames() MetricNames {
 // WithDefaults fills any unset (empty) metric name with its default, so a config
 // that overrides only some names keeps the defaults for the rest.
 func (n MetricNames) WithDefaults() MetricNames {
-	d := DefaultMetricNames()
+	d := defaultMetricNames()
 	if strings.TrimSpace(n.GPUMemoryUsedBytes) == "" {
 		n.GPUMemoryUsedBytes = d.GPUMemoryUsedBytes
 	}
@@ -75,17 +77,28 @@ func (n MetricNames) WithDefaults() MetricNames {
 // like Prometheus.
 var metricNamePattern = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 
-// validate rejects names Prometheus would refuse, so a typo fails startup with a
-// clear error instead of panicking inside MustRegister.
+// validate rejects names Prometheus would refuse and names that collide, so a
+// typo or duplicate fails startup with a clear error instead of panicking inside
+// MustRegister. Every exported metric is configurable, so requiring the three to
+// be mutually distinct also guarantees no clash with a non-configurable metric —
+// there are none. Fields are checked in a fixed order for deterministic errors.
 func (n MetricNames) validate() error {
-	for field, name := range map[string]string{
-		"gpuMemoryUsedBytes":                n.GPUMemoryUsedBytes,
-		"gpuSmUtilizationPercent":           n.GPUSMUtilizationPercent,
-		"gpuSmUtilizationPercentNormalized": n.GPUSMUtilizationPercentNormalized,
-	} {
-		if !metricNamePattern.MatchString(name) {
-			return fmt.Errorf("metric name %s=%q is not a valid Prometheus metric name", field, name)
+	fields := []struct {
+		key, name string
+	}{
+		{"gpuMemoryUsedBytes", n.GPUMemoryUsedBytes},
+		{"gpuSmUtilizationPercent", n.GPUSMUtilizationPercent},
+		{"gpuSmUtilizationPercentNormalized", n.GPUSMUtilizationPercentNormalized},
+	}
+	seen := make(map[string]string, len(fields))
+	for _, f := range fields {
+		if !metricNamePattern.MatchString(f.name) {
+			return fmt.Errorf("metric name %s=%q is not a valid Prometheus metric name", f.key, f.name)
 		}
+		if other, ok := seen[f.name]; ok {
+			return fmt.Errorf("metric name %s=%q duplicates %s; each exported metric must have a unique name", f.key, f.name, other)
+		}
+		seen[f.name] = f.key
 	}
 	return nil
 }
@@ -165,7 +178,7 @@ func (r *Runtime) Start(ctx context.Context) {
 }
 
 func newRuntime(provider SnapshotProvider, names MetricNames) *Runtime {
-	labels := []string{"namespace", "pod", "pod_uid", "gpu_uuid", "gpu_index"}
+	labels := []string{"namespace", "pod", "pod_uuid", "gpu_uuid", "gpu"}
 	runtime := &Runtime{
 		provider: provider,
 		registry: prometheus.NewRegistry(),
@@ -288,9 +301,9 @@ func metricLabels(metric PodGPUMetric) (podGPUKey, prometheus.Labels) {
 	return key, prometheus.Labels{
 		"namespace": metric.Namespace,
 		"pod":       metric.Pod,
-		"pod_uid":   metric.PodUID,
+		"pod_uuid":  metric.PodUID,
 		"gpu_uuid":  metric.GPUUUID,
-		"gpu_index": strconv.Itoa(metric.GPUIndex),
+		"gpu":       strconv.Itoa(metric.GPUIndex),
 	}
 }
 

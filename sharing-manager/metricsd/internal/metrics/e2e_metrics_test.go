@@ -144,7 +144,7 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 	controller := newMetricsControllerWithPodSource(collector, pods, 0, 0, slog.Default())
 	controller.collect(context.Background())
 
-	runtime := newRuntime(controller, DefaultMetricNames())
+	runtime := newRuntime(controller, MetricNames{}.WithDefaults())
 	// refresh() calls controller.Snapshot() and writes values into the Prometheus registry.
 	runtime.refresh(context.Background())
 	return runtime
@@ -155,9 +155,9 @@ func podLabels(pod, podUID string) map[string]string {
 	return map[string]string{
 		"namespace": e2eNamespace,
 		"pod":       pod,
-		"pod_uid":   podUID,
+		"pod_uuid":  podUID,
 		"gpu_uuid":  e2eGPUUUID,
-		"gpu_index": "0",
+		"gpu":       "0",
 	}
 }
 
@@ -312,8 +312,8 @@ func TestE2EFractionalGPUSharingPrometheusEndpoint(t *testing.T) {
 		"gpu_sharing_gpu_sm_utilization_percent",
 		"gpu_sharing_gpu_sm_utilization_percent_normalized",
 		// Both pods present with correct labels
-		`pod="pod-a"`, `pod_uid="uid-pod-a"`,
-		`pod="pod-b"`, `pod_uid="uid-pod-b"`,
+		`pod="pod-a"`, `pod_uuid="uid-pod-a"`,
+		`pod="pod-b"`, `pod_uuid="uid-pod-b"`,
 		// Shared GPU UUID appears (at least once per pod per metric)
 		`gpu_uuid="` + e2eGPUUUID + `"`,
 		// Namespace label
@@ -360,7 +360,7 @@ func TestE2EFractionalGPUSharingPodDisappears(t *testing.T) {
 	controller := newMetricsControllerWithPodSource(collector, pods, 0, 0, slog.Default())
 	controller.collect(context.Background())
 
-	runtime := newRuntime(controller, DefaultMetricNames())
+	runtime := newRuntime(controller, MetricNames{}.WithDefaults())
 	runtime.refresh(context.Background())
 
 	mem, ok := gatheredGaugeValue(t, runtime, "gpu_sharing_gpu_memory_used_bytes", podLabels("pod-a", "uid-pod-a"))

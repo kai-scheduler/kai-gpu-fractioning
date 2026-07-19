@@ -46,6 +46,10 @@ type cliFlags struct {
 	interval time.Duration
 	// smUtilWindow is the sliding-window averaging for SM util (0 disables).
 	smUtilWindow time.Duration
+	// metricNames overrides the exported Prometheus metric names; empty fields
+	// fall back to the built-in gpu_sharing_* defaults. Set these (e.g. via Helm)
+	// to make metricsd emit the names a downstream consumer expects.
+	metricNames metrics.MetricNames
 }
 
 // parseFlags reads the metricsd configuration from CLI flags, each with an env
@@ -61,7 +65,9 @@ func parseFlags() cliFlags {
 	flag.StringVar(&f.procRoot, "proc-root", env.String("PROC_ROOT", defaultProcRoot), "/proc root used to resolve GPU process PIDs to cgroups")
 	flag.DurationVar(&f.interval, "metrics-interval", env.Duration("METRICS_INTERVAL", metrics.DefaultCollectInterval), "NVML sampling interval (floored at 2s)")
 	flag.DurationVar(&f.smUtilWindow, "sm-util-window", env.Duration("SM_UTIL_WINDOW", 0), "sliding-window averaging for SM utilization; 0 disables")
+	flag.StringVar(&f.metricNames.GPUMemoryUsedBytes, "metric-name-gpu-memory-used-bytes", env.String("METRIC_NAME_GPU_MEMORY_USED_BYTES", ""), "override the GPU memory-used-bytes metric name (default gpu_sharing_gpu_memory_used_bytes)")
+	flag.StringVar(&f.metricNames.GPUSMUtilizationPercent, "metric-name-gpu-sm-utilization-percent", env.String("METRIC_NAME_GPU_SM_UTILIZATION_PERCENT", ""), "override the GPU SM-utilization metric name (default gpu_sharing_gpu_sm_utilization_percent)")
+	flag.StringVar(&f.metricNames.GPUSMUtilizationPercentNormalized, "metric-name-gpu-sm-utilization-percent-normalized", env.String("METRIC_NAME_GPU_SM_UTILIZATION_PERCENT_NORMALIZED", ""), "override the normalized GPU SM-utilization metric name (default gpu_sharing_gpu_sm_utilization_percent_normalized)")
 	flag.Parse()
 	return f
 }
-

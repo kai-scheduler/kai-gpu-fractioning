@@ -36,11 +36,16 @@ func TestMetricNamesValidate(t *testing.T) {
 			name:   "single character is allowed",
 			mutate: func(n *MetricNames) { n.GPUMemoryUsedBytes = "x" },
 		},
+		{
+			name:    "duplicate names are rejected",
+			mutate:  func(n *MetricNames) { n.GPUSMUtilizationPercent = n.GPUMemoryUsedBytes },
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			names := DefaultMetricNames()
+			names := MetricNames{}.WithDefaults()
 			if tt.mutate != nil {
 				tt.mutate(&names)
 			}
@@ -56,7 +61,7 @@ func TestMetricNamesValidate(t *testing.T) {
 }
 
 func TestMetricsExporterKeepsZeroSeriesForMissingReadings(t *testing.T) {
-	exporter := newRuntime(nil, DefaultMetricNames())
+	exporter := newRuntime(nil, MetricNames{}.WithDefaults())
 	metric := PodGPUMetric{
 		Namespace:            "default",
 		Pod:                  "pod",
@@ -69,9 +74,9 @@ func TestMetricsExporterKeepsZeroSeriesForMissingReadings(t *testing.T) {
 	labels := map[string]string{
 		"namespace": "default",
 		"pod":       "pod",
-		"pod_uid":   "pod-uid",
+		"pod_uuid":  "pod-uid",
 		"gpu_uuid":  "GPU-1",
-		"gpu_index": "0",
+		"gpu":       "0",
 	}
 
 	exporter.observeSnapshot(Snapshot{Metrics: []PodGPUMetric{metric}, ActivePodUIDs: map[string]struct{}{
@@ -97,7 +102,7 @@ func TestMetricsExporterKeepsZeroSeriesForMissingReadings(t *testing.T) {
 }
 
 func TestMetricsExporterRemovesSeriesForDeletedContainers(t *testing.T) {
-	exporter := newRuntime(nil, DefaultMetricNames())
+	exporter := newRuntime(nil, MetricNames{}.WithDefaults())
 	metric := PodGPUMetric{
 		Namespace:   "default",
 		Pod:         "pod",
@@ -109,9 +114,9 @@ func TestMetricsExporterRemovesSeriesForDeletedContainers(t *testing.T) {
 	labels := map[string]string{
 		"namespace": "default",
 		"pod":       "pod",
-		"pod_uid":   "pod-uid",
+		"pod_uuid":  "pod-uid",
 		"gpu_uuid":  "GPU-1",
-		"gpu_index": "0",
+		"gpu":       "0",
 	}
 
 	exporter.observeSnapshot(Snapshot{Metrics: []PodGPUMetric{metric}, ActivePodUIDs: map[string]struct{}{
@@ -125,7 +130,7 @@ func TestMetricsExporterRemovesSeriesForDeletedContainers(t *testing.T) {
 }
 
 func TestMetricsExporterDropsIdleSeriesWhenRealMetricArrives(t *testing.T) {
-	exporter := newRuntime(nil, DefaultMetricNames())
+	exporter := newRuntime(nil, MetricNames{}.WithDefaults())
 	idleMetric := PodGPUMetric{
 		Namespace: "default",
 		Pod:       "pod",
@@ -140,9 +145,9 @@ func TestMetricsExporterDropsIdleSeriesWhenRealMetricArrives(t *testing.T) {
 	idleLabels := map[string]string{
 		"namespace": "default",
 		"pod":       "pod",
-		"pod_uid":   "pod-uid",
+		"pod_uuid":  "pod-uid",
 		"gpu_uuid":  "",
-		"gpu_index": "0",
+		"gpu":       "0",
 	}
 
 	exporter.observeSnapshot(Snapshot{Metrics: []PodGPUMetric{idleMetric}, ActivePodUIDs: map[string]struct{}{
@@ -170,7 +175,7 @@ func TestMetricsExporterServesPrometheusFormat(t *testing.T) {
 		}},
 		ActivePodUIDs: map[string]struct{}{"pod-uid": {}},
 	}
-	exporter := newRuntime(&staticProvider{snap}, DefaultMetricNames())
+	exporter := newRuntime(&staticProvider{snap}, MetricNames{}.WithDefaults())
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", exporter.handler())
@@ -204,7 +209,7 @@ func TestMetricsExporterServesPrometheusFormat(t *testing.T) {
 		"gpu_sharing_gpu_sm_utilization_percent_normalized",
 		`namespace="default"`,
 		`pod="pod"`,
-		`pod_uid="pod-uid"`,
+		`pod_uuid="pod-uid"`,
 		`gpu_uuid="GPU-0"`,
 	} {
 		if !strings.Contains(bodyStr, want) {

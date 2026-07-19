@@ -70,7 +70,7 @@ func main() {
 		ProcRoot:            flags.procRoot,
 		Interval:            flags.interval,
 		SMUtilizationWindow: flags.smUtilWindow,
-		Names:               metrics.DefaultMetricNames(),
+		Names:               flags.metricNames.WithDefaults(),
 	}, reader, logger)
 	if err != nil {
 		logger.Error("failed to build metrics exporter", "error", err)
