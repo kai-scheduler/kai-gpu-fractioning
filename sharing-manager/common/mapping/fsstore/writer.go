@@ -96,6 +96,12 @@ func (w *Writer) Replace(containers []store.ContainerInfo) {
 
 	w.log.Debug("NRI Synchronize: reconciling fsstore", "containers", len(containers))
 
+	if len(containers) == 0 {
+		// Empty Synchronize: containerd restarted and has not yet replayed
+		// existing containers.
+		return
+	}
+
 	desired := make(map[string]struct{}, len(containers))
 	for _, info := range containers {
 		if info.ContainerID == "" {
@@ -105,10 +111,6 @@ func (w *Writer) Replace(containers []store.ContainerInfo) {
 		if err := w.writeRecord(info); err != nil {
 			w.log.Warn("failed to write container mapping file during sync", "containerID", info.ContainerID, "error", err)
 		}
-	}
-
-	if len(desired) == 0 {
-		return
 	}
 
 	entries, err := os.ReadDir(w.dir)
