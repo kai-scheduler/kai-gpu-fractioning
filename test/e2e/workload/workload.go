@@ -72,7 +72,7 @@ func DefaultMarker(namespace, name string) string {
 // stale pods from a previous (interrupted) test run never cause "already exists"
 // errors. The caller is responsible for calling Delete at the end of the test.
 func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.Pod, error) {
-	if err := ensureNamespace(ctx, c, spec.Namespace); err != nil {
+	if err := EnsureNamespace(ctx, c, spec.Namespace); err != nil {
 		return nil, fmt.Errorf("ensure namespace %s: %w", spec.Namespace, err)
 	}
 	if err := Delete(ctx, c, spec.Namespace, spec.Name); err != nil {
@@ -205,10 +205,6 @@ func Delete(ctx context.Context, c *cluster.Client, namespace, name string) erro
 
 // EnsureNamespace creates the namespace if it does not already exist.
 func EnsureNamespace(ctx context.Context, c *cluster.Client, name string) error {
-	return ensureNamespace(ctx, c, name)
-}
-
-func ensureNamespace(ctx context.Context, c *cluster.Client, name string) error {
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
 	if err := c.Ctrl.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
 		return err

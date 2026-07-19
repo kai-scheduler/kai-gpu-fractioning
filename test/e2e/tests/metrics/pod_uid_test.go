@@ -6,7 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
@@ -29,14 +28,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 
 	c := s.Client
 
-	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
-	if err != nil {
-		t.Fatalf("list GPU nodes: %v", err)
-	}
-	if len(gpuNodes) == 0 {
-		t.Fatalf("no GPU nodes found matching selector %q", c.Config.GPUNodeSelector)
-	}
-	targetNode := gpuNodes[0].Name
+	targetNode := firstGPUNode(t, ctx, c)
 	nodeSel := map[string]string{"kubernetes.io/hostname": targetNode}
 
 	const (
@@ -88,10 +80,8 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 	// Always clean up the pod and nvml-mock state at end of test.
 	t.Cleanup(func() {
 		_ = workload.Delete(context.Background(), c, attributionTestNamespace, podName)
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock: %v", err)
-		}
 	})
+	resetNVMLMockOnCleanup(t, c)
 
 	// Generation 1: establish a series for oldUID.
 	oldUID := createAndWait("gen1")

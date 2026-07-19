@@ -59,11 +59,7 @@ func TestE2E_SharingdRestartPreservesAttribution(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock to idle: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 
 	match := map[string]string{
 		"namespace": spec.Namespace,
@@ -148,13 +144,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
-	t.Cleanup(func() {
-		// Reset the mock to idle so a stale process entry (pointing at a PID that
-		// no longer exists once the pod is gone) doesn't leak into later tests.
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock to idle: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 
 	match := map[string]string{
 		"namespace": spec.Namespace,

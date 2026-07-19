@@ -96,11 +96,7 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, idleProcs); err != nil {
 		t.Fatalf("configure nvml-mock (idle): %v", err)
 	}
-	t.Cleanup(func() {
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock to idle: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 
 	// Wait for any series for this pod to appear (engine may carry an empty
 	// gpu_uuid until it learns the device UUID from NVML, so we match on pod

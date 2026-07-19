@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
@@ -49,14 +48,7 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 
 	c := s.Client
 
-	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
-	if err != nil {
-		t.Fatalf("list GPU nodes: %v", err)
-	}
-	if len(gpuNodes) == 0 {
-		t.Fatalf("no GPU nodes found matching selector %q (is the cluster up?)", c.Config.GPUNodeSelector)
-	}
-	targetNode := gpuNodes[0].Name
+	targetNode := firstGPUNode(t, ctx, c)
 
 	halfMemMiB := strconv.Itoa(c.Config.GPUMemoryMiB / 2)
 	nodeSel := map[string]string{"kubernetes.io/hostname": targetNode}
@@ -120,11 +112,7 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock to idle: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 
 	// matchA / matchB include gpu_uuid and gpu_index so waitForSeries only
 	// succeeds when the series is on the right device with the correct index label.

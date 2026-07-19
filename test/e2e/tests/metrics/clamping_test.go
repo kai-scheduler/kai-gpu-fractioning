@@ -6,10 +6,6 @@ import (
 	"context"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
@@ -38,73 +34,27 @@ func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 	c := s.Client
 	const podName = "tc5-clamp-pod"
 
-	// Each marker is unique to its own container — no overlap in any process's
-	// /proc/<pid>/cmdline, so HostPID returns exactly one match per marker.
-	marker1 := multiContainerMarker(attributionTestNamespace, podName, "c1")
-	marker2 := multiContainerMarker(attributionTestNamespace, podName, "c2")
-
-	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
+	targetNode := firstGPUNode(t, ctx, c)
+	spec := multiContainerPodSpec{
+		Namespace:    attributionTestNamespace,
+		Name:         podName,
+		Containers:   []string{"proc1", "proc2"},
+		MemoryMiB:    "2048",
+		NodeSelector: map[string]string{"kubernetes.io/hostname": targetNode},
+	}
+	pod, err := applyMultiContainerFractionalPod(ctx, c, spec)
 	if err != nil {
-		t.Fatalf("list GPU nodes: %v", err)
-	}
-	if len(gpuNodes) == 0 {
-		t.Fatalf("no GPU nodes found matching selector %q", c.Config.GPUNodeSelector)
-	}
-	targetNode := gpuNodes[0].Name
-
-	if err := workload.EnsureNamespace(ctx, c, attributionTestNamespace); err != nil {
-		t.Fatalf("ensure namespace %s: %v", attributionTestNamespace, err)
-	}
-
-	// Clean up any pod left from a previous failed run before creating.
-	_ = workload.Delete(ctx, c, attributionTestNamespace, podName)
-
-	tc5Pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
-			Namespace: attributionTestNamespace,
-			Annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.proc1.limit":   "2048Mi",
-				"nvidia.com/gpu-memory.container.proc1.request": "2048Mi",
-				"nvidia.com/gpu-memory.container.proc2.limit":   "2048Mi",
-				"nvidia.com/gpu-memory.container.proc2.request": "2048Mi",
-			},
-		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector:  map[string]string{"kubernetes.io/hostname": targetNode},
-			Containers: []corev1.Container{
-				{
-					Name:    "proc1",
-					Image:   workload.DefaultImage,
-					Command: []string{"sh", "-c", "sleep 86400 & wait # " + marker1},
-				},
-				{
-					Name:    "proc2",
-					Image:   workload.DefaultImage,
-					Command: []string{"sh", "-c", "sleep 86400 & wait # " + marker2},
-				},
-			},
-		},
-	}
-
-	if err := c.Ctrl.Create(ctx, tc5Pod); err != nil {
-		t.Fatalf("create tc5 pod: %v", err)
+		t.Fatalf("create multi-container pod: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = workload.Delete(context.Background(), c, attributionTestNamespace, podName)
 	})
 
-	pod, err := workload.WaitRunning(ctx, c, attributionTestNamespace, podName, c.Config.PodReadyTimeout, c.Config.PollInterval)
-	if err != nil {
-		t.Fatalf("pod never reached Running: %v", err)
-	}
-
-	pid1, err := nvmlmock.HostPID(ctx, c, targetNode, marker1)
+	pid1, err := nvmlmock.HostPID(ctx, c, targetNode, multiContainerMarker(attributionTestNamespace, podName, "proc1"))
 	if err != nil {
 		t.Fatalf("resolve host PID for proc1: %v", err)
 	}
-	pid2, err := nvmlmock.HostPID(ctx, c, targetNode, marker2)
+	pid2, err := nvmlmock.HostPID(ctx, c, targetNode, multiContainerMarker(attributionTestNamespace, podName, "proc2"))
 	if err != nil {
 		t.Fatalf("resolve host PID for proc2: %v", err)
 	}
@@ -117,11 +67,7 @@ func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock processes: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock to idle: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 
 	match := map[string]string{
 		"namespace": attributionTestNamespace,

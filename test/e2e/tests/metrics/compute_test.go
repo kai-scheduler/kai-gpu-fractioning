@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
@@ -42,14 +41,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 
 	c := s.Client
 
-	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
-	if err != nil {
-		t.Fatalf("list GPU nodes: %v", err)
-	}
-	if len(gpuNodes) == 0 {
-		t.Fatalf("no GPU nodes found matching selector %q", c.Config.GPUNodeSelector)
-	}
-	targetNode := gpuNodes[0].Name
+	targetNode := firstGPUNode(t, ctx, c)
 
 	// 25% of total GPU memory — small fraction, deliberately below the sm_util
 	// we will inject (95%), to make it obvious the two are independent.
@@ -90,11 +82,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock to idle: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,

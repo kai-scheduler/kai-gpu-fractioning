@@ -4,14 +4,8 @@ package metrics
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
 )
@@ -38,14 +32,7 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 
 	c := s.Client
 
-	gpuNodes, err := nodes.ListGPUNodes(ctx, c)
-	if err != nil {
-		t.Fatalf("list GPU nodes: %v", err)
-	}
-	if len(gpuNodes) == 0 {
-		t.Fatalf("no GPU nodes found matching selector %q", c.Config.GPUNodeSelector)
-	}
-	targetNode := gpuNodes[0].Name
+	targetNode := firstGPUNode(t, ctx, c)
 	nodeSel := map[string]string{"kubernetes.io/hostname": targetNode}
 
 	// Pod A: 2 containers, each attributed as a separate GPU process.
@@ -134,11 +121,7 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	if err := setProcesses(ctx, c, nvmlmock.A100, procs); err != nil {
 		t.Fatalf("configure nvml-mock: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := nvmlmock.SetProcesses(context.Background(), c, nvmlmock.A100, nil); err != nil {
-			t.Errorf("reset nvml-mock: %v", err)
-		}
-	})
+	resetNVMLMockOnCleanup(t, c)
 	t.Logf("target node: %s, pids: a/c1=%d a/c2=%d b/c1=%d b/c2=%d b/c3=%d", targetNode, pidA1, pidA2, pidB1, pidB2, pidB3)
 
 	matchA := map[string]string{
@@ -181,69 +164,3 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	}
 }
 
-// multiContainerPodSpec describes a fractional pod with several GPU-tracked containers.
-type multiContainerPodSpec struct {
-	Namespace    string
-	Name         string
-	Containers   []string // container names; each gets its own GPU annotation + unique marker
-	MemoryMiB    string   // GPU memory per container (same for all)
-	NodeSelector map[string]string
-}
-
-// multiContainerMarker returns the unique cmdline token embedded in each
-// container's shell argv so HostPID can resolve exactly one PID per container.
-// The namespace+pod+container triple guarantees uniqueness across concurrent tests.
-func multiContainerMarker(namespace, podName, containerName string) string {
-	return fmt.Sprintf("gpumock-%s-%s-%s", namespace, podName, containerName)
-}
-
-// applyMultiContainerFractionalPod creates a pod whose containers each carry a
-// GPU-memory annotation, making sharingd track each container independently.
-// The pod runs on the node given by spec.NodeSelector. Callers must Delete the
-// pod when done; use workload.Delete since the pod name/namespace is the key.
-func applyMultiContainerFractionalPod(ctx context.Context, c *cluster.Client, spec multiContainerPodSpec) (*corev1.Pod, error) {
-	if err := workload.EnsureNamespace(ctx, c, spec.Namespace); err != nil {
-		return nil, fmt.Errorf("ensure namespace %s: %w", spec.Namespace, err)
-	}
-	if err := workload.Delete(ctx, c, spec.Namespace, spec.Name); err != nil {
-		return nil, fmt.Errorf("pre-create cleanup of %s/%s: %w", spec.Namespace, spec.Name, err)
-	}
-
-	// One annotation pair per container so sharingd tracks every container.
-	annotations := make(map[string]string, len(spec.Containers)*2)
-	for _, name := range spec.Containers {
-		annotations[fmt.Sprintf("nvidia.com/gpu-memory.container.%s.limit", name)] = spec.MemoryMiB + "Mi"
-		annotations[fmt.Sprintf("nvidia.com/gpu-memory.container.%s.request", name)] = spec.MemoryMiB + "Mi"
-	}
-
-	containers := make([]corev1.Container, 0, len(spec.Containers))
-	for _, name := range spec.Containers {
-		marker := multiContainerMarker(spec.Namespace, spec.Name, name)
-		containers = append(containers, corev1.Container{
-			Name:  name,
-			Image: workload.DefaultImage,
-			// Marker rides in the shell argv (same trick as workload.Apply).
-			// The backgrounded sleep keeps the shell alive with the marker in
-			// its /proc/<pid>/cmdline so HostPID finds exactly one match.
-			Command: []string{"sh", "-c", fmt.Sprintf("sleep 86400 & wait # %s", marker)},
-		})
-	}
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        spec.Name,
-			Namespace:   spec.Namespace,
-			Annotations: annotations,
-		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector:  spec.NodeSelector,
-			Containers:    containers,
-		},
-	}
-	if err := c.Ctrl.Create(ctx, pod); err != nil {
-		return nil, fmt.Errorf("create pod %s/%s: %w", spec.Namespace, spec.Name, err)
-	}
-
-	return workload.WaitRunning(ctx, c, spec.Namespace, spec.Name, c.Config.PodReadyTimeout, c.Config.PollInterval)
-}
