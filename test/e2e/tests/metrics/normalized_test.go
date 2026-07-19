@@ -74,7 +74,7 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 
@@ -154,7 +154,7 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

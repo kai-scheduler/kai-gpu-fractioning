@@ -72,7 +72,7 @@ func TestE2E_SMUtilizationClampedAtOneHundred(t *testing.T) {
 	match := map[string]string{
 		"namespace": attributionTestNamespace,
 		"pod":       podName,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  nvmlmock.Device0UUID,
 	}
 	series, err := waitForSeries(ctx, c, smMetricName, match)

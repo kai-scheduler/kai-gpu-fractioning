@@ -87,7 +87,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

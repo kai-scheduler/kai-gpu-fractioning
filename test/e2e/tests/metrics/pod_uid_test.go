@@ -67,7 +67,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 		matchLabels := map[string]string{
 			"namespace": spec.Namespace,
 			"pod":       spec.Name,
-			"pod_uid":   string(pod.UID),
+			"pod_uuid":   string(pod.UID),
 			"gpu_uuid":  gpuUUID,
 		}
 		if _, err := waitForSeries(ctx, c, memMetricName, matchLabels); err != nil {
@@ -96,7 +96,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 
 	oldMatch := map[string]string{
 		"namespace": attributionTestNamespace,
-		"pod_uid":   oldUID,
+		"pod_uuid":   oldUID,
 	}
 	for _, metricName := range allMetricNames {
 		if err := waitForAbsence(ctx, c, metricName, oldMatch); err != nil {

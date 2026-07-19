@@ -80,13 +80,13 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	matchActive := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	matchPod := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 	}
 
 	// ── Phase 1: idle ─────────────────────────────────────────────────────────

@@ -61,7 +61,7 @@ func GaugeValue(m *dto.Metric) float64 {
 // FindSeries returns every sample of metricName whose labels are a superset
 // of match (a sample may carry labels not present in match; those are
 // ignored). Callers match on whatever subset identifies the series they
-// care about — e.g. {"namespace": ..., "pod": ..., "pod_uid": ...} to find a
+// care about — e.g. {"namespace": ..., "pod": ..., "pod_uuid": ...} to find a
 // specific pod's series regardless of its gpu_index/gpu_uuid.
 func FindSeries(families map[string]*dto.MetricFamily, metricName string, match map[string]string) []*dto.Metric {
 	mf, ok := families[metricName]

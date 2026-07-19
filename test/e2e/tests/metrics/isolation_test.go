@@ -119,16 +119,16 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 	matchA := map[string]string{
 		"namespace": specA.Namespace,
 		"pod":       specA.Name,
-		"pod_uid":   string(podA.UID),
+		"pod_uuid":   string(podA.UID),
 		"gpu_uuid":  nvmlmock.Device0UUID,
-		"gpu_index": "0",
+		"gpu": "0",
 	}
 	matchB := map[string]string{
 		"namespace": specB.Namespace,
 		"pod":       specB.Name,
-		"pod_uid":   string(podB.UID),
+		"pod_uuid":   string(podB.UID),
 		"gpu_uuid":  nvmlmock.Device1UUID,
-		"gpu_index": "1",
+		"gpu": "1",
 	}
 
 	// 1. Positive assertion: each pod's series appears on its assigned device.
@@ -165,11 +165,11 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 	// these series never existed, so waitForAbsence passes on the first poll
 	// before a contamination bug even has time to produce a series.
 	crossA := map[string]string{
-		"pod_uid":  string(podA.UID),
+		"pod_uuid":  string(podA.UID),
 		"gpu_uuid": nvmlmock.Device1UUID,
 	}
 	crossB := map[string]string{
-		"pod_uid":  string(podB.UID),
+		"pod_uuid":  string(podB.UID),
 		"gpu_uuid": nvmlmock.Device0UUID,
 	}
 	for _, metricName := range allMetricNames {

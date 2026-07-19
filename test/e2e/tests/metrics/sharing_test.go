@@ -119,13 +119,13 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	matchA := map[string]string{
 		"namespace": specA.Namespace,
 		"pod":       specA.Name,
-		"pod_uid":   string(podA.UID),
+		"pod_uuid":   string(podA.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	matchB := map[string]string{
 		"namespace": specB.Namespace,
 		"pod":       specB.Name,
-		"pod_uid":   string(podB.UID),
+		"pod_uuid":   string(podB.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

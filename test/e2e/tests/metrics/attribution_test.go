@@ -75,7 +75,7 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	// Assert the pod is attributed on the GPU whose UUID we pinned in nvml-mock,
@@ -165,7 +165,7 @@ func TestE2E_UnmatchedNVMLProcessIsDropped(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

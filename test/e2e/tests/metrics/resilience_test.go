@@ -64,7 +64,7 @@ func TestE2E_SharingdRestartPreservesAttribution(t *testing.T) {
 	match := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 	}
 
 	// Confirm attribution before the restart.
@@ -149,7 +149,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	match := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uid":   string(pod.UID),
+		"pod_uuid":   string(pod.UID),
 	}
 	if _, err := waitForSeries(ctx, c, memMetricName, match); err != nil {
 		t.Fatalf("series never appeared before deletion: %v", err)

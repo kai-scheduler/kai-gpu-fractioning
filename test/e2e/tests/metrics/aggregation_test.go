@@ -127,13 +127,13 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	matchA := map[string]string{
 		"namespace": attributionTestNamespace,
 		"pod":       "tc-agg-pod-a",
-		"pod_uid":   string(podA.UID),
+		"pod_uuid":   string(podA.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	matchB := map[string]string{
 		"namespace": attributionTestNamespace,
 		"pod":       "tc-agg-pod-b",
-		"pod_uid":   string(podB.UID),
+		"pod_uuid":   string(podB.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 
