@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/containerd/nri/pkg/api"
 
@@ -66,7 +67,9 @@ type Config struct {
 //
 //  1. Mutation: on CreateContainer it evaluates the pod's GPU-memory annotations
 //     and injects the NVIDIA_GPU_MEMORY_* env vars, CUDA_MPS_PIPE_DIRECTORY, and
-//     the MPS pipe bind mount.
+//     the MPS pipe bind mount. When the scheduler also recorded a GPU
+//     device-assignment annotation on the pod it injects NVIDIA_VISIBLE_DEVICES
+//     so the fractional container sees the GPU the scheduler picked.
 //  2. Mapping: it records a container→pod mapping (plus assigned GPU devices and
 //     requested fraction) to a shared directory via an async events processor and
 //     fsstore writer. The metricsd sidecar reads that mapping to attribute GPU
@@ -211,7 +214,9 @@ func (p *Plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *ap
 
 // buildAdjustment contains the GPU-memory / MPS mutation logic. It returns a nil
 // adjustment when the container has no GPU memory annotations, and an error only
-// when annotation parsing fails while FailOpen is false.
+// when annotation parsing fails while FailOpen is false. For a GPU-sharing
+// container it additionally injects NVIDIA_VISIBLE_DEVICES from the pod's device
+// assignment annotation when present.
 func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, error) {
 	gpuMemoryCfg, err := annotations.ParseGPUMemoryAnnotations(pod.Annotations, ctr.Name, p.AnnotationPrefix)
 	if err != nil {
@@ -231,6 +236,11 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 		return nil, nil
 	}
 
+	// A container that specified only a request or only a limit gets the missing
+	// value defaulted from the other (request == limit), so the memory limit is
+	// always enforced and the request is always populated for metrics.
+	gpuMemoryCfg = gpuMemoryCfg.ApplyDefaults()
+
 	adj := &api.ContainerAdjustment{}
 
 	if gpuMemoryCfg.Request != "" {
@@ -248,14 +258,47 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 		Options:     []string{"bind", "rw"},
 	})
 
+	// Promote the scheduler's GPU device assignment to NVIDIA_VISIBLE_DEVICES.
+	// A fractional container does not request the nvidia.com/gpu resource, so the
+	// NVIDIA device plugin never sets this env var; without it the container would
+	// see all GPUs or none. When the annotation is absent we leave the env var
+	// untouched (the device plugin or the image may already set it).
+	//
+	// The container may already carry NVIDIA_VISIBLE_DEVICES (e.g. set to "void"
+	// by an admission plugin precisely because the pod does not request
+	// nvidia.com/gpu). Our assignment must win: remove any existing value first so
+	// NRI applies the override instead of rejecting it as a conflict, and the
+	// container ends up with a single, correct value rather than a duplicate.
+	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations)
+	if visibleDevices != "" {
+		if containerHasEnv(ctr, injection.EnvVisibleDevices) {
+			adj.RemoveEnv(injection.EnvVisibleDevices)
+		}
+		adj.AddEnv(injection.EnvVisibleDevices, visibleDevices)
+	}
+
 	p.Log.Info("adjusting container with GPU memory config",
 		"container", ctr.Name,
 		"pod", pod.Name,
 		"request", gpuMemoryCfg.Request,
 		"limit", gpuMemoryCfg.Limit,
+		"visibleDevices", visibleDevices,
 	)
 
 	return adj, nil
+}
+
+// containerHasEnv reports whether the container's spec already defines the given
+// environment variable (as "KEY=VALUE" or a bare "KEY"), so the caller can
+// replace it rather than append a duplicate.
+func containerHasEnv(ctr *api.Container, key string) bool {
+	prefix := key + "="
+	for _, kv := range ctr.GetEnv() {
+		if kv == key || strings.HasPrefix(kv, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // RemoveContainer drops the container's mapping when the runtime removes it.

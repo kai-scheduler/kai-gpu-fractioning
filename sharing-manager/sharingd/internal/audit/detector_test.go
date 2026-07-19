@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
 	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
 )
 
@@ -33,7 +34,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    []string{injection.EnvGPUMemoryLimits + "=4294"},
+				Env:    []string{injection.EnvGPUMemoryLimits + "=4294", injection.EnvGPUMemoryRequests + "=4294"},
 				Mounts: []*api.Mount{mpsMount()},
 			},
 			wantMissing: []string{"env:" + injection.EnvMPSPipeDirectory},
@@ -44,7 +45,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State: api.ContainerState_CONTAINER_RUNNING,
-				Env:   injectedEnv(true, false),
+				Env:   injectedEqualEnv(),
 			},
 			wantMissing: []string{"mount:" + configuration.DefaultMPSPipeDirectory},
 		},
@@ -53,8 +54,9 @@ func TestDetectorViolations(t *testing.T) {
 			pod:  sharingPod("p", "pod", "trainer", "4Gi", ""),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
-				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory},
+				State: api.ContainerState_CONTAINER_RUNNING,
+				// request env present (defaulted from the limit), limit env missing.
+				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryRequests + "=4294"},
 				Mounts: []*api.Mount{mpsMount()},
 			},
 			wantMissing: []string{"env:" + injection.EnvGPUMemoryLimits},
@@ -74,15 +76,47 @@ func TestDetectorViolations(t *testing.T) {
 			},
 		},
 		{
-			name: "request-only sharing container expects request env, not limit",
+			name: "request-only sharing container expects both request and limit env",
 			pod:  sharingPod("p", "pod", "trainer", "", "2Gi"),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
-				State:  api.ContainerState_CONTAINER_RUNNING,
+				State: api.ContainerState_CONTAINER_RUNNING,
+				// limit defaults from the request, so both memory envs are expected.
 				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory},
 				Mounts: []*api.Mount{mpsMount()},
 			},
-			wantMissing: []string{"env:" + injection.EnvGPUMemoryRequests},
+			wantMissing: []string{"env:" + injection.EnvGPUMemoryLimits, "env:" + injection.EnvGPUMemoryRequests},
+		},
+		{
+			name: "missing NVIDIA_VISIBLE_DEVICES env (device assigned) is a violator",
+			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "GPU-abc123"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    injectedEqualEnv(),
+				Mounts: []*api.Mount{mpsMount()},
+			},
+			wantMissing: []string{"env:" + injection.EnvVisibleDevices},
+		},
+		{
+			name: "assigned device fully injected is not a violator",
+			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "GPU-abc123"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    append(injectedEqualEnv(), injection.EnvVisibleDevices+"=GPU-abc123"),
+				Mounts: []*api.Mount{mpsMount()},
+			},
+		},
+		{
+			name: "no device assignment does not expect NVIDIA_VISIBLE_DEVICES",
+			pod:  sharingPod("p", "pod", "trainer", "4Gi", ""),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    injectedEqualEnv(),
+				Mounts: []*api.Mount{mpsMount()},
+			},
 		},
 		{
 			name: "created state is enforceable",
@@ -94,6 +128,7 @@ func TestDetectorViolations(t *testing.T) {
 			wantMissing: []string{
 				"env:" + injection.EnvMPSPipeDirectory,
 				"env:" + injection.EnvGPUMemoryLimits,
+				"env:" + injection.EnvGPUMemoryRequests,
 				"mount:" + configuration.DefaultMPSPipeDirectory,
 			},
 		},
@@ -189,7 +224,7 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 	containers := []*api.Container{
 		{ // p1: injected → ok
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
-			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEnv(true, false), Mounts: []*api.Mount{mpsMount()},
+			State: api.ContainerState_CONTAINER_RUNNING, Env: injectedEqualEnv(), Mounts: []*api.Mount{mpsMount()},
 		},
 		{ // p2: uninjected → violator
 			Id: "c2", Name: "trainer", PodSandboxId: "p2",
@@ -223,6 +258,16 @@ func sharingPod(id, name, containerName, limit, request string) *api.PodSandbox 
 	return &api.PodSandbox{Id: id, Name: name, Namespace: "default", Uid: id + "-uid", Annotations: ann}
 }
 
+// withVisibleDevices records a GPU device assignment on the pod, as the scheduler
+// would, so the detector expects NVIDIA_VISIBLE_DEVICES to be injected.
+func withVisibleDevices(pod *api.PodSandbox, value string) *api.PodSandbox {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[annotations.VisibleDevicesAnnotation] = value
+	return pod
+}
+
 // injectedEnv returns the env keys buildAdjustment would add for the given
 // request/limit presence, so tests can construct a fully-injected container.
 func injectedEnv(limit, request bool) []string {
@@ -234,6 +279,19 @@ func injectedEnv(limit, request bool) []string {
 		env = append(env, injection.EnvGPUMemoryRequests+"=2147")
 	}
 	return env
+}
+
+// injectedEqualEnv returns the fully-injected env for a container whose request
+// and limit resolve to the same value — the real post-injection state of a
+// request-only or limit-only pod after ApplyDefaults (both default to the 4Gi /
+// 4294 MB value injectedEnv uses for the limit). Use this instead of
+// injectedEnv(true, true) for such pods so fixtures match reality.
+func injectedEqualEnv() []string {
+	return []string{
+		injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory,
+		injection.EnvGPUMemoryLimits + "=4294",
+		injection.EnvGPUMemoryRequests + "=4294",
+	}
 }
 
 func mpsMount() *api.Mount {

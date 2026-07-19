@@ -50,6 +50,58 @@ func TestParseToDecimalMB(t *testing.T) {
 	}
 }
 
+func TestParseVisibleDevices(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    string
+	}{
+		{
+			name:        "single UUID",
+			annotations: map[string]string{VisibleDevicesAnnotation: "GPU-abc123"},
+			expected:    "GPU-abc123",
+		},
+		{
+			name:        "comma-separated UUIDs passed through verbatim",
+			annotations: map[string]string{VisibleDevicesAnnotation: "GPU-abc123,GPU-def456"},
+			expected:    "GPU-abc123,GPU-def456",
+		},
+		{
+			name:        "surrounding whitespace trimmed",
+			annotations: map[string]string{VisibleDevicesAnnotation: "  GPU-abc123  "},
+			expected:    "GPU-abc123",
+		},
+		{
+			name:        "index value passed through",
+			annotations: map[string]string{VisibleDevicesAnnotation: "0"},
+			expected:    "0",
+		},
+		{
+			name:        "absent annotation yields empty",
+			annotations: map[string]string{"other": "value"},
+			expected:    "",
+		},
+		{
+			name:        "blank annotation yields empty",
+			annotations: map[string]string{VisibleDevicesAnnotation: "   "},
+			expected:    "",
+		},
+		{
+			name:        "nil annotations yields empty",
+			annotations: nil,
+			expected:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseVisibleDevices(tt.annotations); got != tt.expected {
+				t.Errorf("ParseVisibleDevices() = %q, expected %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestParseGPUMemoryAnnotations(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -211,6 +263,29 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			}
 			if cfg.IsEmpty() != tt.expectedEmpty {
 				t.Errorf("IsEmpty() = %v, expected %v", cfg.IsEmpty(), tt.expectedEmpty)
+			}
+		})
+	}
+}
+
+func TestApplyDefaults(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          GPUMemoryConfig
+		wantRequest string
+		wantLimit   string
+	}{
+		{"both set unchanged", GPUMemoryConfig{Request: "3221", Limit: "6442"}, "3221", "6442"},
+		{"request only defaults limit", GPUMemoryConfig{Request: "4294"}, "4294", "4294"},
+		{"limit only defaults request", GPUMemoryConfig{Limit: "6442"}, "6442", "6442"},
+		{"empty stays empty", GPUMemoryConfig{}, "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.in.ApplyDefaults()
+			if got.Request != tt.wantRequest || got.Limit != tt.wantLimit {
+				t.Errorf("ApplyDefaults(%+v) = {Request:%q Limit:%q}, want {Request:%q Limit:%q}",
+					tt.in, got.Request, got.Limit, tt.wantRequest, tt.wantLimit)
 			}
 		})
 	}

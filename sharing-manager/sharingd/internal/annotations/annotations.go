@@ -3,6 +3,7 @@ package annotations
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -11,6 +12,16 @@ const (
 	// Annotation key suffixes appended after the container name.
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
+
+	// VisibleDevicesAnnotation is the pod-level annotation key the scheduler
+	// (KAI/Run:ai) sets to the physical GPU device(s) it assigned to a fractional
+	// GPU-sharing pod: a comma-separated list of NVIDIA GPU UUIDs (or indices),
+	// e.g. "GPU-abc123,GPU-def456". A fractional pod does not request the
+	// nvidia.com/gpu resource, so the NVIDIA device plugin never injects
+	// NVIDIA_VISIBLE_DEVICES into its containers; sharingd reads this annotation
+	// and injects it (as injection.EnvVisibleDevices) so the container gets access
+	// to exactly the GPU the scheduler picked.
+	VisibleDevicesAnnotation = "nvidia.com/gpus.devices"
 
 	// Minimum value in decimal MB that MPS can meaningfully enforce.
 	minDecimalMB = 1
@@ -35,6 +46,28 @@ type GPUMemoryConfig struct {
 // IsEmpty returns true if neither request nor limit was specified.
 func (c GPUMemoryConfig) IsEmpty() bool {
 	return c.Request == "" && c.Limit == ""
+}
+
+// ApplyDefaults fills a missing request or limit from the other so a container
+// that specified only one of the two ends up with both, and with request ==
+// limit. This makes enforcement symmetric with the whole-GPU path:
+//
+//   - request only: the limit defaults to the request, so the memory cap
+//     (NVIDIA_GPU_MEMORY_LIMITS) is enforced at the requested size instead of
+//     being unbounded.
+//   - limit only: the request defaults to the limit, so the requested size
+//     (NVIDIA_GPU_MEMORY_REQUESTS, used for metrics/fraction accounting) is
+//     populated.
+//
+// A config with neither set (IsEmpty) is returned unchanged.
+func (c GPUMemoryConfig) ApplyDefaults() GPUMemoryConfig {
+	if c.Request == "" {
+		c.Request = c.Limit
+	}
+	if c.Limit == "" {
+		c.Limit = c.Request
+	}
+	return c
 }
 
 // EffectiveMemoryMB returns the container's allocated GPU memory in decimal MB:
@@ -96,6 +129,17 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 	}
 
 	return config, nil
+}
+
+// ParseVisibleDevices returns the GPU device assignment the scheduler recorded in
+// the pod's VisibleDevicesAnnotation, trimmed of surrounding whitespace. It
+// returns "" when the annotation is absent or blank, which the caller treats as
+// "no assignment to inject" (so a pod scheduled by a device plugin that already
+// sets NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
+// verbatim otherwise — its format (UUID list, index list, or "all") is the
+// NVIDIA container runtime's contract, not this operator's.
+func ParseVisibleDevices(annotations map[string]string) string {
+	return strings.TrimSpace(annotations[VisibleDevicesAnnotation])
 }
 
 // quantityToDecimalMB converts a Kubernetes Quantity string to decimal megabytes.
