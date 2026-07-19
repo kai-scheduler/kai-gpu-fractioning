@@ -12,10 +12,12 @@ spec:
     nvidia.com/gpu.present: "true"
   # Present (even if empty) so the API server applies field-level defaults such
   # as sharingAgent.retroactiveEnforcement=true.
+  {{- if and .Values.sharingAgent .Values.sharingAgent.logLevel }}
   sharingAgent:
-    {{- if and .Values.sharingAgent .Values.sharingAgent.logLevel }}
     logLevel: {{ .Values.sharingAgent.logLevel | quote }}
-    {{- end }}
+  {{- else }}
+  sharingAgent: {}
+  {{- end }}
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}
     {{- if hasKey .Values.metricsAgent "runtimeClassName" }}
