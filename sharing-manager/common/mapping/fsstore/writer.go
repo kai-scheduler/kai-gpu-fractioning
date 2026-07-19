@@ -83,6 +83,11 @@ func (w *Writer) Delete(containerID string) {
 // every running GPU workload — whereas skipping preserves attribution across the
 // reconnect window. A subsequent non-empty Synchronize, or individual
 // Upsert/Delete events as containers come and go, will reconcile the directory.
+//
+// Trade-off: if ALL GPU pods exit during the reconnect window (a genuine
+// transition to zero), stale files persist until the next event. This is
+// acceptable because each stale series is set to zero on the next collect
+// (activePodUIDs prunes it), so the window is bounded by one collect interval.
 func (w *Writer) Replace(containers []store.ContainerInfo) {
 	if err := os.MkdirAll(w.dir, dirPerm); err != nil {
 		w.log.Warn("failed to create mapping directory", "dir", w.dir, "error", err)

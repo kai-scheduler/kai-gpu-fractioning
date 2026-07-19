@@ -16,7 +16,10 @@ ARG TARGETARCH=amd64
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-# Always compile with e2e tag: this Dockerfile is the e2e variant.
+# metricsd has no build-tag-gated production code; the e2e distinction is
+# the baked-in nvml-mock .so, not a compile flag. GO_TAGS is wired here so
+# callers can still pass extra tags (e.g. for future conditional code) without
+# changing this file.
 ARG GO_TAGS=
 
 WORKDIR /workspace

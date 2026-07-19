@@ -53,19 +53,19 @@ FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-opera
 
 # nvml-mock: NVIDIA's mock libnvidia-ml.so DaemonSet (supplements fake-gpu-operator).
 # Applied as a static manifest — its setup.sh self-labels nodes
-# nvidia.com/gpu.present=true (the gpu-sharing-plugin nodeSelector) and installs a
-# real libnvidia-ml.so into /var/lib/nvml-mock/driver, so the plugin's NVML calls
-# resolve against the mock instead of falling back to deadCollector. No Helm
+# nvidia.com/gpu.present=true (the sharingd DaemonSet's nodeSelector) and installs a
+# real libnvidia-ml.so into /var/lib/nvml-mock/driver, so metricsd's NVML calls
+# resolve against the mock instead of falling back to NoopCollector. No Helm
 # release and no device plugin are needed for the metrics e2e suite: attribution
 # keys off the fractional annotation + cgroup + NVML UUID, not a scheduled
 # nvidia.com/gpu resource.
 NVML_MOCK_MANIFEST = "sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml"
 
-# gpu-sharing-plugin (sharing-manager/metricsd/deploy/daemonset.yaml) mounts
-# /var/run/nri as a hostPath of type "Directory", which requires the path to
-# already exist on the node. Stock k3s images ship with containerd's NRI
+# sharingd (the gpu-sharing-operator's NRI DaemonSet, created by the Helm chart)
+# mounts /var/run/nri as a hostPath of type "Directory", which requires the path
+# to already exist on the node. Stock k3s images ship with containerd's NRI
 # plugin disabled, so that directory/socket is never created and the
-# plugin's pods hang forever in ContainerCreating. Override each node's
+# sharingd pods hang forever in ContainerCreating. Override each node's
 # containerd config to enable NRI so containerd creates the socket (and its
 # parent directory) on startup.
 CONTAINERD_NRI_CONFIG_TEMPLATE = """{{ template "base" . }}

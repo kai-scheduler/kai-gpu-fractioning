@@ -189,13 +189,17 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	got := metrics.GaugeValue(series)
 	t.Logf("%s: got %.2f (fraction≈0.5, smUtil=%d)", normMetricName, got, wantSMUtil)
 
-	// Normalized must exceed the raw value (fraction < 1 amplifies) and must
-	// be below 100 (cap not triggered at this injection level).
-	if got <= float64(wantSMUtil) {
-		t.Errorf("%s: want > %d (fraction < 1 should amplify raw util), got %.2f",
-			normMetricName, wantSMUtil, got)
+	// Normalized = smUtil / fraction ≈ 40 / 0.5 = 80. Assert a tight band
+	// [75, 90] — wide enough for decimal/binary MB rounding in gpuFraction,
+	// tight enough to catch formula errors (e.g. not normalizing, or clamping
+	// when it shouldn't). The 100-cap is not triggered at this injection level.
+	const wantNorm = 80.0
+	const normTolerance = 5.0
+	if got < wantNorm-normTolerance || got > wantNorm+normTolerance {
+		t.Errorf("%s: want %.0f±%.0f (smUtil=%d / fraction≈0.5), got %.2f",
+			normMetricName, wantNorm, normTolerance, wantSMUtil, got)
 	}
 	if got > 100 {
-		t.Errorf("%s: want ≤ 100 (cap must apply), got %.2f", normMetricName, got)
+		t.Errorf("%s: want ≤ 100 (cap must not apply at 80), got %.2f", normMetricName, got)
 	}
 }

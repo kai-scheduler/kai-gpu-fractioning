@@ -1,19 +1,20 @@
 // Package nvmlmock drives the nvml-mock ConfigMap so per-pod GPU metrics are
 // deterministic in the e2e suite.
 //
-// The metricsd e2e binary (Dockerfile.e2e, compiled with -tags e2e) replaces
-// the NVML collector with a ConfigMap-backed collector that polls
-// gpu-operator/nvml-mock-config on every collection cycle. To make NVML
-// attribute memory to a real pod this package:
+// The metricsd e2e image (Dockerfile.e2e) bakes in the nvml-mock shared
+// library (libnvidia-ml.so.1). The production NVML collector is used
+// unchanged; the library reads MOCK_NVML_CONFIG at nvmlInit() time and
+// returns the configured processes on each NVML API call. To make NVML
+// attribute metrics to a real pod this package:
 //
 //  1. resolves the workload container's host-namespace PID (HostPID), and
-//  2. rewrites the nvml-mock ConfigMap so that PID appears as a GPU process on
-//     a chosen device UUID (SetProcesses).
+//  2. rewrites the gpu-sharing-operator/nvml-mock-config ConfigMap so that
+//     PID appears as a GPU process on a chosen device UUID (SetProcesses).
 //
 // Changing the ConfigMap requires metricsd pod restarts to take effect:
-// the baked-in libnvidia-ml.so reads MOCK_NVML_CONFIG at nvmlInit() time,
-// not on each NVML API call, so a new pod is required for the updated
-// config to be loaded. SetProcesses calls restartMetricsd automatically.
+// the library reads MOCK_NVML_CONFIG once at nvmlInit() time, so a new pod
+// is required to pick up the updated process list. SetProcesses calls
+// restartMetricsd automatically.
 package nvmlmock
 
 import (
@@ -175,10 +176,13 @@ func restartMetricsd(ctx context.Context, c *cluster.Client) error {
 	}
 
 	// Wait until ALL replacement pods (one per deleted pod) have their metricsd
-	// container Ready. Waiting for only one is insufficient: NRI Synchronize fires
-	// after a pod reports Ready, so a pod that just became Ready may not have
-	// attributed any pre-existing containers yet. Waiting for all N pods ensures
-	// the full DaemonSet is up before callers start polling metrics.
+	// container Running (cs.Ready=true). metricsd has no readiness probe, so
+	// cs.Ready flips as soon as the process starts — before nvmlInit() reads the
+	// ConfigMap and before the first collect cycle. Callers then poll for metric
+	// series, which naturally waits for NVML initialisation and the first collect.
+	// Waiting for only one pod is insufficient: NRI Synchronize fires after a pod
+	// is running, so it may not have attributed pre-existing containers yet.
+	// Waiting for all N pods ensures every node's metricsd is at least running.
 	want := len(deleted)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
