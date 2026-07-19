@@ -18,3 +18,7 @@ spec:
     {{- if hasKey .Values.metricsAgent "runtimeClassName" }}
     runtimeClassName: {{ .Values.metricsAgent.runtimeClassName | quote }}
     {{- end }}
+    {{- with .Values.metricsAgent.metricNames }}
+    metricNames:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}

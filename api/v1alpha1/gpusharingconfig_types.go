@@ -164,6 +164,29 @@ type MetricsAgentSpec struct {
 	// (only safe when the default runtime already injects NVIDIA driver libraries).
 	// +optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
+	// metricNames overrides the exported Prometheus metric names. Empty fields
+	// keep the built-in gpu_sharing_* defaults. Set these to make metricsd emit
+	// the names a downstream consumer expects. The metric labels
+	// (namespace, pod, pod_uuid, gpu_uuid, gpu) are fixed.
+	// +optional
+	MetricNames *MetricNamesSpec `json:"metricNames,omitempty"`
+}
+
+// MetricNamesSpec overrides the Prometheus metric names metricsd exports.
+type MetricNamesSpec struct {
+	// gpuMemoryUsedBytes overrides the per-pod GPU memory-used-bytes metric name.
+	// +optional
+	GPUMemoryUsedBytes string `json:"gpuMemoryUsedBytes,omitempty"`
+
+	// gpuSmUtilizationPercent overrides the per-pod GPU SM-utilization metric name.
+	// +optional
+	GPUSMUtilizationPercent string `json:"gpuSmUtilizationPercent,omitempty"`
+
+	// gpuSmUtilizationPercentNormalized overrides the per-pod normalized GPU
+	// SM-utilization metric name.
+	// +optional
+	GPUSMUtilizationPercentNormalized string `json:"gpuSmUtilizationPercentNormalized,omitempty"`
 }
 
 // MpsDaemonSpec configures the mpsd DaemonSet managed by the controller.
