@@ -6,7 +6,6 @@ import (
 	"context"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
@@ -27,7 +26,7 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 		t.Skip(skipNoNVMLMock)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
 
 	c := s.Client
@@ -118,7 +117,7 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 		t.Skip(skipNoNVMLMock)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
 
 	c := s.Client

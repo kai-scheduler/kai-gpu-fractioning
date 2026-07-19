@@ -17,7 +17,7 @@ import (
 // deliberate design decision — worth a negative test since silent exclusion
 // is otherwise unobservable from outside the code.
 func TestE2E_FullGPUPodIsExcludedFromMetrics(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), exclusionTestTimeout)
 	defer cancel()
 
 	c := s.Client
@@ -54,7 +54,7 @@ func TestE2E_FullGPUPodIsExcludedFromMetrics(t *testing.T) {
 // and does not crash the plugin. Protects against a future regex/parsing change
 // turning a bad annotation into a panic or a wrongly-attributed series.
 func TestE2E_MalformedAnnotationIsIgnoredNotFatal(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), exclusionTestTimeout)
 	defer cancel()
 
 	c := s.Client

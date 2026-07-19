@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +33,7 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 		t.Skip(skipNoNVMLMock)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), aggregationTestTimeout)
 	defer cancel()
 
 	c := s.Client

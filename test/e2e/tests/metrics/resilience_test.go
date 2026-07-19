@@ -26,7 +26,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	// Two DaemonSet rollouts (inside SetProcesses) plus a collection cycle and
 	// the post-delete prune wait — give it well over the single-rollout budget,
 	// matching the attribution test budget.
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), attributionTestTimeout)
 	defer cancel()
 
 	c := s.Client

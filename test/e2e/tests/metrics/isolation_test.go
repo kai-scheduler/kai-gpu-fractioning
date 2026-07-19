@@ -44,7 +44,7 @@ func TestE2E_MultipleGPUsOnOneNodeAreIsolated(t *testing.T) {
 			s.Client.Config.GPUCountPerNode)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
 
 	c := s.Client

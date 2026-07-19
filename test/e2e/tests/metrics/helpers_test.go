@@ -25,6 +25,36 @@ const attributionTestNamespace = "metricsd-e2e"
 
 const skipNoNVMLMock = "requires nvml-mock (set E2E_NVML_MOCK=1)"
 
+// Per-test context deadlines. Each constant is sized for its worst-case
+// path: one nvml-mock SetProcesses cycle takes ~90 s (pod restart + ready
+// wait), and each metric-series poll window adds up to c.Config.PodReadyTimeout.
+const (
+	// testTimeout covers a single SetProcesses cycle plus one poll window.
+	// Used by most nvml-mock tests (clamping, compute, isolation, lifecycle,
+	// normalized, sharing).
+	testTimeout = 10 * time.Minute
+
+	// aggregationTestTimeout allows for two pods with two SetProcesses calls
+	// and two independent poll windows.
+	aggregationTestTimeout = 12 * time.Minute
+
+	// attributionTestTimeout covers a single fractional-pod attribution
+	// cycle (one SetProcesses + one poll window).
+	attributionTestTimeout = 8 * time.Minute
+
+	// podUIDTestTimeout adds headroom for pod deletion and the metric-pruning
+	// wait on top of the standard attribution cycle.
+	podUIDTestTimeout = 15 * time.Minute
+
+	// exclusionTestTimeout covers negative assertNeverAppears checks;
+	// no nvml-mock is involved so the full 2 min is generous.
+	exclusionTestTimeout = 2 * time.Minute
+
+	// metricsPresenceTimeout is a short deadline for basic metric-presence
+	// checks that do not require nvml-mock or pod restarts.
+	metricsPresenceTimeout = 30 * time.Second
+)
+
 const (
 	memMetricName  = "gpu_sharing_gpu_memory_used_bytes"
 	smMetricName   = "gpu_sharing_gpu_sm_utilization_percent"

@@ -6,7 +6,6 @@ import (
 	"context"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
@@ -43,7 +42,7 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	}
 	// Two DaemonSet rollouts (inside SetProcesses) plus collection cycles for
 	// two pods — match the attribution/resilience test budget.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
 
 	c := s.Client
