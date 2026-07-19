@@ -322,6 +322,17 @@ func (d *daemon) buildMetricsdArgs() []string {
 	if d.metricsSpec.Path != "" {
 		args = append(args, "--metrics-path", d.metricsSpec.Path)
 	}
+	if n := d.metricsSpec.MetricNames; n != nil {
+		if n.GPUMemoryUsedBytes != "" {
+			args = append(args, "--metric-name-gpu-memory-used-bytes", n.GPUMemoryUsedBytes)
+		}
+		if n.GPUSMUtilizationPercent != "" {
+			args = append(args, "--metric-name-gpu-sm-utilization-percent", n.GPUSMUtilizationPercent)
+		}
+		if n.GPUSMUtilizationPercentNormalized != "" {
+			args = append(args, "--metric-name-gpu-sm-utilization-percent-normalized", n.GPUSMUtilizationPercentNormalized)
+		}
+	}
 	return args
 }
 

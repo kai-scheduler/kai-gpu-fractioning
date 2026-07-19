@@ -33,6 +33,14 @@ mpsd:
 metricsAgent:
   enabled: true
   runtimeClassName: "nvidia"
+  # metricNames overrides the exported Prometheus metric names. Leave empty to
+  # keep the built-in gpu_sharing_* names. Set them to integrate with a consumer
+  # that expects specific names. Labels are fixed: namespace, pod, pod_uuid,
+  # gpu_uuid, gpu.
+  metricNames: {}
+    # gpuMemoryUsedBytes: <metric name>
+    # gpuSmUtilizationPercent: <metric name>
+    # gpuSmUtilizationPercentNormalized: <metric name>
 
 serviceAccount:
   create: true

@@ -79,6 +79,27 @@ spec:
                       logLevel controls the logging verbosity of the metrics agent.
                       One of debug, info, warn, error. Default: info.
                     type: string
+                  metricNames:
+                    description: |-
+                      metricNames overrides the exported Prometheus metric names. Empty fields
+                      keep the built-in gpu_sharing_* defaults. Set these to make metricsd emit
+                      the names a downstream consumer expects. The metric labels
+                      (namespace, pod, pod_uuid, gpu_uuid, gpu) are fixed.
+                    properties:
+                      gpuMemoryUsedBytes:
+                        description: gpuMemoryUsedBytes overrides the per-pod GPU
+                          memory-used-bytes metric name.
+                        type: string
+                      gpuSmUtilizationPercent:
+                        description: gpuSmUtilizationPercent overrides the per-pod
+                          GPU SM-utilization metric name.
+                        type: string
+                      gpuSmUtilizationPercentNormalized:
+                        description: |-
+                          gpuSmUtilizationPercentNormalized overrides the per-pod normalized GPU
+                          SM-utilization metric name.
+                        type: string
+                    type: object
                   path:
                     description: 'path is the HTTP path on which metrics are served.
                       Default: /metrics.'

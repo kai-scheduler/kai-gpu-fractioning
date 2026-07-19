@@ -26,6 +26,10 @@ spec:
     {{- if .Values.metricsAgent.logLevel }}
     logLevel: {{ .Values.metricsAgent.logLevel | quote }}
     {{- end }}
+    {{- with .Values.metricsAgent.metricNames }}
+    metricNames:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
     {{- if .Values.metricsAgent.volumes }}
     volumes:
       {{- toYaml .Values.metricsAgent.volumes | nindent 6 }}

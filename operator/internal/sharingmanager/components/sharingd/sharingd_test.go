@@ -1,6 +1,7 @@
 package sharingd
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -149,6 +150,32 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 	}
 	if envMap["NVIDIA_DRIVER_CAPABILITIES"] != "utility" {
 		t.Errorf("NVIDIA_DRIVER_CAPABILITIES = %q, expected \"utility\"", envMap["NVIDIA_DRIVER_CAPABILITIES"])
+	}
+}
+
+func TestDaemon_BuildDaemonSet_MetricNamesArgs(t *testing.T) {
+	d := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{
+		Enabled: true,
+		MetricNames: &v1alpha1.MetricNamesSpec{
+			GPUMemoryUsedBytes:      "custom_gpu_memory_used_bytes",
+			GPUSMUtilizationPercent: "custom_gpu_utilization",
+		},
+	})
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+
+	args := strings.Join(metricsd.Args, " ")
+	for _, want := range []string{
+		"--metric-name-gpu-memory-used-bytes custom_gpu_memory_used_bytes",
+		"--metric-name-gpu-sm-utilization-percent custom_gpu_utilization",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("metricsd args %q missing %q", args, want)
+		}
+	}
+	// unset normalized name must not add a flag (keeps the built-in default)
+	if strings.Contains(args, "--metric-name-gpu-sm-utilization-percent-normalized") {
+		t.Errorf("unexpected normalized metric-name flag in %q", args)
 	}
 }
 

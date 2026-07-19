@@ -147,6 +147,21 @@ spec:
                       items:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                    metricNames:
+                      description: >-
+                        metricNames overrides the exported Prometheus metric names.
+                        Empty fields keep the built-in gpu_sharing_* defaults. Set
+                        these to make metricsd emit the names a downstream consumer
+                        expects. Labels are fixed
+                        (namespace, pod, pod_uuid, gpu_uuid, gpu).
+                      type: object
+                      properties:
+                        gpuMemoryUsedBytes:
+                          type: string
+                        gpuSmUtilizationPercent:
+                          type: string
+                        gpuSmUtilizationPercentNormalized:
+                          type: string
                 mpsDaemon:
                   description: mpsDaemon configures the MPS daemon supervisor (mpsd).
                   type: object
