@@ -1,5 +1,5 @@
 // Package workload creates and tears down single-purpose test pods used to
-// exercise gpu-sharing-plugin attribution. Separate from the plugin package,
+// exercise gpu-sharing-operator attribution. Separate from the plugin package,
 // which manages the DaemonSet under test itself, not workloads that exercise
 // it.
 package workload
@@ -25,8 +25,8 @@ const DefaultImage = "busybox:1.37"
 
 // FractionalPod describes a single-container pod carrying the
 // nvidia.com/gpu-memory.container.<name>.{limit,request} annotation that
-// makes the gpu-sharing-plugin NRI plugin track it — see
-// sharing-manager/metricsd/internal/plugin/adapter.go. Values/format mirror
+// makes the sharingd NRI plugin track it — see
+// sharing-manager/sharingd/internal/adapter.go. Values/format mirror
 // sharing-manager/metricsd/test/workloads/test-fractional-gpu-pods.yaml.
 type FractionalPod struct {
 	Namespace     string

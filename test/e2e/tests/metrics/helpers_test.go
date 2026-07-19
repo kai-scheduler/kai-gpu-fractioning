@@ -36,7 +36,7 @@ const (
 // lifecycle: they are emitted and pruned together by the exporter.
 var allMetricNames = []string{memMetricName, smMetricName, normMetricName}
 
-// waitForSeries polls every gpu-sharing-plugin pod's /metrics until a series
+// waitForSeries polls every sharingd pod's /metrics until a series
 // for metricName matches every label in match, or times out.
 func waitForSeries(ctx context.Context, c *cluster.Client, metricName string, match map[string]string) (*dto.Metric, error) {
 	var found *dto.Metric
@@ -60,7 +60,7 @@ func waitForSeries(ctx context.Context, c *cluster.Client, metricName string, ma
 	return found, nil
 }
 
-// waitForAbsence polls until no gpu-sharing-plugin pod reports a series for
+// waitForAbsence polls until no sharingd pod reports a series for
 // metricName matching every label in match, or times out. The inverse of
 // waitForSeries — used to confirm a deleted pod's series is eventually
 // pruned (exporter.go's pruneDeletedPods).
@@ -148,7 +148,7 @@ func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricNa
 	return out, nil
 }
 
-// pluginPodRestartCounts returns each gpu-sharing-plugin pod's total
+// pluginPodRestartCounts returns each sharingd pod's total
 // container restart count, keyed by pod name. A crash (e.g. a panic from a
 // malformed annotation or a delete-during-scrape race) shows up as an
 // increase here — a more reliable resilience signal than "the test didn't
@@ -157,7 +157,7 @@ func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricNa
 func pluginPodRestartCounts(ctx context.Context, c *cluster.Client) (map[string]int32, error) {
 	pluginPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
 	if err != nil {
-		return nil, fmt.Errorf("list gpu-sharing-plugin pods: %w", err)
+		return nil, fmt.Errorf("list sharingd pods: %w", err)
 	}
 
 	counts := make(map[string]int32, len(pluginPods))
