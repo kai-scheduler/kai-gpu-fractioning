@@ -72,22 +72,11 @@ func (w *Writer) Delete(containerID string) {
 	}
 }
 
-// Replace reconciles the directory against the full container set delivered by an
-// NRI Synchronize: it (re)writes every current file and unlinks any stale file
-// for a container no longer present.
-//
-// When containers is empty the pruning step is skipped. An empty Synchronize
-// indicates that containerd restarted and has not yet replayed existing
-// containers to the plugin (observed in k3s/k3d on plugin reconnect). Pruning
-// in that case would wipe all existing mapping files — causing a metric gap for
-// every running GPU workload — whereas skipping preserves attribution across the
-// reconnect window. A subsequent non-empty Synchronize, or individual
-// Upsert/Delete events as containers come and go, will reconcile the directory.
-//
-// Trade-off: if ALL GPU pods exit during the reconnect window (a genuine
-// transition to zero), stale files persist until the next event. This is
-// acceptable because each stale series is set to zero on the next collect
-// (activePodUIDs prunes it), so the window is bounded by one collect interval.
+// Replace reconciles the directory against the full container set: it
+// (re)writes every current file and unlinks any stale file for a container no
+// longer present. Callers are responsible for not invoking Replace with an
+// empty slice when the intent is to preserve existing files (e.g. on an NRI
+// reconnect before containerd has replayed containers); see events.Processor.
 func (w *Writer) Replace(containers []store.ContainerInfo) {
 	if err := os.MkdirAll(w.dir, dirPerm); err != nil {
 		w.log.Warn("failed to create mapping directory", "dir", w.dir, "error", err)
@@ -95,12 +84,6 @@ func (w *Writer) Replace(containers []store.ContainerInfo) {
 	}
 
 	w.log.Debug("NRI Synchronize: reconciling fsstore", "containers", len(containers))
-
-	if len(containers) == 0 {
-		// Empty Synchronize: containerd restarted and has not yet replayed
-		// existing containers.
-		return
-	}
 
 	desired := make(map[string]struct{}, len(containers))
 	for _, info := range containers {

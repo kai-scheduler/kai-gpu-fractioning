@@ -9,6 +9,8 @@ import (
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
+	corev1 "k8s.io/api/core/v1"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
@@ -53,6 +55,11 @@ const (
 	// metricsPresenceTimeout is a short deadline for basic metric-presence
 	// checks that do not require nvml-mock or pod restarts.
 	metricsPresenceTimeout = 30 * time.Second
+
+	// sharingdRestartTestTimeout covers two DaemonSet restart cycles (one
+	// SetProcesses + one explicit sharingd restart) plus two metric-series
+	// poll windows.
+	sharingdRestartTestTimeout = 15 * time.Minute
 )
 
 const (
@@ -219,4 +226,60 @@ func setProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []nv
 	}
 	s.PluginPods = freshPods
 	return nil
+}
+
+// restartSharingdPods deletes every sharingd pod and waits for their
+// replacements to be ready, then refreshes s.PluginPods. Use this to simulate
+// an NRI plugin reconnect without changing the nvml-mock ConfigMap.
+func restartSharingdPods(ctx context.Context, t *testing.T, c *cluster.Client) {
+	t.Helper()
+
+	existing, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
+	if err != nil {
+		t.Fatalf("list sharingd pods before restart: %v", err)
+	}
+
+	deleted := make(map[string]struct{}, len(existing))
+	for i := range existing {
+		deleted[existing[i].Name] = struct{}{}
+		if err := c.Ctrl.Delete(ctx, &existing[i]); err != nil {
+			t.Fatalf("delete sharingd pod %s: %v", existing[i].Name, err)
+		}
+	}
+
+	want := len(deleted)
+	deadline := time.Now().Add(c.Config.DaemonSetReadyTimeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		var updated corev1.PodList
+		if err := c.Ctrl.List(ctx, &updated,
+			ctrlclient.InNamespace(c.Config.OperatorNamespace),
+			ctrlclient.MatchingLabels{"app.kubernetes.io/component": "sharingd", "app.kubernetes.io/managed-by": "gpu-sharing-operator"}); err != nil {
+			continue
+		}
+		ready := 0
+		for _, pod := range updated.Items {
+			if _, wasDeleted := deleted[pod.Name]; wasDeleted {
+				continue
+			}
+			if pod.DeletionTimestamp != nil {
+				continue
+			}
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.Name == "metricsd" && cs.Ready {
+					ready++
+					break
+				}
+			}
+		}
+		if ready >= want {
+			freshPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
+			if err != nil {
+				t.Fatalf("list sharingd pods after restart: %v", err)
+			}
+			s.PluginPods = freshPods
+			return
+		}
+	}
+	t.Fatalf("sharingd pods not ready within %v", c.Config.DaemonSetReadyTimeout)
 }

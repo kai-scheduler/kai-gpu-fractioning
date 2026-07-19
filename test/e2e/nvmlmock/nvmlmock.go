@@ -184,7 +184,7 @@ func restartMetricsd(ctx context.Context, c *cluster.Client) error {
 	// is running, so it may not have attributed pre-existing containers yet.
 	// Waiting for all N pods ensures every node's metricsd is at least running.
 	want := len(deleted)
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := time.Now().Add(c.Config.DaemonSetReadyTimeout)
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
 		var updated corev1.PodList

@@ -13,10 +13,8 @@ spec:
   # Present (even if empty) so the API server applies field-level defaults such
   # as sharingAgent.retroactiveEnforcement=true.
   sharingAgent:
-    {{- if .Values.sharingAgent }}
-    {{- if .Values.sharingAgent.logLevel }}
+    {{- if and .Values.sharingAgent .Values.sharingAgent.logLevel }}
     logLevel: {{ .Values.sharingAgent.logLevel | quote }}
-    {{- end }}
     {{- end }}
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}
