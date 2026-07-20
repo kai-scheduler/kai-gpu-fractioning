@@ -50,6 +50,11 @@ build:
         dockerfile: sharing-manager/metricsd/Dockerfile
 
 deploy:
+  # Fail a wedged rollout fast instead of skaffold's 10-min default. An
+  # ErrImageNeverPull (image disk-pressure-evicted from a node's containerd)
+  # never recovers under pullPolicy: Never, so waiting the full default only
+  # burns CI minutes and pushes the real failure past the job timeout.
+  statusCheckDeadlineSeconds: 180
   helm:
     releases:
       - name: gso

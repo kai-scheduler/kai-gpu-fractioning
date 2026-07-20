@@ -64,7 +64,12 @@ e2e: e2e-cluster-up e2e-deploy test-e2e
 
 # E2E_GO_TEST wraps a suite's `go test` invocation. Each suite lives in its own
 # tests/<suite> package so a CI job can run exactly one suite.
-E2E_GO_TEST = cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_NVML_MOCK=1 E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 20m
+#
+# -timeout 12m (< the 20m job timeout): a hung suite hits go's own timeout first
+# and dumps every goroutine's stack — pinpointing where it wedged — instead of
+# being silently killed when the job is cancelled at the 20m mark. Healthy suites
+# finish in a couple of minutes, so this only bites real hangs.
+E2E_GO_TEST = cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_NVML_MOCK=1 E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 12m
 
 e2e-cluster-deps:
 	$(PYTHON) -m pip install -q -r test/e2e/hack/requirements.txt

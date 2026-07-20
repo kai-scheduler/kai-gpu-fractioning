@@ -40,14 +40,19 @@ jobs:
       - uses: actions/checkout@v7
 
       # Reclaim runner disk before building 4 images (incl. the large NVML
-      # metricsd image) into k3d. Without this the kubelet tents all nodes with
-      # node.kubernetes.io/disk-pressure and evicts the stack mid-deploy.
+      # metricsd image) into k3d. k3d imports every image into EACH node's
+      # containerd, so a 4-node cluster holds ~4x the images; without enough
+      # headroom the kubelet tents nodes with node.kubernetes.io/disk-pressure
+      # and containerd GC-evicts images mid-run, surfacing as ErrImageNeverPull
+      # (pods use pullPolicy: Never, so an evicted image never comes back).
       - name: Free disk space
         run: |
+          echo "before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
-          sudo docker image prune --all --force || true
-          df -h /
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" \
+            /usr/local/.ghcup /usr/share/swift /usr/local/graalvm /usr/lib/jvm || true
+          sudo docker system prune --all --force --volumes || true
+          echo "after:"; df -h /
 
       # Suite-agnostic infra: toolchain + k3d/fake-gpu-operator cluster.
       # Reused as-is by future e2e suites (mpsd/sharingd).
@@ -70,12 +75,19 @@ jobs:
       - name: Run metrics e2e tests
         run: make test-e2e-metrics
 
-      - name: Collect diagnostics on failure
-        if: failure()
+      # Runs on a failed step AND on a timeout (job cancellation) — the previous
+      # `if: failure()` was skipped whenever the job hit its timeout, which is
+      # exactly when a hung deploy/test needs to be diagnosed. Node conditions +
+      # disk usage confirm or rule out the disk-pressure/ErrImageNeverPull path.
+      - name: Collect diagnostics
+        if: ${{ failure() || cancelled() }}
         run: |
           export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
-          kubectl get nodes -o wide || true
-          kubectl get pods -A -o wide || true
+          echo "::group::disk"; df -h / || true; echo "::endgroup::"
+          echo "::group::nodes"; kubectl get nodes -o wide || true
+          kubectl describe nodes | grep -iE 'Name:|DiskPressure|MemoryPressure|Taints|Non-terminated' || true; echo "::endgroup::"
+          echo "::group::pods"; kubectl get pods -A -o wide || true; echo "::endgroup::"
+          echo "::group::events"; kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true; echo "::endgroup::"
           kubectl -n gpu-sharing get gpusharingconfig -o yaml || true
           kubectl -n gpu-sharing describe pods || true
           kubectl -n gpu-sharing logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
