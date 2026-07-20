@@ -9,11 +9,42 @@ import (
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
+
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
 )
 
 type staticProvider struct{ snap Snapshot }
 
 func (s *staticProvider) Snapshot(_ context.Context) (Snapshot, error) { return s.snap, nil }
+
+func TestExporterServesHealthEndpoints(t *testing.T) {
+	rt, err := New(context.Background(), Config{
+		Enabled: true,
+		Address: ":0",
+		Names:   MetricNames{}.WithDefaults(),
+	}, store.FakeStore{}, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	srv := httptest.NewServer(rt.server.Handler)
+	defer srv.Close()
+
+	for _, path := range []string{HealthzPath, ReadyzPath} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: expected 200, got %d", path, resp.StatusCode)
+		}
+		if strings.TrimSpace(string(body)) != "ok" {
+			t.Fatalf("GET %s: expected body %q, got %q", path, "ok", string(body))
+		}
+	}
+}
 
 func TestMetricNamesValidate(t *testing.T) {
 	tests := []struct {

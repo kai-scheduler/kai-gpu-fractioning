@@ -251,6 +251,63 @@ func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
 	}
 }
 
+// Liveness on sharingd is a TCP connect (not /readyz) so a sharingd still
+// retrying its NRI registration is not restart-looped; resources are always set.
+func TestDaemon_BuildDaemonSet_SharingdLivenessAndResources(t *testing.T) {
+	ctr := NewSharingdDaemon(nil, nil).BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
+
+	if ctr.LivenessProbe == nil || ctr.LivenessProbe.TCPSocket == nil {
+		t.Fatalf("expected a TCPSocket liveness probe, got %+v", ctr.LivenessProbe)
+	}
+	if got := ctr.LivenessProbe.TCPSocket.Port.IntValue(); got != defaultReadinessPort {
+		t.Errorf("liveness port = %d, want %d", got, defaultReadinessPort)
+	}
+	assertDaemonResources(t, ctr, sharingdMemLimit)
+}
+
+// metricsd exposes readiness (/readyz) and liveness (/healthz) on its metrics
+// port so a broken sidecar flips pod readiness / is restarted; resources are set.
+func TestDaemon_BuildDaemonSet_MetricsdProbesAndResources(t *testing.T) {
+	spec := NewSharingdDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}).
+		BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+
+	if metricsd.ReadinessProbe == nil || metricsd.ReadinessProbe.HTTPGet == nil {
+		t.Fatalf("expected an httpGet readiness probe on metricsd, got %+v", metricsd.ReadinessProbe)
+	}
+	if metricsd.LivenessProbe == nil || metricsd.LivenessProbe.HTTPGet == nil {
+		t.Fatalf("expected an httpGet liveness probe on metricsd, got %+v", metricsd.LivenessProbe)
+	}
+	if metricsd.ReadinessProbe.HTTPGet.Path != metricsdReadyzPath {
+		t.Errorf("readiness path = %q, want %q", metricsd.ReadinessProbe.HTTPGet.Path, metricsdReadyzPath)
+	}
+	if metricsd.LivenessProbe.HTTPGet.Path != metricsdHealthzPath {
+		t.Errorf("liveness path = %q, want %q", metricsd.LivenessProbe.HTTPGet.Path, metricsdHealthzPath)
+	}
+	if got := int32(metricsd.ReadinessProbe.HTTPGet.Port.IntValue()); got != metricsPort {
+		t.Errorf("metricsd probe port = %d, want %d", got, metricsPort)
+	}
+	assertDaemonResources(t, metricsd, metricsdMemLimit)
+}
+
+// assertDaemonResources checks the shared daemon resource contract: CPU + memory
+// requests set, a memory limit equal to wantMemLimit, and no CPU limit.
+func assertDaemonResources(t *testing.T, ctr corev1.Container, wantMemLimit string) {
+	t.Helper()
+	if ctr.Resources.Requests.Cpu().IsZero() {
+		t.Error("expected a CPU request")
+	}
+	if ctr.Resources.Requests.Memory().IsZero() {
+		t.Error("expected a memory request")
+	}
+	if got := ctr.Resources.Limits.Memory().String(); got != wantMemLimit {
+		t.Errorf("memory limit = %q, want %q", got, wantMemLimit)
+	}
+	if _, hasCPULimit := ctr.Resources.Limits[corev1.ResourceCPU]; hasCPULimit {
+		t.Error("expected no CPU limit on a system daemon")
+	}
+}
+
 // When spec.readinessPort is set, the operator passes it to the binary and
 // points the probe (and container port) at the same value.
 func TestDaemon_BuildDaemonSet_ReadinessPortOverride(t *testing.T) {
