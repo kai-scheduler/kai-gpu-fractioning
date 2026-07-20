@@ -15,7 +15,7 @@ import (
 // which the operator labels with component=sharingd (metricsd is a container in
 // that pod, not its own workload). Its /metrics endpoint listens on 2112.
 const (
-	sharingdLabelSelector = "app.kubernetes.io/managed-by=gpu-sharing-operator,app.kubernetes.io/component=sharingd"
+	sharingdLabelSelector = "app.kubernetes.io/managed-by=gpu-sharing,app.kubernetes.io/component=sharingd"
 	metricsPort           = 2112
 )
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""create-cluster.py - k3d cluster + fake-gpu-operator for gpu-sharing-operator e2e tests.
+"""create-cluster.py - k3d cluster + fake-gpu-operator for gpu-sharing e2e tests.
 
 Uses an env-driven pydantic-settings config, a typer CLI, and
 retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
@@ -47,7 +47,7 @@ import typer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-app = typer.Typer(help="k3d cluster setup for gpu-sharing-operator e2e tests")
+app = typer.Typer(help="k3d cluster setup for gpu-sharing e2e tests")
 
 FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator"
 
@@ -61,7 +61,7 @@ FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-opera
 # nvidia.com/gpu resource.
 NVML_MOCK_MANIFEST = "sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml"
 
-# sharingd (the gpu-sharing-operator's NRI DaemonSet, created by the Helm chart)
+# sharingd (the gpu-sharing's NRI DaemonSet, created by the Helm chart)
 # mounts /var/run/nri as a hostPath of type "Directory", which requires the path
 # to already exist on the node. Stock k3s images ship with containerd's NRI
 # plugin disabled, so that directory/socket is never created and the
@@ -294,10 +294,10 @@ def install_nvml_mock(config: ClusterConfig) -> None:
     # test/e2e/hack -> repo root (hack, e2e, test, <root>).
     manifest = Path(__file__).resolve().parents[3] / NVML_MOCK_MANIFEST
 
-    # The manifest spans gpu-operator and gpu-sharing-operator namespaces; create
+    # The manifest spans gpu-operator and gpu-sharing namespaces; create
     # both up-front so apply doesn't race. _ok_code tolerates AlreadyExists.
     sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
-    sh.kubectl("create", "namespace", "gpu-sharing-operator", _ok_code=[0, 1])
+    sh.kubectl("create", "namespace", "gpu-sharing", _ok_code=[0, 1])
     sh.kubectl("apply", "-f", str(manifest))
 
     # Guard against a silent no-op: a DaemonSet whose nodeSelector matches zero
@@ -349,7 +349,7 @@ def main(
         False, "--skip-gpu-mock", help="Skip nvml-mock install"
     ),
 ) -> None:
-    """Create (or delete) a k3d cluster with fake-gpu-operator and nvml-mock for gpu-sharing-operator e2e tests."""
+    """Create (or delete) a k3d cluster with fake-gpu-operator and nvml-mock for gpu-sharing e2e tests."""
     config = ClusterConfig()
     if not config.kubeconfig:
         config.kubeconfig = str(Path.home() / ".kube" / f"{config.cluster_name}.yaml")

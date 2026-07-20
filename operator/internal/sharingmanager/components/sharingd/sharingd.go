@@ -41,6 +41,23 @@ const (
 	// the binary — keeping older sharingd images (without the flag) compatible.
 	defaultReadinessPort = 8093
 	readyzPath           = "/readyz"
+
+	// metricsd liveness/readiness HTTP paths — must match the metricsd exporter's
+	// HealthzPath/ReadyzPath.
+	metricsdHealthzPath = "/healthz"
+	metricsdReadyzPath  = "/readyz"
+
+	// Resource requests/limits for the managed daemon containers. Requests set QoS
+	// and let the scheduler account for the pods; only a memory limit is applied
+	// (no CPU limit) so these latency-sensitive privileged daemons are never
+	// CPU-throttled. Conservative defaults for v0.1.0 — see also mpsd.
+	sharingdCPURequest = "50m"
+	sharingdMemRequest = "64Mi"
+	sharingdMemLimit   = "256Mi"
+
+	metricsdCPURequest = "50m"
+	metricsdMemRequest = "128Mi"
+	metricsdMemLimit   = "512Mi"
 )
 
 // daemon implements daemonmgr.ManagedDaemon for the sharingd NRI plugin plus its
@@ -153,18 +170,29 @@ func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map
 	result.Spec.Template.Annotations["prometheus.io/path"] = d.metricsAnnotationPath()
 }
 
-// metricsAnnotationPort returns the port string for the prometheus.io/port
-// annotation, derived from the configured address or falling back to the default.
-func (d *daemon) metricsAnnotationPort() string {
+// metricsListenPort returns the TCP port metricsd actually listens on: the port
+// of the configured metricsAgent.address, or metricsPort when unset/invalid. It
+// is the single source of truth for the container port, the scrape annotation,
+// and the health probes so they can never drift apart.
+func (d *daemon) metricsListenPort() int32 {
 	if d.metricsSpec != nil && d.metricsSpec.Address != "" {
 		_, port, err := net.SplitHostPort(d.metricsSpec.Address)
 		if err != nil {
 			slog.Warn("invalid metricsAgent.address, falling back to default port", "address", d.metricsSpec.Address, "err", err)
 		} else if port != "" {
-			return port
+			if p, perr := strconv.Atoi(port); perr == nil && p > 0 && p <= 65535 {
+				return int32(p)
+			}
+			slog.Warn("invalid metricsAgent.address port, falling back to default", "address", d.metricsSpec.Address)
 		}
 	}
-	return strconv.Itoa(metricsPort)
+	return metricsPort
+}
+
+// metricsAnnotationPort returns the port string for the prometheus.io/port
+// annotation, derived from metricsListenPort.
+func (d *daemon) metricsAnnotationPort() string {
+	return strconv.Itoa(int(d.metricsListenPort()))
 }
 
 // metricsAnnotationPath returns the path for the prometheus.io/path annotation.
@@ -195,6 +223,22 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		PeriodSeconds:       10,
 	}
 
+	// Liveness is a bare TCP connect to the readiness port, NOT a /readyz GET: the
+	// endpoint reports not-ready for as long as sharingd is (legitimately) retrying
+	// its NRI registration, so probing readiness for liveness would restart-loop a
+	// pod that is simply waiting on containerd. A successful TCP connect proves the
+	// process is alive and serving; a hung/dead sharingd fails it and is restarted.
+	livenessProbe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			TCPSocket: &corev1.TCPSocketAction{
+				Port: intstr.FromInt32(d.readinessPort()),
+			},
+		},
+		InitialDelaySeconds: 10,
+		PeriodSeconds:       20,
+		FailureThreshold:    3,
+	}
+
 	container := corev1.Container{
 		Name:            daemonName,
 		Image:           image.FullImage(),
@@ -202,6 +246,8 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildArgs(),
 		ReadinessProbe:  readinessProbe,
+		LivenessProbe:   livenessProbe,
+		Resources:       daemonmgr.DaemonResources(sharingdCPURequest, sharingdMemRequest, sharingdMemLimit),
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "readiness",
@@ -272,18 +318,43 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 // container at create time (the "utility" capability is sufficient for
 // read-only NVML; "compute" is not needed).
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
+	port := d.metricsListenPort()
+
+	// Readiness gates pod readiness on the exporter answering; liveness restarts a
+	// wedged or dead exporter. Both hit metricsd's fixed health paths on the same
+	// HTTP server that serves /metrics, so a broken sidecar is no longer invisible
+	// to pod readiness.
+	readinessProbe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{Path: metricsdReadyzPath, Port: intstr.FromInt32(port)},
+		},
+		InitialDelaySeconds: 5,
+		PeriodSeconds:       10,
+	}
+	livenessProbe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{Path: metricsdHealthzPath, Port: intstr.FromInt32(port)},
+		},
+		InitialDelaySeconds: 15,
+		PeriodSeconds:       20,
+		FailureThreshold:    3,
+	}
+
 	c := corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildMetricsdArgs(),
+		ReadinessProbe:  readinessProbe,
+		LivenessProbe:   livenessProbe,
+		Resources:       daemonmgr.DaemonResources(metricsdCPURequest, metricsdMemRequest, metricsdMemLimit),
 		Env: []corev1.EnvVar{
 			{Name: "NVIDIA_VISIBLE_DEVICES", Value: "all"},
 			{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "utility"},
 		},
 		Ports: []corev1.ContainerPort{
-			{Name: "metrics", ContainerPort: metricsPort, Protocol: corev1.ProtocolTCP},
+			{Name: "metrics", ContainerPort: port, Protocol: corev1.ProtocolTCP},
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},

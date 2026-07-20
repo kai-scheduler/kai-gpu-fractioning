@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gpu-sharing-operator.fullname" . }}
+  name: {{ include "gpu-sharing.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "gpu-sharing-operator.selectorLabels" . | nindent 6 }}
+      {{- include "gpu-sharing.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "gpu-sharing-operator.selectorLabels" . | nindent 8 }}
+        {{- include "gpu-sharing.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "gpu-sharing-operator.serviceAccountName" . }}
+      serviceAccountName: {{ include "gpu-sharing.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: true
       containers:

@@ -8,7 +8,7 @@
 // attribute metrics to a real pod this package:
 //
 //  1. resolves the workload container's host-namespace PID (HostPID), and
-//  2. rewrites the gpu-sharing-operator/nvml-mock-config ConfigMap so that
+//  2. rewrites the gpu-sharing/nvml-mock-config ConfigMap so that
 //     PID appears as a GPU process on a chosen device UUID (SetProcesses).
 //
 // Changing the ConfigMap requires metricsd pod restarts to take effect:
@@ -53,7 +53,7 @@ const (
 	// metricsd sidecar mounts as MOCK_NVML_CONFIG. SetProcesses updates this
 	// ConfigMap and restarts the metricsd pod so the production NVML collector
 	// reads the new process list at nvmlInit time.
-	MetricsdNamespace     = "gpu-sharing-operator"
+	MetricsdNamespace     = "gpu-sharing"
 	MetricsdConfigMapName = "nvml-mock-config"
 
 	// metricsdComponent is the app.kubernetes.io/component label value on sharingd pods.
@@ -122,7 +122,7 @@ func HostPID(ctx context.Context, c *cluster.Client, nodeName, marker string) (u
 	return uint32(pid), nil
 }
 
-// SetProcesses rewrites the metricsd nvml-mock ConfigMap (gpu-sharing-operator
+// SetProcesses rewrites the metricsd nvml-mock ConfigMap (gpu-sharing
 // namespace) for GPU model gpu (a Profiles key, e.g. "a100"; "" selects
 // DefaultGPU) so its devices carry procs, then restarts the metricsd pod on
 // each node so the production NVML collector re-reads the config at nvmlInit.

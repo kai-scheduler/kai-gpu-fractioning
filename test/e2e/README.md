@@ -1,4 +1,4 @@
-# gpu-sharing-operator e2e tests
+# gpu-sharing e2e tests
 
 Stage 1: metrics-only e2e tests for the metricsd metrics endpoint, running
 against a real k3d cluster with
@@ -156,7 +156,7 @@ managed by `skaffold.yaml`, not `make` variables.
 | Variable                        | Default                       | Purpose                                                                                      |
 |---------------------------------|-------------------------------|----------------------------------------------------------------------------------------------|
 | `E2E_KUBECONFIG` / `KUBECONFIG` | `~/.kube/<cluster>.yaml`      | cluster to connect to (written by `create-cluster.py`; the make targets set it for you)      |
-| `E2E_OPERATOR_NAMESPACE`        | `gpu-sharing-operator`        | namespace the operator is installed into (and where it creates the sharingd/mpsd DaemonSets) |
+| `E2E_OPERATOR_NAMESPACE`        | `gpu-sharing`        | namespace the operator is installed into (and where it creates the sharingd/mpsd DaemonSets) |
 | `E2E_GPU_NODE_SELECTOR`         | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes                                                      |
 | `E2E_GPU_NODE_COUNT`            | `0` (unchecked)               | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES`                       |
 

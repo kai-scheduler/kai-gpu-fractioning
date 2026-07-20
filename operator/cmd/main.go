@@ -97,7 +97,7 @@ func main() {
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
 		LeaderElection:         cfg.EnableLeaderElect,
-		LeaderElectionID:       "gpu-sharing-operator.kai.scheduler",
+		LeaderElectionID:       "gpu-sharing.kai.scheduler",
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")

@@ -5,6 +5,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -42,6 +43,23 @@ func BaseDaemonSet(component, namespace string) *appsv1.DaemonSet {
 					Labels: labels,
 				},
 			},
+		},
+	}
+}
+
+// DaemonResources returns the resource requests and limits for a managed system
+// daemon container. CPU and memory requests are always set so the pods get a
+// predictable QoS and the scheduler accounts for them; only a memory limit is
+// applied (no CPU limit) so these latency-sensitive privileged daemons are never
+// CPU-throttled while the node is still protected from a runaway memory leak.
+func DaemonResources(cpuRequest, memRequest, memLimit string) corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+			corev1.ResourceMemory: resource.MustParse(memRequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memLimit),
 		},
 	}
 }
