@@ -80,9 +80,8 @@ type GpuSharingConfigReconciler struct {
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
 
-	// DependencyChecker evaluates external GPU stack prerequisites. The default
-	// implementation is intentionally a no-op until concrete ClusterPolicy/node
-	// version checks are added.
+	// DependencyChecker evaluates external GPU stack prerequisites and can adjust
+	// the aggregate Ready condition with dependency-specific failures.
 	DependencyChecker DependencyChecker
 }
 
@@ -104,7 +103,7 @@ func NewGpuSharingConfigReconciler(
 		Namespace:           namespace,
 		DefaultImages:       defaultImages,
 		DefaultMpsdAuditLog: defaultMpsdAuditLog,
-		DependencyChecker:   NoopDependencyChecker{},
+		DependencyChecker:   NewGpuOperatorDependencyChecker(apiReader),
 	}
 }
 
@@ -170,16 +169,17 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
+	// Aggregate Ready condition.
+	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
 	if r.DependencyChecker != nil {
-		if err := r.DependencyChecker.Check(ctx, &config); err != nil {
+		var err error
+		readyCond, err = r.DependencyChecker.Check(ctx, &config, readyCond)
+		if err != nil {
 			r.Recorder.Eventf(&config, corev1.EventTypeWarning, "DependencyCheckError", "%v", err)
 			log.Error(err, "failed to check GPU stack dependencies")
 			needsRequeue = true
 		}
 	}
-
-	// Aggregate Ready condition.
-	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
 	daemonmgr.SetCondition(&config.Status, readyCond)
 
 	// Reflect GPU driver-upgrade state on the CR. The nodeAffinity on the managed

@@ -41,9 +41,9 @@ type fakeDependencyChecker struct {
 	err   error
 }
 
-func (f *fakeDependencyChecker) Check(_ context.Context, _ *gpusharingv1alpha1.GpuSharingConfig) error {
+func (f *fakeDependencyChecker) Check(_ context.Context, _ *gpusharingv1alpha1.GpuSharingConfig, ready metav1.Condition) (metav1.Condition, error) {
 	f.calls++
-	return f.err
+	return ready, f.err
 }
 
 var _ = Describe("GpuSharingConfig Controller", func() {

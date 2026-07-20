@@ -89,6 +89,15 @@ rules:
     verbs:
       - get
       - list
+  # Read the NVIDIA GPU Operator ClusterPolicy to report GPU Operator
+  # readiness and version compatibility.
+  - apiGroups:
+      - nvidia.com
+    resources:
+      - clusterpolicies
+    verbs:
+      - get
+      - list
   # Emit Kubernetes Events to surface reconciliation activity
   # (e.g. "GpuSharingConfig reconciled successfully").
   - apiGroups:

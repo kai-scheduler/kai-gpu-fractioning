@@ -18,15 +18,17 @@ const (
 	ConditionReady = "Ready"
 
 	// Condition reasons.
-	ReasonReconcileError     = "ReconcileError"
-	ReasonNoTargetNodes      = "NoTargetNodes"
-	ReasonAllPodsReady       = "AllPodsReady"
-	ReasonPartiallyAvailable = "PartiallyAvailable"
-	ReasonRolloutInProgress  = "RolloutInProgress"
-	ReasonComponentNotReady  = "ComponentNotReady"
-	ReasonComponentUnknown   = "ComponentUnknown"
-	ReasonAllComponentsReady = "AllComponentsReady"
-	ReasonNoComponents       = "NoComponents"
+	ReasonReconcileError                = "ReconcileError"
+	ReasonNoTargetNodes                 = "NoTargetNodes"
+	ReasonAllPodsReady                  = "AllPodsReady"
+	ReasonPartiallyAvailable            = "PartiallyAvailable"
+	ReasonRolloutInProgress             = "RolloutInProgress"
+	ReasonComponentNotReady             = "ComponentNotReady"
+	ReasonComponentUnknown              = "ComponentUnknown"
+	ReasonAllComponentsReady            = "AllComponentsReady"
+	ReasonNoComponents                  = "NoComponents"
+	ReasonGPUOperatorNotReady           = "GPUOperatorNotReady"
+	ReasonGPUOperatorVersionUnsupported = "GPUOperatorVersionUnsupported"
 
 	// Condition messages.
 	MessageNoTargetNodes      = "no target nodes found"
