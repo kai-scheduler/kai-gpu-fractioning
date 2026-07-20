@@ -1,0 +1,25 @@
+name: DCO
+
+# Enforces the Developer Certificate of Origin: every commit in a PR must carry a
+# `Signed-off-by:` trailer matching its author. Mirrors the KAI-Scheduler gate.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  # get-pr-commits lists the PR's commits via the pulls API.
+  pull-requests: read
+
+jobs:
+  dco:
+    name: Check DCO sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tim-actions/get-pr-commits@v1.3.1
+        id: get-pr-commits
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: tim-actions/dco@v1.1.0
+        with:
+          commits: ${{ steps.get-pr-commits.outputs.commits }}

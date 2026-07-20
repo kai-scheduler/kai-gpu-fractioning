@@ -17,16 +17,30 @@ env:
 
 jobs:
   lint:
-    name: Lint
+    name: Lint (${{ matrix.module }})
     runs-on: ubuntu-latest
+    # Each first-party module is its own go.mod, so lint them individually — a
+    # single root invocation (GOWORK=off) only covers the root module and misses
+    # operator, api, pkg and metricsd. The shared root .golangci.yml is picked up
+    # by config discovery from each module dir.
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - "."
+          - api
+          - operator
+          - pkg
+          - sharing-manager/metricsd
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ matrix.module }}/go.mod
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12
+          working-directory: ${{ matrix.module }}
 
   test:
     name: Test
