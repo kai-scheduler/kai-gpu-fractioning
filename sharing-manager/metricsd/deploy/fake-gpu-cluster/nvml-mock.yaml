@@ -5,7 +5,7 @@
 # Each process that loads libnvidia-ml.so gets its own NVML state driven by
 # MOCK_NVML_CONFIG:
 #   - nvml-mock DaemonSet binary: reads gpu-operator/nvml-mock-config (below)
-#   - metricsd sidecar: reads gpu-sharing-operator/nvml-mock-config (also below),
+#   - metricsd sidecar: reads gpu-sharing/nvml-mock-config (also below),
 #     mounted via metricsAgent.nvmlMockConfigMap in the GPUSharingConfig CRD.
 #     Tests call nvmlmock.SetProcesses() to update that ConfigMap and restart the
 #     metricsd pod, causing nvmlInit to re-read the new process list.
@@ -193,7 +193,7 @@ spec:
             path: /run/nvidia
             type: DirectoryOrCreate
 ---
-# Idle nvml-mock config for the metricsd sidecar (gpu-sharing-operator namespace).
+# Idle nvml-mock config for the metricsd sidecar (gpu-sharing namespace).
 # nvmlmock.SetProcesses() updates this ConfigMap and restarts the metricsd pod
 # so the baked-in libnvidia-ml.so re-reads it at nvmlInit time.
 # UUIDs must match Device0UUID/Device1UUID in test/e2e/nvmlmock/nvmlmock.go.
@@ -201,7 +201,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nvml-mock-config
-  namespace: gpu-sharing-operator
+  namespace: gpu-sharing
 data:
   config.yaml: |
     version: "1.0"

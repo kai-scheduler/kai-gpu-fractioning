@@ -17,7 +17,7 @@ type Config struct {
 	// Kubeconfig is the path to the kubeconfig used to reach the cluster.
 	Kubeconfig string
 
-	// OperatorNamespace is where the gpu-sharing-operator is installed and,
+	// OperatorNamespace is where the gpu-sharing is installed and,
 	// therefore, where the operator-managed DaemonSets (sharingd — which hosts
 	// the metricsd sidecar — and mpsd) are created. The suite scrapes the
 	// metricsd sidecar in the sharingd pods here.
@@ -76,7 +76,7 @@ const (
 	envPollInterval          = "E2E_POLL_INTERVAL"
 	envDaemonSetReadyTimeout = "E2E_DAEMONSET_READY_TIMEOUT"
 
-	defaultOperatorNamespace    = "gpu-sharing-operator"
+	defaultOperatorNamespace    = "gpu-sharing"
 	defaultGPUNodeSelector      = "nvidia.com/gpu.present=true"
 	defaultGPUNodeCount         = 0
 	defaultGPUMemoryMiB         = 40960

@@ -1,5 +1,5 @@
 // Package workload creates and tears down single-purpose test pods used to
-// exercise gpu-sharing-operator attribution. Separate from the plugin package,
+// exercise gpu-sharing attribution. Separate from the plugin package,
 // which manages the DaemonSet under test itself, not workloads that exercise
 // it.
 package workload

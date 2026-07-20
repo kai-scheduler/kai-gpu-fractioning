@@ -50,4 +50,4 @@ jobs:
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           helm package operator/charts --version "$VERSION" --app-version "$VERSION" -d ./dist
-          helm push "./dist/gpu-sharing-operator-$VERSION.tgz" "oci://${DOCKER_REPO_BASE}"
+          helm push "./dist/gpu-sharing-$VERSION.tgz" "oci://${DOCKER_REPO_BASE}"

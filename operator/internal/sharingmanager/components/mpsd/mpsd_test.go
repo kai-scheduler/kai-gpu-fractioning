@@ -65,6 +65,22 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	if ctr.ReadinessProbe.Exec == nil || len(ctr.ReadinessProbe.Exec.Command) == 0 {
 		t.Error("expected exec readiness probe checking MPS control socket")
 	}
+	// Liveness reuses the socket check but with generous thresholds so the
+	// supervisor can self-heal before a pod restart is escalated.
+	if ctr.LivenessProbe == nil || ctr.LivenessProbe.Exec == nil {
+		t.Fatal("expected an exec liveness probe on mpsd")
+	}
+	if ctr.LivenessProbe.FailureThreshold != 6 {
+		t.Errorf("liveness FailureThreshold = %d, want 6", ctr.LivenessProbe.FailureThreshold)
+	}
+
+	// Resources: CPU + memory requests, a memory limit, and no CPU limit.
+	if ctr.Resources.Requests.Cpu().IsZero() || ctr.Resources.Requests.Memory().IsZero() {
+		t.Error("expected CPU and memory requests on mpsd")
+	}
+	if got := ctr.Resources.Limits.Memory().String(); got != mpsdMemLimit {
+		t.Errorf("memory limit = %q, want %q", got, mpsdMemLimit)
+	}
 
 	// Volumes
 	volumePaths := make(map[string]string)

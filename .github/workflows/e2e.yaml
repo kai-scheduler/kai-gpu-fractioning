@@ -76,10 +76,10 @@ jobs:
           export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
           kubectl get nodes -o wide || true
           kubectl get pods -A -o wide || true
-          kubectl -n gpu-sharing-operator get gpusharingconfig -o yaml || true
-          kubectl -n gpu-sharing-operator describe pods || true
-          kubectl -n gpu-sharing-operator logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
-          kubectl -n gpu-sharing-operator logs deploy/gso-gpu-sharing-operator --tail=200 || true
+          kubectl -n gpu-sharing get gpusharingconfig -o yaml || true
+          kubectl -n gpu-sharing describe pods || true
+          kubectl -n gpu-sharing logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
+          kubectl -n gpu-sharing logs deploy/gso-gpu-sharing --tail=200 || true
           kubectl -n gpu-operator logs -l app=status-updater --tail=200 || true
 
       - name: Delete e2e cluster

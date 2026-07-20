@@ -18,6 +18,22 @@ import (
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
 )
 
+const (
+	// HealthzPath and ReadyzPath are the fixed liveness/readiness HTTP paths the
+	// exporter serves alongside the (configurable) metrics path. The metricsd
+	// container's probes target these.
+	HealthzPath = "/healthz"
+	ReadyzPath  = "/readyz"
+)
+
+// healthHandler serves the liveness/readiness probes. It reports OK whenever the
+// HTTP server is answering; that is a sufficient signal because a crashed or
+// wedged exporter stops responding, flipping the probe (and thus pod readiness).
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
 type Config struct {
 	Enabled  bool
 	Address  string
@@ -142,7 +158,18 @@ func New(ctx context.Context, cfg Config, reader store.Reader, logger *slog.Logg
 	runtime.engine = controller
 
 	mux := http.NewServeMux()
-	mux.Handle(cfg.metricsPath(), runtime.handler())
+	metricsPath := cfg.metricsPath()
+	mux.Handle(metricsPath, runtime.handler())
+	// Liveness/readiness endpoints so the sidecar's container probes can detect a
+	// wedged or dead exporter — otherwise a broken metricsd is invisible to pod
+	// readiness. Skip a health path only in the (pathological) case where it has
+	// been configured as the metrics path, to avoid a duplicate-registration panic.
+	if metricsPath != HealthzPath {
+		mux.HandleFunc(HealthzPath, healthHandler)
+	}
+	if metricsPath != ReadyzPath {
+		mux.HandleFunc(ReadyzPath, healthHandler)
+	}
 	runtime.server = &http.Server{
 		Addr:              cfg.Address,
 		Handler:           mux,
