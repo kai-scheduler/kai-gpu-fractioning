@@ -39,6 +39,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Reclaim runner disk before building 4 images (incl. the large NVML
+      # metricsd image) into k3d. Without this the kubelet tents all nodes with
+      # node.kubernetes.io/disk-pressure and evicts the stack mid-deploy.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune --all --force || true
+          df -h /
+
       # Suite-agnostic infra: toolchain + k3d/fake-gpu-operator cluster.
       # Reused as-is by future e2e suites (mpsd/sharingd).
       - name: Set up e2e cluster
