@@ -29,12 +29,17 @@ const (
 	ReasonNoComponents                  = "NoComponents"
 	ReasonGPUOperatorNotReady           = "GPUOperatorNotReady"
 	ReasonGPUOperatorVersionUnsupported = "GPUOperatorVersionUnsupported"
+	ReasonAllDaemonsReady               = "AllDaemonsReady"
+	ReasonGPUDriverVersionMissing       = "GPUDriverVersionMissing"
+	ReasonGPUDriverVersionInvalid       = "GPUDriverVersionInvalid"
+	ReasonGPUDriverVersionUnsupported   = "GPUDriverVersionUnsupported"
 
 	// Condition messages.
 	MessageNoTargetNodes      = "no target nodes found"
 	MessageComponentUnknown   = "one or more components have unknown status"
 	MessageAllComponentsReady = "all components are healthy"
 	MessageNoComponents       = "no components have been evaluated"
+	MessageAllDaemonsReady    = "all gpu-sharing daemons are running"
 )
 
 // DaemonHealthToCondition maps a DaemonHealth to a metav1.Condition for the CR.

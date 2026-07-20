@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -47,6 +49,8 @@ const (
 	requeueInterval         = 30 * time.Second
 	dependencyCheckInterval = 10 * time.Minute
 	podListPageSize         = 500
+	gpuDriverMajorLabel     = "nvidia.com/cuda.driver-version.major"
+	minGPUDriverMajor       = 615
 
 	// NodeConditionCleanupFinalizer blocks GpuSharingConfig deletion until the
 	// gpu-sharing.nvidia.com/Ready conditions the controller patched onto nodes
@@ -364,8 +368,9 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			seenNodes[pod.Spec.NodeName] = struct{}{}
 
 			// Determine per-node health: if any daemon pod on this node is
-			// not ready, the node is marked unhealthy with the specific
-			// failure reason (e.g. CrashLoopBackOff, ImagePullBackOff).
+			// not ready, the node is marked unhealthy. The patch helper may
+			// refine the message with a GPU driver version issue if the node's
+			// labels explain why the daemon cannot start.
 			// Once a node is marked unhealthy, later healthy pods on the
 			// same node are skipped to avoid overwriting the False condition.
 			ready := isPodReady(pod)
@@ -376,7 +381,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			}
 
 			reason, msg := nodeConditionArgs(ready, pod)
-			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
+			if err := daemonmgr.PatchNodeConditionWithMutator(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg, gpuDriverConditionMutator); err != nil {
 				log.Error(err, "failed to patch node condition", "node", pod.Spec.NodeName)
 				errs = append(errs, err)
 			}
@@ -412,12 +417,46 @@ func isPodReady(pod *corev1.Pod) bool {
 
 func nodeConditionArgs(ready bool, pod *corev1.Pod) (reason, message string) {
 	if ready {
-		return "AllDaemonsReady", "all gpu-sharing daemons are running"
+		return daemonmgr.ReasonAllDaemonsReady, daemonmgr.MessageAllDaemonsReady
 	}
 	reason = podFailureReason(pod)
 	daemonName := pod.Labels[daemonmgr.LabelComponent]
 	message = fmt.Sprintf("%s pod is not ready: %s", daemonName, reason)
 	return reason, message
+}
+
+func gpuDriverConditionMutator(node *corev1.Node, ready bool, reason, message string) (bool, string, string) {
+	if ready {
+		return ready, reason, message
+	}
+	if driverReason, driverMessage, found := gpuDriverFailureReason(node); found {
+		return false, driverReason, driverMessage
+	}
+	return ready, reason, message
+}
+
+func gpuDriverFailureReason(node *corev1.Node) (reason, message string, found bool) {
+	rawMajor := strings.TrimSpace(node.Labels[gpuDriverMajorLabel])
+	if rawMajor == "" {
+		return daemonmgr.ReasonGPUDriverVersionMissing,
+			fmt.Sprintf("CUDA driver major version label %q is missing; minimum supported major version is %d", gpuDriverMajorLabel, minGPUDriverMajor),
+			true
+	}
+
+	major, err := strconv.Atoi(rawMajor)
+	if err != nil {
+		return daemonmgr.ReasonGPUDriverVersionInvalid,
+			fmt.Sprintf("CUDA driver major version %q from label %q is invalid; minimum supported major version is %d", rawMajor, gpuDriverMajorLabel, minGPUDriverMajor),
+			true
+	}
+
+	if major < minGPUDriverMajor {
+		return daemonmgr.ReasonGPUDriverVersionUnsupported,
+			fmt.Sprintf("CUDA driver major version %d is below minimum supported major version %d", major, minGPUDriverMajor),
+			true
+	}
+
+	return "", "", false
 }
 
 func podFailureReason(pod *corev1.Pod) string {
