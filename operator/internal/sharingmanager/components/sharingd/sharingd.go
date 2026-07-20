@@ -110,12 +110,25 @@ func (d *daemon) metricsEnabled() bool {
 	return d.metricsSpec != nil && d.metricsSpec.Enabled
 }
 
-// metricsSharedVolume returns the map-dir emptyDir volume and the corresponding
+// metricsSharedVolume returns the map-dir hostPath volume and the corresponding
 // mount for the sharingd container (writer side of the container→pod mapping handoff).
+//
+// A hostPath (rather than emptyDir) is used so the container→pod mapping
+// survives sharingd DaemonSet pod restarts. With emptyDir, the mapping is lost
+// when the pod is deleted, and k3s/containerd's NRI implementation does not
+// replay Synchronize events for already-running containers when a new plugin
+// registers — leaving metricsd unable to attribute GPU processes until new
+// containers are created. A hostPath at the same path means the fsstore written
+// by the previous sharingd pod is still present for the new one to read.
 func metricsSharedVolume() (corev1.Volume, corev1.VolumeMount) {
 	return corev1.Volume{
-			Name:         volumeMapDir,
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			Name: volumeMapDir,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: containerPodMapDir,
+					Type: new(corev1.HostPathDirectoryOrCreate),
+				},
+			},
 		},
 		corev1.VolumeMount{Name: volumeMapDir, MountPath: containerPodMapDir}
 }
@@ -126,6 +139,9 @@ func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map
 	metricsImage := defaultImages[metricsdName]
 	if d.metricsSpec != nil && d.metricsSpec.Image != nil {
 		metricsImage = metricsImage.MergeWith(*d.metricsSpec.Image)
+	}
+	if d.metricsSpec != nil {
+		result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, d.metricsSpec.Volumes...)
 	}
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(metricsImage))
 
@@ -256,7 +272,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 // container at create time (the "utility" capability is sufficient for
 // read-only NVML; "compute" is not needed).
 func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
-	return corev1.Container{
+	c := corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
 		ImagePullPolicy: pullPolicy(image),
@@ -273,6 +289,10 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 			{Name: volumeMapDir, MountPath: containerPodMapDir, ReadOnly: true},
 		},
 	}
+	if d.metricsSpec != nil {
+		c.VolumeMounts = append(c.VolumeMounts, d.metricsSpec.VolumeMounts...)
+	}
+	return c
 }
 
 // runtimeClassName returns the RuntimeClass to set on the pod when metricsd is

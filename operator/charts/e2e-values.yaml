@@ -1,4 +1,18 @@
+sharingAgent:
+  logLevel: debug
+
 metricsAgent:
   # k3d has no "nvidia" RuntimeClass; clear it so sharingd+metricsd pods schedule.
   # metricsd gets NVML via nvml-mock (fake-gpu-operator), not the nvidia runtime.
   runtimeClassName: ""
+  logLevel: debug
+  # Mount the nvml-mock config so the baked-in libnvidia-ml.so reads the
+  # test-controlled process list via MOCK_NVML_CONFIG at nvmlInit time.
+  volumes:
+    - name: nvml-mock-cfg
+      configMap:
+        name: nvml-mock-config
+  volumeMounts:
+    - name: nvml-mock-cfg
+      mountPath: /etc/nvml-mock
+      readOnly: true

@@ -67,15 +67,15 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 		t.Errorf("expected sharingd to mount map-dir read-write, got %v", ctr.VolumeMounts)
 	}
 
-	// The shared map dir is an emptyDir (single pod owns writer + reader).
-	var mapDirIsEmptyDir bool
+	// The shared map dir is a hostPath so the fsstore survives pod restarts.
+	var mapDirHostPath string
 	for _, v := range spec.Volumes {
-		if v.Name == "map-dir" {
-			mapDirIsEmptyDir = v.EmptyDir != nil
+		if v.Name == "map-dir" && v.HostPath != nil {
+			mapDirHostPath = v.HostPath.Path
 		}
 	}
-	if !mapDirIsEmptyDir {
-		t.Errorf("expected map-dir to be an emptyDir volume")
+	if mapDirHostPath != "/var/run/gpu-sharing/map" {
+		t.Errorf("expected map-dir to be a hostPath volume at /var/run/gpu-sharing/map, got %q", mapDirHostPath)
 	}
 
 	// Volumes

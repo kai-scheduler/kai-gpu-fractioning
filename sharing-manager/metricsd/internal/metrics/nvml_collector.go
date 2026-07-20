@@ -83,6 +83,7 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 	count, ret := nvml.DeviceGetCount()
 	if !errors.Is(ret, nvml.SUCCESS) {
 		// Total failure — keep previous snapshot rather than blanking it out.
+		c.log.Debug("NVML DeviceGetCount failed; retaining previous snapshot", "nvml_return", ret)
 		return
 	}
 
@@ -246,5 +247,21 @@ func cloneGPUProcessSnapshot(in GPUProcessSnapshot) GPUProcessSnapshot {
 		DeviceUUIDs:            deviceUUIDs,
 		DeviceTotalMemoryBytes: deviceTotalMemory,
 		DeviceErrors:           in.DeviceErrors,
+	}
+}
+
+// newCollector tries to initialise an NVML-backed collector. When NVML is not
+// available we fall back to a no-op collector instead of failing hard, because
+// this binary also runs on fake-GPU test clusters that have no driver installed.
+// On those nodes the exporter still starts and emits pod-label metrics with zero
+// GPU counters, which is useful for integration tests. On real production nodes
+// NVML is always present, so the fallback path is exercised only in CI.
+func newCollector(ctx context.Context, interval time.Duration, logger *slog.Logger) collector {
+	if c, err := newNVMLProcessCollector(interval, logger); err == nil {
+		logger.InfoContext(ctx, "NVML initialized; GPU process metrics enabled")
+		return c
+	} else {
+		logger.WarnContext(ctx, "NVML unavailable; GPU process metrics will be zero (pod labels still reported)", "error", err)
+		return &NoopCollector{}
 	}
 }

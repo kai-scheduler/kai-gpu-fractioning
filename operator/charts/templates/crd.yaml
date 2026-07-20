@@ -116,12 +116,37 @@ spec:
                         enabled controls whether the metricsd sidecar is added to
                         the DaemonSet. Default: true.
                       type: boolean
+                    logLevel:
+                      description: >-
+                        logLevel controls the logging verbosity of the metrics agent.
+                        One of debug, info, warn, error. Default: info.
+                      type: string
+                    address:
+                      description: >-
+                        address is the Prometheus exporter listen address. Default: :2112.
+                      type: string
+                    path:
+                      description: >-
+                        path is the HTTP path on which metrics are served. Default: /metrics.
+                      type: string
                     runtimeClassName:
                       description: >-
                         runtimeClassName sets the RuntimeClass for the sharingd+metricsd
                         pod. Defaults to "nvidia" when unset. Set to "" to use the
                         node default (required on clusters without the nvidia runtime).
                       type: string
+                    volumes:
+                      description: volumes are additional volumes to add to the metricsd pod.
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    volumeMounts:
+                      description: volumeMounts are additional volume mounts to add to the metricsd container.
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                     metricNames:
                       description: >-
                         metricNames overrides the exported Prometheus metric names.

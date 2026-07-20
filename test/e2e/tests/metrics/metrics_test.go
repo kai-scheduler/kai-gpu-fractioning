@@ -5,11 +5,10 @@ package metrics
 import (
 	"context"
 	"testing"
-	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/portforward"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
 )
 
 // metricsd runs as a sidecar in the operator-managed sharingd DaemonSet pods,
@@ -24,7 +23,7 @@ const (
 // metricsd sidecar in the sharingd DaemonSet pods serves a valid Prometheus
 // /metrics endpoint, independent of any test workload.
 func TestE2E_GPUSharingPluginMetricsEndpointHealthy(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), metricsPresenceTimeout)
 	defer cancel()
 
 	client := s.Client

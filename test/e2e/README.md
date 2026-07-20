@@ -13,7 +13,7 @@ pods.)
 ## Quick start
 
 ```sh
-export E2E_FAKE_GPU_OPERATOR_VERSION=0.1.0   # see releases link below
+export E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0   # see releases link below
 make e2e
 ```
 
@@ -89,18 +89,18 @@ and nothing else, so the dependency list is just `typer`, `pydantic-settings`,
 
 All configurable via `E2E_*` environment variables:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `E2E_CLUSTER_NAME` | `gpu-sharing-e2e` | k3d cluster name |
-| `E2E_GPU_WORKER_NODES` | `2` | number of agent nodes, each labeled into the fake-GPU node pool |
-| `E2E_K3S_IMAGE` | `rancher/k3s:v1.31.5-k3s1` | k3s node image |
-| `E2E_GPU_NODE_POOL` | `default` | fake-gpu-operator node pool name |
-| `E2E_GPUS_PER_NODE` | `2` | GPUs advertised per node in that pool |
-| `E2E_GPU_PRODUCT` | `NVIDIA A100-SXM4-40GB` | simulated GPU product |
-| `E2E_GPU_MEMORY_MIB` | `40960` | simulated GPU memory (MiB) |
-| `E2E_FAKE_GPU_OPERATOR_VERSION` | *(required)* | fake-gpu-operator Helm chart version — see [releases](https://github.com/run-ai/fake-gpu-operator/releases) |
-| `E2E_MAX_RETRIES` | `3` | cluster-creation retry attempts |
-| `E2E_KUBECONFIG` | `~/.kube/<cluster>.yaml` | where the cluster's kubeconfig is written (see note below) |
+| Variable                        | Default                    | Purpose                                                                                                     |
+|---------------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------|
+| `E2E_CLUSTER_NAME`              | `gpu-sharing-e2e`          | k3d cluster name                                                                                            |
+| `E2E_GPU_WORKER_NODES`          | `2`                        | number of agent nodes, each labeled into the fake-GPU node pool                                             |
+| `E2E_K3S_IMAGE`                 | `rancher/k3s:v1.31.5-k3s1` | k3s node image                                                                                              |
+| `E2E_GPU_NODE_POOL`             | `default`                  | fake-gpu-operator node pool name                                                                            |
+| `E2E_GPUS_PER_NODE`             | `2`                        | GPUs advertised per node in that pool                                                                       |
+| `E2E_GPU_PRODUCT`               | `NVIDIA A100-SXM4-40GB`    | simulated GPU product                                                                                       |
+| `E2E_GPU_MEMORY_MIB`            | `40960`                    | simulated GPU memory (MiB)                                                                                  |
+| `E2E_FAKE_GPU_OPERATOR_VERSION` | *(required)*               | fake-gpu-operator Helm chart version — see [releases](https://github.com/run-ai/fake-gpu-operator/releases) |
+| `E2E_MAX_RETRIES`               | `3`                        | cluster-creation retry attempts                                                                             |
+| `E2E_KUBECONFIG`                | `~/.kube/<cluster>.yaml`   | where the cluster's kubeconfig is written (see note below)                                                  |
 
 > **Kubeconfig handling.** The NRI `config.toml.tmpl` volume this script mounts
 > (to let sharingd's NRI plugin run) breaks `k3d kubeconfig get/merge` — so the
@@ -114,7 +114,7 @@ All configurable via `E2E_*` environment variables:
 ```sh
 pip install -r test/e2e/hack/requirements.txt
 
-E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.1.0 test/e2e/hack/create-cluster.py
+E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0 test/e2e/hack/create-cluster.py
 test/e2e/hack/create-cluster.py --delete
 test/e2e/hack/create-cluster.py --skip-fake-gpu-operator   # cluster only, e.g. for iterating on the script itself
 ```
@@ -123,7 +123,7 @@ Requires `k3d`, `kubectl`, `docker`, `helm` (unless `--skip-fake-gpu-operator`),
 and Python 3.9+ on PATH.
 
 **Not installed by this script:** `nvml-mock` (NVIDIA's real-NVML simulator).
-Without it, `gpu-sharing-plugin`'s NVML calls report zero memory/SM
+Without it, `metricsd`'s NVML calls report zero memory/SM
 utilization. If a later test needs real-looking values, install
 `sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml` manually and
 set `LD_LIBRARY_PATH` per its comments; this adds privileged host mounts and
@@ -132,19 +132,19 @@ cluster.
 
 ## Makefile targets
 
-| Target | What |
-|---|---|
-| `make e2e` | cluster up → skaffold build+load+deploy → run tests |
-| `make e2e-cluster-up` | create the k3d cluster + install fake-gpu-operator |
-| `make e2e-cluster-down` | delete the k3d cluster |
-| `make e2e-cluster-deps` | `pip install -r test/e2e/hack/requirements.txt` |
-| `make e2e-deploy` | `skaffold run -p e2e` (build 4 images + load + helm install), then wait for the sharingd DaemonSet rollout |
-| `make e2e-undeploy` | `skaffold delete -p e2e` (helm uninstall) |
-| `make e2e-kubeconfig-merge` | opt-in: add the cluster to `~/.kube/config` as context `k3d-<cluster>` (current-context preserved, prior file backed up), so `kubectl config use-context k3d-<cluster>` works without setting `KUBECONFIG` |
-| `make e2e-kubeconfig-unmerge` | remove that context from `~/.kube/config` (run automatically by `e2e-cluster-down`) |
-| `make test-e2e` | run all Go suites (cluster deployed already) |
-| `make test-e2e-metrics` | run only the metrics suite (`./tests/metrics/...`) |
-| `make run-e2e` | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created/deployed |
+| Target                        | What                                                                                                                                                                                                       |
+|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `make e2e`                    | cluster up → skaffold build+load+deploy → run tests                                                                                                                                                        |
+| `make e2e-cluster-up`         | create the k3d cluster + install fake-gpu-operator                                                                                                                                                         |
+| `make e2e-cluster-down`       | delete the k3d cluster                                                                                                                                                                                     |
+| `make e2e-cluster-deps`       | `pip install -r test/e2e/hack/requirements.txt`                                                                                                                                                            |
+| `make e2e-deploy`             | `skaffold run -p e2e` (build 4 images + load + helm install), then wait for the sharingd DaemonSet rollout                                                                                                 |
+| `make e2e-undeploy`           | `skaffold delete -p e2e` (helm uninstall)                                                                                                                                                                  |
+| `make e2e-kubeconfig-merge`   | opt-in: add the cluster to `~/.kube/config` as context `k3d-<cluster>` (current-context preserved, prior file backed up), so `kubectl config use-context k3d-<cluster>` works without setting `KUBECONFIG` |
+| `make e2e-kubeconfig-unmerge` | remove that context from `~/.kube/config` (run automatically by `e2e-cluster-down`)                                                                                                                        |
+| `make test-e2e`               | run all Go suites (cluster deployed already)                                                                                                                                                               |
+| `make test-e2e-metrics`       | run only the metrics suite (`./tests/metrics/...`)                                                                                                                                                         |
+| `make run-e2e`                | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created/deployed                                                                                      |
 
 `E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_OPERATOR_NAMESPACE`, `E2E_ARCH`,
 `E2E_FAKE_GPU_OPERATOR_VERSION` are overridable `make` variables. `PYTHON`
@@ -153,12 +153,12 @@ managed by `skaffold.yaml`, not `make` variables.
 
 ## Go test suite configuration
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `E2E_KUBECONFIG` / `KUBECONFIG` | `~/.kube/<cluster>.yaml` | cluster to connect to (written by `create-cluster.py`; the make targets set it for you) |
-| `E2E_OPERATOR_NAMESPACE` | `gpu-sharing-operator` | namespace the operator is installed into (and where it creates the sharingd/mpsd DaemonSets) |
-| `E2E_GPU_NODE_SELECTOR` | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes |
-| `E2E_GPU_NODE_COUNT` | `0` (unchecked) | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES` |
+| Variable                        | Default                       | Purpose                                                                                      |
+|---------------------------------|-------------------------------|----------------------------------------------------------------------------------------------|
+| `E2E_KUBECONFIG` / `KUBECONFIG` | `~/.kube/<cluster>.yaml`      | cluster to connect to (written by `create-cluster.py`; the make targets set it for you)      |
+| `E2E_OPERATOR_NAMESPACE`        | `gpu-sharing-operator`        | namespace the operator is installed into (and where it creates the sharingd/mpsd DaemonSets) |
+| `E2E_GPU_NODE_SELECTOR`         | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes                                                      |
+| `E2E_GPU_NODE_COUNT`            | `0` (unchecked)               | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES`                       |
 
 ## What's covered
 

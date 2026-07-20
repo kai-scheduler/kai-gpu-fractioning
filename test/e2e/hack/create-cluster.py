@@ -10,16 +10,16 @@ Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
 stdout is enough for CI logs).
 
-Environment variables (all optional, E2E_ prefix, see ClusterConfig):
+Environment variables (E2E_ prefix, see ClusterConfig):
+    E2E_FAKE_GPU_OPERATOR_VERSION  (required) e.g. "0.2.0"
     E2E_CLUSTER_NAME               (default: gpu-sharing-e2e)
-    E2E_GPU_WORKER_NODES               (default: 2)   # GPU worker nodes
+    E2E_GPU_WORKER_NODES           (default: 2)   # GPU worker nodes
     E2E_NON_GPU_WORKER_NODES       (default: 1)   # plain (no-GPU) worker nodes
     E2E_K3S_IMAGE                  (default: rancher/k3s:v1.31.5-k3s1)
     E2E_GPU_NODE_POOL              (default: default)
     E2E_GPUS_PER_NODE              (default: 2)
     E2E_GPU_PRODUCT                (default: NVIDIA A100-SXM4-40GB)
     E2E_GPU_MEMORY_MIB             (default: 40960)
-    E2E_FAKE_GPU_OPERATOR_VERSION  (required unless --skip-fake-gpu-operator)
     E2E_MAX_RETRIES                (default: 3)
     E2E_KUBECONFIG                 (default: ~/.kube/<cluster_name>.yaml)
 
@@ -28,9 +28,9 @@ docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
 own `k3d kubeconfig` retrieval. Every downstream e2e step reads that file.
 
 Usage:
-    ./create-cluster.py
-    E2E_GPU_WORKER_NODES=4 E2E_FAKE_GPU_OPERATOR_VERSION=0.0.80 ./create-cluster.py
-    ./create-cluster.py --skip-fake-gpu-operator
+    E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0 ./create-cluster.py
+    E2E_FAKE_GPU_OPERATOR_VERSION=0.2.0 E2E_GPU_WORKER_NODES=4 ./create-cluster.py
+    ./create-cluster.py --skip-fake-gpu-operator --skip-gpu-mock
     ./create-cluster.py --delete
 
 Requires: k3d, kubectl, docker, helm (unless --skip-fake-gpu-operator).
@@ -51,11 +51,21 @@ app = typer.Typer(help="k3d cluster setup for gpu-sharing-operator e2e tests")
 
 FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator"
 
-# gpu-sharing-plugin (sharing-manager/metricsd/deploy/daemonset.yaml) mounts
-# /var/run/nri as a hostPath of type "Directory", which requires the path to
-# already exist on the node. Stock k3s images ship with containerd's NRI
+# nvml-mock: NVIDIA's mock libnvidia-ml.so DaemonSet (supplements fake-gpu-operator).
+# Applied as a static manifest — its setup.sh self-labels nodes
+# nvidia.com/gpu.present=true (the sharingd DaemonSet's nodeSelector) and installs a
+# real libnvidia-ml.so into /var/lib/nvml-mock/driver, so metricsd's NVML calls
+# resolve against the mock instead of falling back to NoopCollector. No Helm
+# release and no device plugin are needed for the metrics e2e suite: attribution
+# keys off the fractional annotation + cgroup + NVML UUID, not a scheduled
+# nvidia.com/gpu resource.
+NVML_MOCK_MANIFEST = "sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml"
+
+# sharingd (the gpu-sharing-operator's NRI DaemonSet, created by the Helm chart)
+# mounts /var/run/nri as a hostPath of type "Directory", which requires the path
+# to already exist on the node. Stock k3s images ship with containerd's NRI
 # plugin disabled, so that directory/socket is never created and the
-# plugin's pods hang forever in ContainerCreating. Override each node's
+# sharingd pods hang forever in ContainerCreating. Override each node's
 # containerd config to enable NRI so containerd creates the socket (and its
 # parent directory) on startup.
 CONTAINERD_NRI_CONFIG_TEMPLATE = """{{ template "base" . }}
@@ -120,10 +130,14 @@ def create_cluster(config: ClusterConfig) -> bool:
     nri_template_path = write_containerd_nri_template()
 
     # k3d indexes agents 0..(total-1). GPU agents come first and carry the
-    # node-pool label; the remaining agents stay unlabeled (non-GPU workers).
+    # nvidia.com/gpu.present=true label; the remaining agents stay unlabeled
+    # (non-GPU workers). This label is what everything downstream selects on: the
+    # nvml-mock DaemonSet's nodeSelector (which must match before it can schedule
+    # and patch the node), the operator's default-CR nodeSelector, and the
+    # sharingd/mpsd DaemonSets.
     total_agents = config.gpu_worker_nodes + config.non_gpu_worker_nodes
     gpu_node_filter = ";".join(f"agent:{i}" for i in range(config.gpu_worker_nodes))
-    gpu_node_label = f"run.ai/simulated-gpu-node-pool={config.gpu_node_pool}@{gpu_node_filter}"
+    gpu_node_label = f"nvidia.com/gpu.present=true@{gpu_node_filter}"
 
     try:
         for attempt in range(1, config.max_retries + 1):
@@ -211,10 +225,11 @@ def wait_for_nodes(config: ClusterConfig) -> None:
 def install_fake_gpu_operator(config: ClusterConfig) -> None:
     log(f"Installing fake-gpu-operator {config.fake_gpu_operator_version}...")
 
-    # Scoped to device-plugin + status-updater + status-exporter — no
-    # DRA/KWOK/mock-NVML/gpu-operator, which this suite does not need for
-    # metrics e2e.
     values = f"""
+# k3s pre-creates RuntimeClass "nvidia"; Helm can't adopt it (missing ownership
+# annotations). Disable — nvml-mock doesn't need it.
+runtimeClass:
+  enabled: false
 devicePlugin:
   enabled: true
 statusUpdater:
@@ -232,14 +247,6 @@ kwokGpuDevicePlugin:
 migFaker:
   enabled: false
 gpuOperator:
-  enabled: false
-# Some k3s node images auto-provision a cluster-scoped RuntimeClass named
-# "nvidia" at startup (unrelated to this chart). Helm then refuses to adopt
-# it during install ("invalid ownership metadata") since it has no Helm
-# annotations. We don't need GPU RuntimeClass handling for the plain
-# devicePlugin path, so disable it — matches fake-gpu-operator's own e2e
-# fixtures (test/e2e/fixtures/values.yaml upstream).
-runtimeClass:
   enabled: false
 computeDomainController:
   enabled: false
@@ -281,6 +288,40 @@ topology:
     wait_for_gpu_node_labels(config)
 
 
+def install_nvml_mock(config: ClusterConfig) -> None:
+    log("Installing nvml-mock (real mock libnvidia-ml.so + node labels)...")
+
+    # test/e2e/hack -> repo root (hack, e2e, test, <root>).
+    manifest = Path(__file__).resolve().parents[3] / NVML_MOCK_MANIFEST
+
+    # The manifest spans gpu-operator and gpu-sharing-operator namespaces; create
+    # both up-front so apply doesn't race. _ok_code tolerates AlreadyExists.
+    sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
+    sh.kubectl("create", "namespace", "gpu-sharing-operator", _ok_code=[0, 1])
+    sh.kubectl("apply", "-f", str(manifest))
+
+    # Guard against a silent no-op: a DaemonSet whose nodeSelector matches zero
+    # nodes reports "rollout status" success with desiredNumberScheduled=0, so
+    # without this check a selector mismatch looks like success and only surfaces
+    # later as a confusing GPU-node-label timeout.
+    desired = int(str(sh.kubectl(
+        "get", "daemonset/nvml-mock", "-n", "gpu-operator",
+        "-o", "jsonpath={.status.desiredNumberScheduled}",
+    )).strip() or "0")
+    if desired < config.gpu_worker_nodes:
+        log(f"nvml-mock scheduled onto {desired} node(s), expected {config.gpu_worker_nodes} "
+            f"— check the DaemonSet nodeSelector matches the GPU nodes' labels.")
+        raise typer.Exit(1)
+
+    log("Waiting for nvml-mock daemonset rollout...")
+    sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", "--timeout=180s")
+
+    # Agents are pre-labeled nvidia.com/gpu.present=true at cluster creation and
+    # nvml-mock's setup.sh re-applies it; confirm the label is present before the
+    # suite (and the plugin's nodeSelector) relies on it.
+    wait_for_gpu_node_labels(config)
+
+
 def wait_for_gpu_node_labels(config: ClusterConfig, max_retries: int = 30, interval_seconds: int = 2) -> None:
     log("Waiting for status-updater to label GPU nodes (nvidia.com/gpu.present=true)...")
     for attempt in range(1, max_retries + 1):
@@ -302,10 +343,13 @@ def wait_for_gpu_node_labels(config: ClusterConfig, max_retries: int = 30, inter
 def main(
     delete: bool = typer.Option(False, "--delete", help="Delete the cluster and exit"),
     skip_fake_gpu_operator: bool = typer.Option(
-        False, "--skip-fake-gpu-operator", help="Create the cluster only, skip fake-gpu-operator install"
+        False, "--skip-fake-gpu-operator", help="Skip fake-gpu-operator install"
+    ),
+    skip_gpu_mock: bool = typer.Option(
+        False, "--skip-gpu-mock", help="Skip nvml-mock install"
     ),
 ) -> None:
-    """Create (or delete) a k3d cluster with fake-gpu-operator for gpu-sharing-operator e2e tests."""
+    """Create (or delete) a k3d cluster with fake-gpu-operator and nvml-mock for gpu-sharing-operator e2e tests."""
     config = ClusterConfig()
     if not config.kubeconfig:
         config.kubeconfig = str(Path.home() / ".kube" / f"{config.cluster_name}.yaml")
@@ -314,17 +358,17 @@ def main(
     require_command("kubectl")
     require_command("docker")
 
-    if delete:
-        delete_cluster(config)
-        Path(config.kubeconfig).expanduser().unlink(missing_ok=True)
-        return
-
     if not skip_fake_gpu_operator:
         require_command("helm")
         if not config.fake_gpu_operator_version:
             log("E2E_FAKE_GPU_OPERATOR_VERSION must be set (or pass --skip-fake-gpu-operator).")
             log("See https://github.com/run-ai/fake-gpu-operator/releases for available versions.")
             raise typer.Exit(1)
+
+    if delete:
+        delete_cluster(config)
+        Path(config.kubeconfig).expanduser().unlink(missing_ok=True)
+        return
 
     if not create_cluster(config):
         raise typer.Exit(1)
@@ -334,13 +378,11 @@ def main(
 
     wait_for_nodes(config)
 
-    if skip_fake_gpu_operator:
-        log("Skipping fake-gpu-operator installation (--skip-fake-gpu-operator).")
-        log(f"Cluster '{config.cluster_name}' is ready.")
-        log(f"  export KUBECONFIG={config.kubeconfig}")
-        return
+    if not skip_fake_gpu_operator:
+        install_fake_gpu_operator(config)
 
-    install_fake_gpu_operator(config)
+    if not skip_gpu_mock:
+        install_nvml_mock(config)
 
     log(f"Cluster '{config.cluster_name}' is ready for e2e tests.")
     log("Next steps (make targets set KUBECONFIG for you):")

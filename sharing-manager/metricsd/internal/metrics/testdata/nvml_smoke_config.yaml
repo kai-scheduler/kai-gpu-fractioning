@@ -1,0 +1,85 @@
+version: "1.0"
+system:
+  driver_version: "550.163.01"
+  nvml_version: "12.550.163.01"
+  cuda_version: "12.4"
+  cuda_version_major: 12
+  cuda_version_minor: 4
+device_defaults:
+  name: "NVIDIA A100-SXM4-40GB"
+  brand: "nvidia"
+  architecture: "ampere"
+  compute_capability:
+    major: 8
+    minor: 0
+  memory:
+    total_bytes: 42949672960  # 40 GiB
+    reserved_bytes: 611319808
+    free_bytes: 32519249920
+    used_bytes: 10430423040
+  power:
+    management_supported: true
+    default_limit_mw: 400000
+    enforced_limit_mw: 400000
+    min_limit_mw: 100000
+    max_limit_mw: 400000
+    current_draw_mw: 280000
+  thermal:
+    temperature_gpu_c: 58
+  clocks:
+    graphics_current: 1095
+    graphics_max: 1410
+    sm_current: 1095
+    sm_max: 1410
+    memory_current: 1215
+    memory_max: 1215
+  utilization:
+    gpu: 0
+    memory: 0
+  compute_mode: "default"
+  persistence_mode: "enabled"
+  performance_state: "P0"
+  ecc:
+    mode_current: "enabled"
+  mig:
+    mode_current: "disabled"
+    max_gpu_instances: 7
+  processes: []
+devices:
+  # Device 0: two compute processes with different memory amounts,
+  # plus one process carrying the nvmlValueNotAvailable sentinel (^uint64(0)).
+  - index: 0
+    uuid: "aaaaaaaa-0000-0000-0000-000000000000"
+    pci:
+      bus_id: "0000:07:00.0"
+    minor_number: 0
+    processes:
+      - pid: 1001
+        used_memory_mib: 1024         # 1 GiB → UsedGpuMemory = 1073741824 bytes
+        type: C
+        sm_util: 75
+      - pid: 1002
+        used_memory_mib: 2048         # 2 GiB → UsedGpuMemory = 2147483648 bytes
+        type: C
+        sm_util: 30
+      - pid: 1003
+        used_memory_mib: 0            # sentinel test: nvml-mock can't emit ^uint64(0) via MiB config
+        type: C
+        sm_util: 0
+
+  # Device 1: one compute process and one graphics process (exercises
+  # GetGraphicsRunningProcesses separately from GetComputeRunningProcesses).
+  - index: 1
+    uuid: "bbbbbbbb-1111-1111-1111-111111111111"
+    pci:
+      bus_id: "0000:0F:00.0"
+    minor_number: 1
+    processes:
+      - pid: 2001
+        used_memory_mib: 3072         # 3 GiB → UsedGpuMemory = 3221225472 bytes
+        type: C
+        sm_util: 60
+      - pid: 2002
+        used_memory_mib: 512          # 512 MiB → UsedGpuMemory = 536870912 bytes
+        type: G
+        sm_util: 20

@@ -6,8 +6,8 @@
 #   skaffold dev -p e2e          # same, with rebuild/redeploy on file changes
 #   skaffold delete -p e2e       # uninstall
 #
-# The default profile builds prod-style images (no e2e build tag). The `e2e`
-# profile adds metricsd's GO_TAGS=e2e (fake-GPU detection — never ship to prod)
+# The default profile builds prod-style images. The `e2e` profile switches
+# metricsd to Dockerfile.e2e (bakes in the nvml-mock .so for fake-GPU clusters)
 # and forces pullPolicy=Never so nodes use the locally loaded images.
 apiVersion: skaffold/v4beta11
 kind: Config
@@ -71,11 +71,15 @@ deploy:
 profiles:
   - name: e2e
     patches:
-      # metricsd: build the fake-GPU-aware binary for the host arch (E2E_ARCH env).
+      # metricsd: use the e2e Dockerfile which bakes in the nvml-mock .so so
+      # NVML calls resolve on fake-GPU k3d clusters without a real NVIDIA driver.
+      - op: replace
+        path: /build/artifacts/3/docker/dockerfile
+        value: sharing-manager/metricsd/Dockerfile.e2e
+      # Pass the host arch so cgo compiles natively under QEMU emulation.
       - op: add
         path: /build/artifacts/3/docker/buildArgs
         value:
-          GO_TAGS: e2e
           TARGETARCH: "{{.E2E_ARCH}}"
       # Locally loaded images have no registry to pull from.
       - op: add
@@ -90,4 +94,4 @@ profiles:
       # (skaffold drops empty-string setValues entries, so --set can't do this).
       - op: add
         path: /deploy/helm/releases/0/valuesFiles
-        value: ["operator/charts/e2e-values.yaml"]
+        value: [ "operator/charts/e2e-values.yaml" ]

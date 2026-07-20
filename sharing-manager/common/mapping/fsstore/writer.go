@@ -72,16 +72,18 @@ func (w *Writer) Delete(containerID string) {
 	}
 }
 
-// Replace reconciles the directory against the full container set delivered by an
-// NRI Synchronize: it (re)writes every current file and unlinks any stale file
-// for a container no longer present. This is what makes the shared volume
-// rebuildable — an ephemeral emptyDir is fully repopulated on
-// reconnect, so it never needs to survive a pod restart.
+// Replace reconciles the directory against the full container set: it
+// (re)writes every current file and unlinks any stale file for a container no
+// longer present. Callers are responsible for not invoking Replace with an
+// empty slice when the intent is to preserve existing files (e.g. on an NRI
+// reconnect before containerd has replayed containers); see events.Processor.
 func (w *Writer) Replace(containers []store.ContainerInfo) {
 	if err := os.MkdirAll(w.dir, dirPerm); err != nil {
 		w.log.Warn("failed to create mapping directory", "dir", w.dir, "error", err)
 		return
 	}
+
+	w.log.Debug("NRI Synchronize: reconciling fsstore", "containers", len(containers))
 
 	desired := make(map[string]struct{}, len(containers))
 	for _, info := range containers {

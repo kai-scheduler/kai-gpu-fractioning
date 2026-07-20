@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -164,6 +165,17 @@ type MetricsAgentSpec struct {
 	// (only safe when the default runtime already injects NVIDIA driver libraries).
 	// +optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
+	// volumes are additional volumes to add to the metricsd pod. Use this to
+	// inject environment-specific config (e.g. an alternative NVML backend in
+	// test clusters) without encoding test knowledge in the operator itself.
+	// +optional
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// volumeMounts are additional volume mounts to add to the metricsd container.
+	// Each entry must reference a volume name declared in Volumes.
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 
 	// metricNames overrides the exported Prometheus metric names. Empty fields
 	// keep the built-in gpu_sharing_* defaults. Set these to make metricsd emit

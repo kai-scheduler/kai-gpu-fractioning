@@ -47,10 +47,11 @@ const (
 // event is a pending mapping change. The callback is executed on the worker
 // goroutine, keeping the producer's NRI hot path non-blocking.
 type event struct {
-	kind        kind
-	adapt       adapter     // upsert
-	syncAdapt   syncAdapter // replace
-	containerID string      // remove
+	kind          kind
+	adapt         adapter     // upsert
+	syncAdapt     syncAdapter // replace
+	containerID   string      // remove
+	fromReconnect bool        // replace: came from an NRI Synchronize (reconnect); skip Replace when infos is empty
 }
 
 // Options configures a Processor.
@@ -110,8 +111,18 @@ func (p *Processor) Delete(containerID string) {
 // resync). adapt is run on the worker goroutine and returns the complete current
 // container set. Returns immediately; drops the event if the queue is full
 // rather than blocking the NRI callback.
+//
+// If the resulting container list is empty the Replace is skipped: an empty
+// Synchronize indicates containerd restarted and has not yet replayed existing
+// containers (observed in k3s/k3d). Pruning would wipe all mapping files and
+// cause a metric gap for every running workload; skipping preserves attribution
+// across the reconnect window. A subsequent non-empty Synchronize, or
+// individual Upsert/Delete events, will reconcile the directory.
+//
+// This is intentionally different from a non-reconnect Replace(nil): genuine
+// transitions to zero containers arrive via Delete events, not Synchronize.
 func (p *Processor) Synchronize(adapt func() []store.ContainerInfo) {
-	p.enqueue(item{event: event{kind: replace, syncAdapt: adapt}})
+	p.enqueue(item{event: event{kind: replace, syncAdapt: adapt, fromReconnect: true}})
 }
 
 // enqueue sends an item to the worker without blocking. If the queue is full the
@@ -172,6 +183,10 @@ func (p *Processor) apply(ev event) {
 		}
 	case replace:
 		infos := ev.syncAdapt()
+		if ev.fromReconnect && len(infos) == 0 {
+			p.log.Debug("NRI Synchronize: skipping empty reconnect sync to preserve existing mapping files")
+			return
+		}
 		p.writer.Replace(infos)
 		if logEnabled {
 			for _, info := range infos {

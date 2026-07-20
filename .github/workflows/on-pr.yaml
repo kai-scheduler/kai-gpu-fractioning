@@ -39,3 +39,13 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make build
+
+  smoke-nvml:
+    name: Smoke / NVML collector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: sharing-manager/metricsd/go.mod
+      - run: make -C sharing-manager/metricsd smoke-nvml

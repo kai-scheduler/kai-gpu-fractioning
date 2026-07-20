@@ -19,7 +19,7 @@ env:
   E2E_GPU_WORKER_NODES: 2          # GPU worker nodes
   E2E_NON_GPU_WORKER_NODES: 1  # plain (no-GPU) worker nodes, for a mixed topology
   # Pin to a known-good fake-gpu-operator release. Bump deliberately.
-  E2E_FAKE_GPU_OPERATOR_VERSION: 0.1.0
+  E2E_FAKE_GPU_OPERATOR_VERSION: 0.2.0
 
 jobs:
   metrics:

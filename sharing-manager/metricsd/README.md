@@ -1,6 +1,6 @@
-# gpu-sharing-plugin
+# metricsd
 
-`gpu-sharing-plugin` is the containerd NRI plugin component. It handles
+`metricsd` is the containerd NRI plugin component. It handles
 container lifecycle events, reads GPU memory annotations, patches annotated
 containers with NVIDIA GPU memory environment variables and the MPS pipe
 directory mount, and exports pod-level GPU metrics.
@@ -8,10 +8,10 @@ directory mount, and exports pod-level GPU metrics.
 ## Layout
 
 ```text
-gpu-sharing-plugin/
+metricsd/
   Dockerfile
   Makefile
-  cmd/gpu-sharing-plugin/
+  cmd/metricsd/
   internal/metrics/
   internal/plugin/
   internal/store/
@@ -26,51 +26,49 @@ This directory is an independent Go module.
 From the repository root:
 
 ```sh
-make -C gpu-sharing-plugin fmt
-make -C gpu-sharing-plugin test
-make -C gpu-sharing-plugin build
+make -C sharing-manager/metricsd fmt
+make -C sharing-manager/metricsd test
+make -C sharing-manager/metricsd build
 ```
 
 The component build writes:
 
 ```text
-gpu-sharing-plugin/bin/gpu-sharing-plugin
+sharing-manager/metricsd/bin/metricsd
 ```
 
 To write into the root `bin/` directory instead:
 
 ```sh
-make -C gpu-sharing-plugin build BIN_DIR=../bin
+make -C sharing-manager/metricsd build BIN_DIR=../bin
 ```
 
 ## Image
 
-The component Makefile defaults to
-`REGISTRY=runai.jfrog.io/op-containers-lab-virt`, so the default image is
-`runai.jfrog.io/op-containers-lab-virt/gpu-sharing-plugin:dev`.
+The default image is `gcr.io/run-ai-prod/metricsd:dev`.
 
-Build the plugin image from the repository root:
+Build the image from the repository root:
 
 ```sh
-make -C gpu-sharing-plugin docker-build TAG=dev
+make -C sharing-manager/metricsd docker-build TAG=dev
 ```
 
 For multi-platform builds:
 
 ```sh
-make -C gpu-sharing-plugin docker-buildx TAG=dev
+make -C sharing-manager/metricsd docker-buildx TAG=dev
 ```
 
-The image uses `gpu-sharing-plugin/Dockerfile` and runs the plugin from a
+The image uses `metricsd/Dockerfile` and runs the plugin from a
 distroless base image. The plugin links the NVIDIA Go NVML bindings, so the
 component build uses cgo and the runtime image uses the Debian distroless base.
 
 ## Runtime Flags
 
 ```text
---config          plugin configuration file, default /etc/gpu-sharing-plugin/config.yaml
+--config          plugin configuration file, default /etc/metricsd/config.yaml
 --socket          NRI socket path, default /var/run/nri/nri.sock
---plugin-name     NRI plugin name, default gpu-sharing-plugin
+--plugin-name     NRI plugin name, default metricsd
 --plugin-index    NRI plugin ordering index, default 10
 --log-level       debug, info, warn, or error
 --retry-interval  reconnect delay after NRI exits, default 5s

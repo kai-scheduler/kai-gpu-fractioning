@@ -14,9 +14,13 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/config"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
 	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
+	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
 )
 
 // Suite holds the shared state for a run of an e2e test binary. It only
@@ -24,6 +28,10 @@ import (
 // provisions one.
 type Suite struct {
 	Client *cluster.Client
+	// PluginPods is the list of sharingd pods cached at Preflight time.
+	// Tests use this with plugin.ScrapeFrom to avoid listing pods on every
+	// poll — the DaemonSet is stable for the duration of the test run.
+	PluginPods []corev1.Pod
 }
 
 // New connects to the cluster. It does not verify preconditions or deploy
@@ -37,12 +45,21 @@ func New(ctx context.Context) (*Suite, error) {
 	return &Suite{Client: c}, nil
 }
 
-// Preflight verifies the cluster's GPU nodes match what the run expects. It is
-// a fast, side-effect-free precondition check so a misconfigured cluster fails
-// immediately with a clear message before any test runs.
+// Preflight verifies the cluster's GPU nodes match what the run expects and
+// caches the sharingd pod list for use by poll loops throughout the suite.
+// It is a fast, side-effect-free precondition check so a misconfigured cluster
+// fails immediately with a clear message before any test runs.
 func (s *Suite) Preflight(ctx context.Context) error {
 	if err := nodes.VerifyGPUNodes(ctx, s.Client); err != nil {
 		return fmt.Errorf("cluster is not in the expected configuration: %w", err)
 	}
+	pluginPods, err := pods.ListByLabel(ctx, s.Client, s.Client.Config.OperatorNamespace, plugin.LabelSelector)
+	if err != nil {
+		return fmt.Errorf("list plugin pods: %w", err)
+	}
+	if len(pluginPods) == 0 {
+		return fmt.Errorf("no plugin pods found in namespace %s — is the stack deployed?", s.Client.Config.OperatorNamespace)
+	}
+	s.PluginPods = pluginPods
 	return nil
 }

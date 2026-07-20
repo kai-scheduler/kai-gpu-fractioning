@@ -57,3 +57,46 @@ func GaugeValue(m *dto.Metric) float64 {
 	}
 	return 0
 }
+
+// FindSeries returns every sample of metricName whose labels are a superset
+// of match (a sample may carry labels not present in match; those are
+// ignored). Callers match on whatever subset identifies the series they
+// care about — e.g. {"namespace": ..., "pod": ..., "pod_uuid": ...} to find a
+// specific pod's series regardless of its gpu_index/gpu_uuid.
+func FindSeries(families map[string]*dto.MetricFamily, metricName string, match map[string]string) []*dto.Metric {
+	mf, ok := families[metricName]
+	if !ok {
+		return nil
+	}
+
+	var out []*dto.Metric
+	for _, m := range mf.Metric {
+		if labelsMatch(m.GetLabel(), match) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// Label returns the value of the named label on m, or "" if absent.
+func Label(m *dto.Metric, name string) string {
+	for _, l := range m.GetLabel() {
+		if l.GetName() == name {
+			return l.GetValue()
+		}
+	}
+	return ""
+}
+
+func labelsMatch(labels []*dto.LabelPair, match map[string]string) bool {
+	got := make(map[string]string, len(labels))
+	for _, l := range labels {
+		got[l.GetName()] = l.GetValue()
+	}
+	for k, v := range match {
+		if got[k] != v {
+			return false
+		}
+	}
+	return true
+}
