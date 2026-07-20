@@ -5,16 +5,16 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "gpu-sharing-operator.fullname" . }}-auth-delegator
+  name: {{ include "gpu-sharing.fullname" . }}-auth-delegator
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: system:auth-delegator
 subjects:
   - kind: ServiceAccount
-    name: {{ include "gpu-sharing-operator.serviceAccountName" . }}
+    name: {{ include "gpu-sharing.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 ---
 {{- end }}
@@ -23,9 +23,9 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "gpu-sharing-operator.fullname" . }}-metrics-reader
+  name: {{ include "gpu-sharing.fullname" . }}-metrics-reader
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
 rules:
   - nonResourceURLs:
       - /metrics

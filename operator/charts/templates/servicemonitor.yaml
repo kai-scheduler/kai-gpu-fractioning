@@ -6,17 +6,17 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "gpu-sharing-operator.fullname" . }}
+  name: {{ include "gpu-sharing.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
     {{- with .Values.metrics.serviceMonitor.additionalLabels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   selector:
     matchLabels:
-      {{- include "gpu-sharing-operator.selectorLabels" . | nindent 6 }}
+      {{- include "gpu-sharing.selectorLabels" . | nindent 6 }}
   namespaceSelector:
     matchNames:
       - {{ .Release.Namespace }}
@@ -34,17 +34,17 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: {{ include "gpu-sharing-operator.fullname" . }}-metricsd
+  name: {{ include "gpu-sharing.fullname" . }}-metricsd
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
     {{- with .Values.metrics.serviceMonitor.additionalLabels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/managed-by: gpu-sharing-operator
+      app.kubernetes.io/managed-by: gpu-sharing
       app.kubernetes.io/component: sharingd
   namespaceSelector:
     matchNames:
