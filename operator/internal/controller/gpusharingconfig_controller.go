@@ -163,6 +163,19 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
 	daemonmgr.SetCondition(&config.Status, readyCond)
 
+	// Reflect GPU driver-upgrade state on the CR. The nodeAffinity on the managed
+	// DaemonSets already drains daemons from upgrading nodes (see
+	// daemonmgr.driverUpgradeNodeAffinity); this surfaces that as a condition.
+	// The reconcile is retriggered by the owned DaemonSets' status changing as
+	// pods drain/return, so no Node watch is required.
+	upgrading, upErr := r.evaluateDriverUpgrade(ctx, &config)
+	if upErr != nil {
+		log.Error(upErr, "failed to evaluate driver-upgrade state, will requeue")
+		needsRequeue = true
+	} else {
+		daemonmgr.SetCondition(&config.Status, daemonmgr.DriverUpgradeCondition(upgrading, config.Generation))
+	}
+
 	// Patch gpu-sharing.nvidia.com/Ready on each node. We only list pods
 	// when something is unhealthy or when transitioning back to healthy
 	// (to flip nodes from False→True). In steady state this is skipped entirely.
@@ -187,6 +200,39 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: requeueInterval}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// evaluateDriverUpgrade reports whether any GPU node targeted by the CR is
+// undergoing a driver upgrade. It lists only nodes carrying the gpu-operator's
+// upgrade-state label (a tiny, usually-empty set), then filters to those the CR
+// targets. Reads go through the uncached APIReader for the same reason as
+// patchNodeConditions: no cluster-scale Node informer.
+func (r *GpuSharingConfigReconciler) evaluateDriverUpgrade(ctx context.Context, config *v1alpha1.GpuSharingConfig) (bool, error) {
+	var nodeList corev1.NodeList
+	if err := r.APIReader.List(ctx, &nodeList, client.HasLabels{daemonmgr.DriverUpgradeStateLabel}); err != nil {
+		return false, fmt.Errorf("listing driver-upgrade nodes: %w", err)
+	}
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		if !nodeMatchesSelector(node.Labels, config.Spec.NodeSelector) {
+			continue
+		}
+		if daemonmgr.DriverUpgradeActive(node.Labels[daemonmgr.DriverUpgradeStateLabel]) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// nodeMatchesSelector reports whether nodeLabels satisfy every entry in selector
+// (an empty selector matches every node).
+func nodeMatchesSelector(nodeLabels, selector map[string]string) bool {
+	for k, v := range selector {
+		if nodeLabels[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // buildOptions resolves the BuildOptions shared by all daemons. DefaultImages

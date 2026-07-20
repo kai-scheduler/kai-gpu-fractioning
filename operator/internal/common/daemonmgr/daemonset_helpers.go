@@ -41,6 +41,12 @@ func BaseDaemonSet(component, namespace string) *appsv1.DaemonSet {
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 				},
+				Spec: corev1.PodSpec{
+					// Drain the daemon from nodes undergoing a GPU driver upgrade
+					// so MPS graceful-quits before the driver is unloaded. See
+					// driverUpgradeNodeAffinity.
+					Affinity: driverUpgradeNodeAffinity(),
+				},
 			},
 		},
 	}

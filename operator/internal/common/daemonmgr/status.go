@@ -107,7 +107,9 @@ func AggregateReadyCondition(conditions []metav1.Condition, generation int64) me
 
 	var falseComponents, unknownComponents []string
 	for _, c := range conditions {
-		if c.Type == ConditionReady {
+		// Skip the aggregate itself and orthogonal conditions (e.g.
+		// DriverUpgradeInProgress) so only per-daemon components drive Ready.
+		if c.Type == ConditionReady || c.Type == ConditionDriverUpgradeInProgress {
 			continue
 		}
 		switch c.Status {
