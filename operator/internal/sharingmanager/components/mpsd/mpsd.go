@@ -21,6 +21,12 @@ const (
 	volumeMPSLog  = "mps-log"
 
 	nvidiaRuntimeClass = "nvidia"
+
+	// Resource requests/limits for the mpsd container. See daemonmgr.DaemonResources
+	// for the requests-plus-memory-limit rationale.
+	mpsdCPURequest = "50m"
+	mpsdMemRequest = "64Mi"
+	mpsdMemLimit   = "256Mi"
 )
 
 type daemon struct {
@@ -87,6 +93,22 @@ func (d *daemon) buildContainer(image v1alpha1.ImageSpec) (corev1.Container, []c
 		PeriodSeconds:       10,
 	}
 
+	// Liveness reuses the control-socket check but with deliberately generous
+	// thresholds: mpsd's supervisor already restarts nvidia-cuda-mps-control on
+	// its own, so we only escalate to a pod restart when the socket stays absent
+	// for roughly 3 minutes (60s initial + 6 × 30s) — long enough for the
+	// supervisor to self-heal, but a backstop when MPS is genuinely wedged.
+	mpsLivenessProbe := &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{"test", "-S", defaultMPSPipeDir + "/control"},
+			},
+		},
+		InitialDelaySeconds: 60,
+		PeriodSeconds:       30,
+		FailureThreshold:    6,
+	}
+
 	container := corev1.Container{
 		Name:            daemonName,
 		Image:           image.FullImage(),
@@ -94,6 +116,8 @@ func (d *daemon) buildContainer(image v1alpha1.ImageSpec) (corev1.Container, []c
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildArgs(),
 		ReadinessProbe:  mpsControlSocketProbe,
+		LivenessProbe:   mpsLivenessProbe,
+		Resources:       daemonmgr.DaemonResources(mpsdCPURequest, mpsdMemRequest, mpsdMemLimit),
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      volumeMPSPipe,
