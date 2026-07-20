@@ -12,7 +12,7 @@
 apiVersion: skaffold/v4beta11
 kind: Config
 metadata:
-  name: gpu-sharing-operator
+  name: gpu-sharing
 
 build:
   # push:false keeps images local; Skaffold auto-loads them into a k3d/kind
@@ -29,7 +29,7 @@ build:
   artifacts:
     # operator/sharingd/mpsd are CGO_ENABLED=0 and build FROM $BUILDPLATFORM,
     # cross-compiling via the buildkit-provided TARGETARCH — no build args needed.
-    - image: gpu-sharing-operator
+    - image: gpu-sharing
       context: .
       docker:
         dockerfile: operator/Dockerfile
@@ -54,13 +54,13 @@ deploy:
     releases:
       - name: gso
         chartPath: operator/charts
-        namespace: gpu-sharing-operator
+        namespace: gpu-sharing
         createNamespace: true
         # Map each built image into the chart's images.<name>.{repository,tag}
         # structure. Tag only (no digest): images are loaded into k3d by tag.
         setValueTemplates:
-          images.operator.repository: "{{.IMAGE_REPO_gpu_sharing_operator}}"
-          images.operator.tag: "{{.IMAGE_TAG_gpu_sharing_operator}}"
+          images.operator.repository: "{{.IMAGE_REPO_gpu_sharing}}"
+          images.operator.tag: "{{.IMAGE_TAG_gpu_sharing}}"
           images.sharingd.repository: "{{.IMAGE_REPO_sharingd}}"
           images.sharingd.tag: "{{.IMAGE_TAG_sharingd}}"
           images.mpsd.repository: "{{.IMAGE_REPO_mpsd}}"

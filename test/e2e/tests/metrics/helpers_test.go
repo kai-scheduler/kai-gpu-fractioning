@@ -257,7 +257,7 @@ func restartSharingdPods(ctx context.Context, t *testing.T, c *cluster.Client) {
 		var updated corev1.PodList
 		if err := c.Ctrl.List(ctx, &updated,
 			ctrlclient.InNamespace(c.Config.OperatorNamespace),
-			ctrlclient.MatchingLabels{"app.kubernetes.io/component": "sharingd", "app.kubernetes.io/managed-by": "gpu-sharing-operator"}); err != nil {
+			ctrlclient.MatchingLabels{"app.kubernetes.io/component": "sharingd", "app.kubernetes.io/managed-by": "gpu-sharing"}); err != nil {
 			continue
 		}
 		ready := 0
