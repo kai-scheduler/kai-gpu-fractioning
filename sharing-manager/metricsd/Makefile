@@ -1,5 +1,5 @@
-REGISTRY ?= gcr.io/run-ai-prod
-IMAGE ?= $(REGISTRY)/metricsd
+DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/gpu-sharing
+IMAGE ?= $(DOCKER_REPO_BASE)/metricsd
 TAG ?= dev
 PLATFORMS ?= linux/amd64,linux/arm64
 BIN_DIR ?= bin

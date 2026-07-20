@@ -16,11 +16,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/config"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/nodes"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/config"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/cluster"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/nodes"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/pods"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/plugin"
 )
 
 // Suite holds the shared state for a run of an e2e test binary. It only

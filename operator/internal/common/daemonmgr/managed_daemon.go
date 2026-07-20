@@ -3,7 +3,7 @@ package daemonmgr
 import (
 	appsv1 "k8s.io/api/apps/v1"
 
-	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
+	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
 )
 
 const (

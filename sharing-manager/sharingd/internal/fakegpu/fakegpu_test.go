@@ -5,7 +5,7 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
 )
 
 func TestGPUDevicesParsesUUIDAndIndexTokens(t *testing.T) {

@@ -22,8 +22,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/mpsd/internal"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/mpsd/internal"
 )
 
 func main() {

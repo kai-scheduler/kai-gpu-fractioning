@@ -18,7 +18,7 @@ package events
 import (
 	"log/slog"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
 )
 
 // defaultQueueDepth buffers events so the producer rarely hits the drop path.

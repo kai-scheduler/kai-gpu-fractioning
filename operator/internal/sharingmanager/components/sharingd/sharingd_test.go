@@ -9,8 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
+	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 )
 
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {

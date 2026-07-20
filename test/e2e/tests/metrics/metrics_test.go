@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/pods"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/portforward"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/pods"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/portforward"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/metrics"
 )
 
 // metricsd runs as a sidecar in the operator-managed sharingd DaemonSet pods,

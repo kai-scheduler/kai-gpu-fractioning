@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
 )
 
 type fakeWriter struct {

@@ -45,7 +45,7 @@ make -C sharing-manager/metricsd build BIN_DIR=../bin
 
 ## Image
 
-The default image is `gcr.io/run-ai-prod/metricsd:dev`.
+The default image is `ghcr.io/kai-scheduler/gpu-sharing/metricsd:dev`.
 
 Build the image from the repository root:
 

@@ -3,8 +3,8 @@
 package internal
 
 import (
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/fakegpu"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/fakegpu"
 
 	"github.com/containerd/nri/pkg/api"
 )

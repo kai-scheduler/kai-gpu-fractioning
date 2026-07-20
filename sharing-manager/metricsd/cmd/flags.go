@@ -20,9 +20,9 @@ import (
 	"flag"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
+	"github.com/kai-scheduler/gpu-sharing/pkg/env"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/fsstore"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/metricsd/internal/metrics"
 )
 
 const (

@@ -1,0 +1,10 @@
+go 1.26.4
+
+use (
+	.
+	./api
+	./operator
+	./pkg
+	./sharing-manager/metricsd
+	./test/e2e
+)

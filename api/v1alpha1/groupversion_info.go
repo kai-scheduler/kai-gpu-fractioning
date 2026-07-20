@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the gpu-sharing v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=gpu-sharing.run.ai
+// +groupName=gpu-sharing.kai.scheduler
 package v1alpha1
 
 import (
@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	SchemeGroupVersion = schema.GroupVersion{Group: "gpu-sharing.run.ai", Version: "v1alpha1"}
+	SchemeGroupVersion = schema.GroupVersion{Group: "gpu-sharing.kai.scheduler", Version: "v1alpha1"}
 	GroupVersion       = SchemeGroupVersion
 
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)

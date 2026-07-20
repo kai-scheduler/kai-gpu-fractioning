@@ -31,8 +31,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	gpusharingv1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
+	gpusharingv1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 )
 
 var _ = Describe("GpuSharingConfig Controller", func() {

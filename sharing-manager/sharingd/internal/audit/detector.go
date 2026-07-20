@@ -13,8 +13,8 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/annotations"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/injection"
 )
 
 // violator describes a running container that belongs to a GPU-sharing pod but

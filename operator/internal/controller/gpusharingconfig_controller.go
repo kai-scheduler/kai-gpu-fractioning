@@ -33,11 +33,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/mpsd"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/sharingmanager/components/sharingd"
+	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/sharingmanager/components/mpsd"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/sharingmanager/components/sharingd"
+	"github.com/kai-scheduler/gpu-sharing/pkg/env"
 )
 
 const (

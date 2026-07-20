@@ -1,3 +1,3 @@
-module github.com/run-ai/gpu-sharing-operator/pkg
+module github.com/kai-scheduler/gpu-sharing/pkg
 
 go 1.26

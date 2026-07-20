@@ -24,7 +24,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/suite"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/suite"
 )
 
 var s *suite.Suite
