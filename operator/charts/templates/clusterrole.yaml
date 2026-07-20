@@ -1,9 +1,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "gpu-sharing-operator.fullname" . }}
+  name: {{ include "gpu-sharing.fullname" . }}
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
 rules:
   # Watch for GpuSharingConfig changes, read the resource, and update it to
   # add/remove the node-condition cleanup finalizer (metadata.finalizers is

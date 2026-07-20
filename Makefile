@@ -1,4 +1,4 @@
-# gpu-sharing-operator
+# gpu-sharing
 # -----------------------------------------------------------
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/gpu-sharing

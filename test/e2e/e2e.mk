@@ -28,7 +28,7 @@ PYTHON                        ?= python3
 
 # Namespace the operator chart is installed into (must match skaffold.yaml's
 # release namespace). The Go suite reads this via E2E_OPERATOR_NAMESPACE.
-E2E_OPERATOR_NAMESPACE        ?= gpu-sharing-operator
+E2E_OPERATOR_NAMESPACE        ?= gpu-sharing
 
 # Dedicated kubeconfig for the e2e cluster. create-cluster.py writes it here
 # (it can't use ~/.kube/config — the NRI mount breaks `k3d kubeconfig`), and the

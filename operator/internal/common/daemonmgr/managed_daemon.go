@@ -9,7 +9,7 @@ import (
 const (
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 	LabelComponent = "app.kubernetes.io/component"
-	ManagedByValue = "gpu-sharing-operator"
+	ManagedByValue = "gpu-sharing"
 )
 
 // ManagedDaemon describes a daemon whose lifecycle is managed by the controller.

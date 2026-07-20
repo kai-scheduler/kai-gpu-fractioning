@@ -16,7 +16,7 @@ import (
 // LabelSelector matches every sharingd DaemonSet pod — the metricsd metrics
 // exporter runs as a sidecar container in those pods (not its own DaemonSet),
 // so the /metrics endpoint under test is served from here.
-const LabelSelector = "app.kubernetes.io/managed-by=gpu-sharing-operator,app.kubernetes.io/component=sharingd"
+const LabelSelector = "app.kubernetes.io/managed-by=gpu-sharing,app.kubernetes.io/component=sharingd"
 
 // metricsPort is the Prometheus port the metricsd sidecar serves on.
 const metricsPort = 2112

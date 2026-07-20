@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "gpu-sharing-operator.name" -}}
+{{- define "gpu-sharing.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Fully qualified app name.
 */}}
-{{- define "gpu-sharing-operator.fullname" -}}
+{{- define "gpu-sharing.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,9 +24,9 @@ Fully qualified app name.
 {{/*
 Common labels.
 */}}
-{{- define "gpu-sharing-operator.labels" -}}
-helm.sh/chart: {{ include "gpu-sharing-operator.chart" . }}
-{{ include "gpu-sharing-operator.selectorLabels" . }}
+{{- define "gpu-sharing.labels" -}}
+helm.sh/chart: {{ include "gpu-sharing.chart" . }}
+{{ include "gpu-sharing.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
@@ -36,24 +36,24 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{/*
 Selector labels.
 */}}
-{{- define "gpu-sharing-operator.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "gpu-sharing-operator.name" . }}
+{{- define "gpu-sharing.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "gpu-sharing.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Chart name and version.
 */}}
-{{- define "gpu-sharing-operator.chart" -}}
+{{- define "gpu-sharing.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Service account name.
 */}}
-{{- define "gpu-sharing-operator.serviceAccountName" -}}
+{{- define "gpu-sharing.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "gpu-sharing-operator.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "gpu-sharing.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}

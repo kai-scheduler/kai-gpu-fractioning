@@ -3,7 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   name: gpusharingconfigs.gpu-sharing.kai.scheduler
   labels:
-    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
     # Install/upgrade the CRD ahead of the main release (operator Deployment) and
