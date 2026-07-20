@@ -35,16 +35,19 @@ jobs:
   metrics:
     name: Metrics e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # ~8 min build+deploy + a ~10-11 min suite (each nvml-mock SetProcesses cycle
+    # restarts metricsd and waits ~90 s for the ConfigMap to propagate, ×~11
+    # tests). 20 min cut the last test off mid-run; 25 clears it with margin.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
-      # Reclaim runner disk before building 4 images (incl. the large NVML
-      # metricsd image) into k3d. k3d imports every image into EACH node's
-      # containerd, so a 4-node cluster holds ~4x the images; without enough
-      # headroom the kubelet tents nodes with node.kubernetes.io/disk-pressure
-      # and containerd GC-evicts images mid-run, surfacing as ErrImageNeverPull
-      # (pods use pullPolicy: Never, so an evicted image never comes back).
+      # Reclaim runner disk before building/loading images. The runner starts
+      # ~79% full (16 GiB free); building the four images and importing them into
+      # each of the k3d nodes' containerd would push it toward the kubelet's
+      # disk-pressure threshold and risk image eviction. This keeps ~30 GiB free
+      # after everything is loaded (measured), well clear of that threshold —
+      # protective headroom, not the fix for any specific failure.
       - name: Free disk space
         run: |
           echo "before:"; df -h /

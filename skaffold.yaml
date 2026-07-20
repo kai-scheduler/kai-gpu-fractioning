@@ -26,6 +26,10 @@ build:
   local:
     push: false
     useBuildkit: true
+    # Build all four images concurrently instead of Skaffold's default serial
+    # build. They share a warm BuildKit base layer (golang:1.26-bookworm), so
+    # the parallel builds overlap heavily and shave minutes off the deploy step.
+    concurrency: 0
   artifacts:
     # operator/sharingd/mpsd are CGO_ENABLED=0 and build FROM $BUILDPLATFORM,
     # cross-compiling via the buildkit-provided TARGETARCH — no build args needed.
