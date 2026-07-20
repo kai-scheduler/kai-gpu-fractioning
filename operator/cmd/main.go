@@ -122,6 +122,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
+		//nolint:staticcheck // record.EventRecorder is still supported; migrating the reconciler to the new events API is tracked separately.
 		mgr.GetEventRecorderFor("gpusharingconfig-controller"),
 		podNamespace,
 		map[string]v1alpha1.ImageSpec{

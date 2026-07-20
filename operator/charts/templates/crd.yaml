@@ -6,6 +6,14 @@ metadata:
     {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
+    # Install/upgrade the CRD ahead of the main release (operator Deployment) and
+    # well before the post-install "default" GpuSharingConfig hook, so the CRD is
+    # Established before any custom resource of its kind is applied. Without this
+    # the post-install CR hook can race CRD establishment (observed flaking e2e).
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    # Keep the CRD (and therefore any GpuSharingConfig data) on `helm uninstall`.
+    "helm.sh/resource-policy": keep
 spec:
   group: gpu-sharing.kai.scheduler
   names:
