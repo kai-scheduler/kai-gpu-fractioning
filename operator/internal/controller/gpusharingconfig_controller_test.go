@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,6 +35,16 @@ import (
 	gpusharingv1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 )
+
+type fakeDependencyChecker struct {
+	calls int
+	err   error
+}
+
+func (f *fakeDependencyChecker) Check(_ context.Context, _ *gpusharingv1alpha1.GpuSharingConfig) error {
+	f.calls++
+	return f.err
+}
 
 var _ = Describe("GpuSharingConfig Controller", func() {
 	Context("When reconciling a resource", func() {
@@ -93,6 +104,38 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should check dependencies and requeue periodically after a healthy reconcile", func() {
+			checker := &fakeDependencyChecker{}
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", nil, true,
+			)
+			controllerReconciler.DependencyChecker = checker
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(checker.calls).To(Equal(1))
+			Expect(result.RequeueAfter).To(Equal(dependencyCheckInterval))
+		})
+
+		It("should retry sooner when dependency checking fails", func() {
+			checker := &fakeDependencyChecker{err: errors.New("dependency check failed")}
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", nil, true,
+			)
+			controllerReconciler.DependencyChecker = checker
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(checker.calls).To(Equal(1))
+			Expect(result.RequeueAfter).To(Equal(requeueInterval))
 		})
 
 		It("should update observedGeneration on reconcile", func() {

@@ -44,8 +44,9 @@ import (
 )
 
 const (
-	requeueInterval = 30 * time.Second
-	podListPageSize = 500
+	requeueInterval         = 30 * time.Second
+	dependencyCheckInterval = 10 * time.Minute
+	podListPageSize         = 500
 
 	// NodeConditionCleanupFinalizer blocks GpuSharingConfig deletion until the
 	// gpu-sharing.nvidia.com/Ready conditions the controller patched onto nodes
@@ -78,6 +79,11 @@ type GpuSharingConfigReconciler struct {
 	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
+
+	// DependencyChecker evaluates external GPU stack prerequisites. The default
+	// implementation is intentionally a no-op until concrete ClusterPolicy/node
+	// version checks are added.
+	DependencyChecker DependencyChecker
 }
 
 // NewGpuSharingConfigReconciler creates a reconciler with safe defaults.
@@ -98,6 +104,7 @@ func NewGpuSharingConfigReconciler(
 		Namespace:           namespace,
 		DefaultImages:       defaultImages,
 		DefaultMpsdAuditLog: defaultMpsdAuditLog,
+		DependencyChecker:   NoopDependencyChecker{},
 	}
 }
 
@@ -163,6 +170,14 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 	}
 
+	if r.DependencyChecker != nil {
+		if err := r.DependencyChecker.Check(ctx, &config); err != nil {
+			r.Recorder.Eventf(&config, corev1.EventTypeWarning, "DependencyCheckError", "%v", err)
+			log.Error(err, "failed to check GPU stack dependencies")
+			needsRequeue = true
+		}
+	}
+
 	// Aggregate Ready condition.
 	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
 	daemonmgr.SetCondition(&config.Status, readyCond)
@@ -203,7 +218,7 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if needsRequeue {
 		return ctrl.Result{RequeueAfter: requeueInterval}, nil
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: dependencyCheckInterval}, nil
 }
 
 // evaluateDriverUpgrade reports whether any GPU node targeted by the CR is
