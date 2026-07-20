@@ -3,19 +3,19 @@ leaderElect: true
 
 images:
   operator:
-    repository: gcr.io/run-ai-prod/gpu-sharing-operator
+    repository: ghcr.io/kai-scheduler/gpu-sharing/operator
     tag: ""
     pullPolicy: IfNotPresent
   sharingd:
-    repository: gcr.io/run-ai-prod/sharingd
+    repository: ghcr.io/kai-scheduler/gpu-sharing/sharingd
     tag: ""
     pullPolicy: IfNotPresent
   metricsd:
-    repository: gcr.io/run-ai-prod/metricsd
+    repository: ghcr.io/kai-scheduler/gpu-sharing/metricsd
     tag: ""
     pullPolicy: IfNotPresent
   mpsd:
-    repository: gcr.io/run-ai-prod/mpsd
+    repository: ghcr.io/kai-scheduler/gpu-sharing/mpsd
     tag: ""
     pullPolicy: IfNotPresent
 

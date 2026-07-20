@@ -9,12 +9,22 @@ on:
       - "sharing-manager/sharingd/**"
       - "test/e2e/**"
       - ".github/workflows/e2e.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "sharing-manager/metricsd/**"
+      - "sharing-manager/mpsd/**"
+      - "sharing-manager/sharingd/**"
+      - "test/e2e/**"
+      - ".github/workflows/e2e.yaml"
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
+# go.work is for local dev; CI builds via module-scoped make/skaffold targets.
 env:
+  GOWORK: "off"
   E2E_CLUSTER_NAME: gpu-sharing-e2e
   E2E_GPU_WORKER_NODES: 2          # GPU worker nodes
   E2E_NON_GPU_WORKER_NODES: 1  # plain (no-GPU) worker nodes, for a mixed topology
@@ -27,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Suite-agnostic infra: toolchain + k3d/fake-gpu-operator cluster.
       # Reused as-is by future e2e suites (mpsd/sharingd).

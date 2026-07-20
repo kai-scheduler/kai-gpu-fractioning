@@ -54,7 +54,7 @@ type GpuSharingConfigSpec struct {
 // The full image is constructed as <repository>:<tag>.
 type ImageSpec struct {
 	// repository is the full image path including registry and image name
-	// (e.g. "gcr.io/run-ai-prod/sharingd").
+	// (e.g. "ghcr.io/kai-scheduler/gpu-sharing/sharingd").
 	// +optional
 	Repository string `json:"repository,omitempty"`
 

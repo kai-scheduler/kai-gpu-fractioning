@@ -3,9 +3,17 @@ name: PR Validation
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
+
+# The committed go.work is for local multi-module development. CI validates each
+# module in isolation via the module-scoped Makefile targets (which rely on the
+# in-repo `replace` directives), so disable workspace mode here for parity.
+env:
+  GOWORK: "off"
 
 jobs:
   lint:

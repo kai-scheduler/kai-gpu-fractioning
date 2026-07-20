@@ -31,10 +31,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/run-ai/gpu-sharing-operator/api/v1alpha1"
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/config"
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/controller"
+	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/config"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/controller"
+	"github.com/kai-scheduler/gpu-sharing/pkg/env"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -97,7 +97,7 @@ func main() {
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
 		LeaderElection:         cfg.EnableLeaderElect,
-		LeaderElectionID:       "gpu-sharing-operator.run.ai",
+		LeaderElectionID:       "gpu-sharing-operator.kai.scheduler",
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")

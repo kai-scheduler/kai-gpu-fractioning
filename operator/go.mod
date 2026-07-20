@@ -1,12 +1,12 @@
-module github.com/run-ai/gpu-sharing-operator/operator
+module github.com/kai-scheduler/gpu-sharing/operator
 
 go 1.26.0
 
 require (
 	github.com/onsi/ginkgo/v2 v2.27.4
 	github.com/onsi/gomega v1.39.0
-	github.com/run-ai/gpu-sharing-operator/api v0.0.0
-	github.com/run-ai/gpu-sharing-operator/pkg v0.0.0
+	github.com/kai-scheduler/gpu-sharing/api v0.0.0
+	github.com/kai-scheduler/gpu-sharing/pkg v0.0.0
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.2
@@ -14,9 +14,9 @@ require (
 	sigs.k8s.io/controller-runtime v0.24.1
 )
 
-replace github.com/run-ai/gpu-sharing-operator/api => ../api
+replace github.com/kai-scheduler/gpu-sharing/api => ../api
 
-replace github.com/run-ai/gpu-sharing-operator/pkg => ../pkg
+replace github.com/kai-scheduler/gpu-sharing/pkg => ../pkg
 
 require (
 	cel.dev/expr v0.25.1 // indirect

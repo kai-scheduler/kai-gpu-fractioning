@@ -6,7 +6,7 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
 )
 
 func newSentinel(stopper ContainerStopper) *Sentinel {

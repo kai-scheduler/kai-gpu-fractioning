@@ -3,7 +3,7 @@ package annotations
 import (
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
 )
 
 func TestParseToDecimalMB(t *testing.T) {
@@ -221,10 +221,10 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "custom prefix",
 			annotations: map[string]string{
-				"gpu-sharing.run.ai/container.main.limit": "4Gi",
+				"gpu-sharing.kai.scheduler/container.main.limit": "4Gi",
 			},
 			containerName:   "main",
-			prefix:          "gpu-sharing.run.ai/container.",
+			prefix:          "gpu-sharing.kai.scheduler/container.",
 			expectedRequest: "",
 			expectedLimit:   "4294",
 			expectedEmpty:   false,

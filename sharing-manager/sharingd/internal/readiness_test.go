@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/readiness"
 )
 
 // The plugin depends on the ReadinessSetter interface; readiness.State is the

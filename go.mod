@@ -1,16 +1,16 @@
-module github.com/run-ai/gpu-sharing-operator
+module github.com/kai-scheduler/gpu-sharing
 
 go 1.26.2
 
 require (
 	github.com/containerd/nri v0.12.0
-	github.com/run-ai/gpu-sharing-operator/pkg v0.0.0
+	github.com/kai-scheduler/gpu-sharing/pkg v0.0.0
 	google.golang.org/grpc v1.82.1
 	k8s.io/apimachinery v0.36.2
 	k8s.io/cri-api v0.36.2
 )
 
-replace github.com/run-ai/gpu-sharing-operator/pkg => ./pkg
+replace github.com/kai-scheduler/gpu-sharing/pkg => ./pkg
 
 require (
 	github.com/containerd/log v0.1.0 // indirect

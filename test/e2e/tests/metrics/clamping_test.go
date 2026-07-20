@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/metrics"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/metrics"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
 )
 
 // TestE2E_SMUtilizationClampedAtOneHundred verifies that when two processes from

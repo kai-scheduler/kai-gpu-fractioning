@@ -1,11 +1,11 @@
-module github.com/run-ai/gpu-sharing-operator/test/e2e
+module github.com/kai-scheduler/gpu-sharing/test/e2e
 
 go 1.26.2
 
 require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.70.0
-	github.com/run-ai/gpu-sharing-operator/pkg v0.0.0
+	github.com/kai-scheduler/gpu-sharing/pkg v0.0.0
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.2
@@ -55,4 +55,4 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/run-ai/gpu-sharing-operator/pkg => ../../pkg
+replace github.com/kai-scheduler/gpu-sharing/pkg => ../../pkg

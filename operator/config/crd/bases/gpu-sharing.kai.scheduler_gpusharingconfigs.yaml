@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: gpusharingconfigs.gpu-sharing.run.ai
+  name: gpusharingconfigs.gpu-sharing.kai.scheduler
 spec:
-  group: gpu-sharing.run.ai
+  group: gpu-sharing.kai.scheduler
   names:
     kind: GpuSharingConfig
     listKind: GpuSharingConfigList
@@ -67,7 +67,7 @@ spec:
                       repository:
                         description: |-
                           repository is the full image path including registry and image name
-                          (e.g. "gcr.io/run-ai-prod/sharingd").
+                          (e.g. "ghcr.io/kai-scheduler/gpu-sharing/sharingd").
                         type: string
                       tag:
                         description: tag is the image tag (e.g. "v0.1.0"). Defaults
@@ -2114,7 +2114,7 @@ spec:
                       repository:
                         description: |-
                           repository is the full image path including registry and image name
-                          (e.g. "gcr.io/run-ai-prod/sharingd").
+                          (e.g. "ghcr.io/kai-scheduler/gpu-sharing/sharingd").
                         type: string
                       tag:
                         description: tag is the image tag (e.g. "v0.1.0"). Defaults
@@ -2182,7 +2182,7 @@ spec:
                       repository:
                         description: |-
                           repository is the full image path including registry and image name
-                          (e.g. "gcr.io/run-ai-prod/sharingd").
+                          (e.g. "ghcr.io/kai-scheduler/gpu-sharing/sharingd").
                         type: string
                       tag:
                         description: tag is the image tag (e.g. "v0.1.0"). Defaults

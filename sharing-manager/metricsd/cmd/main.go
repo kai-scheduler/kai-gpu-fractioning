@@ -29,9 +29,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/metricsd/internal/metrics"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/fsstore"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/metricsd/internal/metrics"
 )
 
 var (

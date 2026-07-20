@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
+	"github.com/kai-scheduler/gpu-sharing/pkg/env"
 )
 
 // Config is read entirely from the environment.

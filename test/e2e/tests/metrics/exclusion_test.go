@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
 )
 
 // TestE2E_FullGPUPodIsExcludedFromMetrics verifies that a pod requesting

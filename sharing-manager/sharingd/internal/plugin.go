@@ -8,12 +8,12 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/fsstore"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/mapping/store"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/annotations"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/audit"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/events"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/injection"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/fsstore"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/annotations"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/audit"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/events"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/injection"
 )
 
 // ReadinessSetter receives the plugin's NRI registration state: true once the

@@ -9,7 +9,7 @@ rules:
   # add/remove the node-condition cleanup finalizer (metadata.finalizers is
   # modified through the main resource, not the finalizers subresource).
   - apiGroups:
-      - gpu-sharing.run.ai
+      - gpu-sharing.kai.scheduler
     resources:
       - gpusharingconfigs
     verbs:
@@ -20,7 +20,7 @@ rules:
   # Update finalizers on the CR so the controller can register cleanup
   # logic that runs before the resource is deleted.
   - apiGroups:
-      - gpu-sharing.run.ai
+      - gpu-sharing.kai.scheduler
     resources:
       - gpusharingconfigs/finalizers
     verbs:
@@ -28,7 +28,7 @@ rules:
   # Write to the status subresource to report observedGeneration
   # and conditions back to the user.
   - apiGroups:
-      - gpu-sharing.run.ai
+      - gpu-sharing.kai.scheduler
     resources:
       - gpusharingconfigs/status
     verbs:

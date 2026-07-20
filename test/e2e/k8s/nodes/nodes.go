@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/k8s/cluster"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/cluster"
 )
 
 // ListGPUNodes returns all nodes matching c.Config.GPUNodeSelector.

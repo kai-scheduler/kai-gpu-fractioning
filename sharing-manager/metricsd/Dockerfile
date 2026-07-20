@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
 # Build context MUST be the repository root (not sharing-manager/metricsd): the
-# metricsd module replaces github.com/run-ai/gpu-sharing-operator => ../../ to use
+# metricsd module replaces github.com/kai-scheduler/gpu-sharing => ../../ to use
 # the shared sharingd/mapping packages, so the root module source must be present
 # in the build. Build with:  docker build -f sharing-manager/metricsd/Dockerfile .
 

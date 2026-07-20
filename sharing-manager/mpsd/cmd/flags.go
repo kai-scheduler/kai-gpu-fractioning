@@ -20,9 +20,9 @@ import (
 	"flag"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/pkg/env"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/mpsd/internal"
+	"github.com/kai-scheduler/gpu-sharing/pkg/env"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/mpsd/internal"
 )
 
 type cliFlags struct {

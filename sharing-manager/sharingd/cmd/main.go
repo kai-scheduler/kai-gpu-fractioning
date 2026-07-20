@@ -11,10 +11,10 @@ import (
 
 	"github.com/containerd/nri/pkg/stub"
 
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/common/configuration"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/audit"
-	"github.com/run-ai/gpu-sharing-operator/sharing-manager/sharingd/internal/readiness"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/audit"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/readiness"
 )
 
 func main() {

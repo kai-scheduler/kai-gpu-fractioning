@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/nvmlmock"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/plugin"
-	"github.com/run-ai/gpu-sharing-operator/test/e2e/workload"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/plugin"
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
 )
 
 // TestE2E_SharingdRestartPreservesAttribution verifies that restarting the
