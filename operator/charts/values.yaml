@@ -47,6 +47,26 @@ serviceAccount:
   name: ""
   annotations: {}
 
+# metrics configures the controller's Prometheus metrics endpoint. It is served
+# securely (HTTPS + controller-runtime authn/authz) on `port`; enabling it also
+# creates the auth-delegator binding the authz filter needs.
+metrics:
+  enabled: true
+  port: 8443
+  secure: true
+  serviceMonitor:
+    # Create a ServiceMonitor (controller) + PodMonitor (metricsd sidecars).
+    # Requires the Prometheus Operator CRDs; templates no-op without them.
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+    # The controller serves a self-signed cert by default, so skip verification.
+    # Point tlsConfig at a CA instead if you front it with a real certificate.
+    insecureSkipVerify: true
+    # Extra labels for the ServiceMonitor/PodMonitor (e.g. a Prometheus `release`
+    # selector label) so your Prometheus instance selects them.
+    additionalLabels: {}
+
 resources:
   operator:
     limits:

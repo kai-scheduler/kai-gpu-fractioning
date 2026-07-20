@@ -1,0 +1,34 @@
+{{- if .Values.metrics.enabled }}
+{{- if .Values.metrics.secure }}
+# The controller-runtime authn/authz metrics filter creates TokenReviews and
+# SubjectAccessReviews; system:auth-delegator grants exactly those.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gpu-sharing-operator.fullname" . }}-auth-delegator
+  labels:
+    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gpu-sharing-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+# A role granting read access to the metrics endpoint. Bind it to your Prometheus
+# ServiceAccount so its scrape token passes the controller's authz filter.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "gpu-sharing-operator.fullname" . }}-metrics-reader
+  labels:
+    {{- include "gpu-sharing-operator.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+{{- end }}
