@@ -34,10 +34,6 @@ func FindNodeCondition(node *corev1.Node) (corev1.NodeCondition, bool) {
 	return corev1.NodeCondition{}, false
 }
 
-// NodeConditionMutator adjusts the node condition arguments using the current
-// node object already fetched by PatchNodeCondition.
-type NodeConditionMutator func(node *corev1.Node, ready bool, reason, message string) (bool, string, string)
-
 // PatchNodeCondition sets or updates the gpu-sharing.nvidia.com/Ready condition
 // on a node using a strategic merge patch.
 //
@@ -47,13 +43,6 @@ type NodeConditionMutator func(node *corev1.Node, ready bool, reason, message st
 // overhead. writer performs the status patch, which always goes to the API
 // server regardless of caching.
 func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, ready bool, reason, message string) error {
-	return PatchNodeConditionWithMutator(ctx, reader, writer, nodeName, ready, reason, message, nil)
-}
-
-// PatchNodeConditionWithMutator behaves like PatchNodeCondition, but lets the
-// caller refine the condition after the current node has been read and before
-// no-op detection / LastTransitionTime preservation.
-func PatchNodeConditionWithMutator(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, ready bool, reason, message string, mutator NodeConditionMutator) error {
 	log := logf.FromContext(ctx).WithValues("node", nodeName)
 
 	now := metav1.NewTime(time.Now())
@@ -68,10 +57,6 @@ func PatchNodeConditionWithMutator(ctx context.Context, reader client.Reader, wr
 			log.Error(err, "failed to read node for condition check; LastTransitionTime will reset")
 		}
 	} else {
-		if mutator != nil {
-			ready, reason, message = mutator(node, ready, reason, message)
-		}
-
 		condStatus := corev1.ConditionFalse
 		if ready {
 			condStatus = corev1.ConditionTrue

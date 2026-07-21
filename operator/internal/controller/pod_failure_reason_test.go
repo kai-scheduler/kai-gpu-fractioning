@@ -1,10 +1,13 @@
 package controller
 
 import (
+	"context"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
 )
@@ -67,11 +70,12 @@ func waitingStatus(reason string) corev1.ContainerStatus {
 	}
 }
 
-func TestGpuDriverConditionMutator(t *testing.T) {
+func TestGpuDriverDependencyChecker(t *testing.T) {
 	tests := []struct {
 		name           string
 		ready          bool
 		labels         map[string]string
+		missingNode    bool
 		initialReason  string
 		expectedReady  bool
 		expectedReason string
@@ -108,12 +112,28 @@ func TestGpuDriverConditionMutator(t *testing.T) {
 			expectedReady:  false,
 			expectedReason: "CrashLoopBackOff",
 		},
+		{
+			name:           "not ready condition keeps pod failure when node cannot be read",
+			ready:          false,
+			missingNode:    true,
+			initialReason:  "CrashLoopBackOff",
+			expectedReady:  false,
+			expectedReason: "CrashLoopBackOff",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Labels: tt.labels}}
-			gotReady, gotReason, _ := gpuDriverConditionMutator(node, tt.ready, tt.initialReason, "message")
+			objects := []client.Object{}
+			if !tt.missingNode {
+				objects = append(objects, &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:   "node-a",
+					Labels: tt.labels,
+				}})
+			}
+			checker := NewGpuDriverDependencyChecker(fake.NewClientBuilder().WithObjects(objects...).Build())
+
+			gotReady, gotReason, _ := checker.Check(context.Background(), "node-a", tt.ready, tt.initialReason, "message")
 			if gotReady != tt.expectedReady {
 				t.Fatalf("ready = %t, expected %t", gotReady, tt.expectedReady)
 			}

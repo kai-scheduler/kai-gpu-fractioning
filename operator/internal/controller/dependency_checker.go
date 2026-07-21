@@ -19,15 +19,19 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/mod/semver"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
@@ -39,18 +43,15 @@ const (
 	clusterPolicyReadyState     = "ready"
 	clusterPolicyReadyCondition = "Ready"
 	clusterPolicyErrorCondition = "Error"
+
+	gpuDriverMajorLabel = "nvidia.com/cuda.driver-version.major"
+	minGPUDriverMajor   = 615
 )
 
 var clusterPolicyGVK = schema.GroupVersionKind{
 	Group:   "nvidia.com",
 	Version: "v1",
 	Kind:    "ClusterPolicy",
-}
-
-// DependencyChecker evaluates external GPU stack prerequisites needed by the
-// gpu-sharing operator.
-type DependencyChecker interface {
-	Check(ctx context.Context, config *v1alpha1.GpuSharingConfig, ready metav1.Condition) (metav1.Condition, error)
 }
 
 // GpuOperatorDependencyChecker checks the NVIDIA GPU Operator ClusterPolicy.
@@ -85,6 +86,33 @@ func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha
 	}
 
 	return ready, nil
+}
+
+// GpuDriverDependencyChecker checks the CUDA driver label on a node. It is
+// used only to refine already-unhealthy node conditions with a clearer reason.
+type GpuDriverDependencyChecker struct {
+	reader client.Reader
+}
+
+func NewGpuDriverDependencyChecker(reader client.Reader) GpuDriverDependencyChecker {
+	return GpuDriverDependencyChecker{reader: reader}
+}
+
+func (c GpuDriverDependencyChecker) Check(ctx context.Context, nodeName string, ready bool, reason, message string) (bool, string, string) {
+	if ready {
+		return ready, reason, message
+	}
+
+	node := &corev1.Node{}
+	if err := c.reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
+		logf.FromContext(ctx).V(1).Info("failed to read node for GPU driver dependency check", "node", nodeName, "error", err)
+		return ready, reason, message
+	}
+
+	if driverReason, driverMessage, found := gpuDriverFailureReason(node); found {
+		return false, driverReason, driverMessage
+	}
+	return ready, reason, message
 }
 
 func (c GpuOperatorDependencyChecker) clusterPolicy(ctx context.Context) (*unstructured.Unstructured, error) {
@@ -152,6 +180,30 @@ func clusterPolicyVersionFailureMessage(clusterPolicy *unstructured.Unstructured
 	}
 
 	return ""
+}
+
+func gpuDriverFailureReason(node *corev1.Node) (reason, message string, found bool) {
+	rawMajor := strings.TrimSpace(node.Labels[gpuDriverMajorLabel])
+	if rawMajor == "" {
+		return daemonmgr.ReasonGPUDriverVersionMissing,
+			fmt.Sprintf("CUDA driver major version label %q is missing; minimum supported major version is %d", gpuDriverMajorLabel, minGPUDriverMajor),
+			true
+	}
+
+	major, err := strconv.Atoi(rawMajor)
+	if err != nil {
+		return daemonmgr.ReasonGPUDriverVersionInvalid,
+			fmt.Sprintf("CUDA driver major version %q from label %q is invalid; minimum supported major version is %d", rawMajor, gpuDriverMajorLabel, minGPUDriverMajor),
+			true
+	}
+
+	if major < minGPUDriverMajor {
+		return daemonmgr.ReasonGPUDriverVersionUnsupported,
+			fmt.Sprintf("CUDA driver major version %d is below minimum supported major version %d", major, minGPUDriverMajor),
+			true
+	}
+
+	return "", "", false
 }
 
 func normalizeGPUOperatorVersion(version string) (string, bool) {

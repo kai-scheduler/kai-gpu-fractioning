@@ -18,13 +18,13 @@ package controller
 
 import (
 	"context"
-	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,16 +35,6 @@ import (
 	gpusharingv1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 )
-
-type fakeDependencyChecker struct {
-	calls int
-	err   error
-}
-
-func (f *fakeDependencyChecker) Check(_ context.Context, _ *gpusharingv1alpha1.GpuSharingConfig, ready metav1.Condition) (metav1.Condition, error) {
-	f.calls++
-	return ready, f.err
-}
 
 var _ = Describe("GpuSharingConfig Controller", func() {
 	Context("When reconciling a resource", func() {
@@ -112,35 +102,44 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		})
 
 		It("should not check dependencies or requeue after a healthy reconcile", func() {
-			checker := &fakeDependencyChecker{}
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
 				"default", defaultImages, true,
 			)
-			controllerReconciler.DependencyChecker = checker
 
 			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(checker.calls).To(Equal(0))
 			Expect(result).To(Equal(reconcile.Result{}))
+
+			var updated gpusharingv1alpha1.GpuSharingConfig
+			Expect(k8sClient.Get(ctx, typeNamespacedName, &updated)).To(Succeed())
+			ready := meta.FindStatusCondition(updated.Status.Conditions, daemonmgr.ConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+			Expect(ready.Reason).To(Equal(daemonmgr.ReasonAllComponentsReady))
 		})
 
-		It("should check dependencies and retry sooner when readiness is false", func() {
-			checker := &fakeDependencyChecker{err: errors.New("dependency check failed")}
+		It("should check GPU Operator dependencies and retry sooner when readiness is false", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
 				"default", nil, true,
 			)
-			controllerReconciler.DependencyChecker = checker
 
 			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(checker.calls).To(Equal(1))
 			Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+			var updated gpusharingv1alpha1.GpuSharingConfig
+			Expect(k8sClient.Get(ctx, typeNamespacedName, &updated)).To(Succeed())
+			ready := meta.FindStatusCondition(updated.Status.Conditions, daemonmgr.ConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(daemonmgr.ReasonGPUOperatorNotReady))
+			Expect(ready.Message).To(ContainSubstring("NVIDIA GPU Operator ClusterPolicy"))
 		})
 
 		It("should update observedGeneration on reconcile", func() {
