@@ -1,8 +1,7 @@
-{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- if and .Values.metrics.enabled .Values.prometheus.enabled }}
 {{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
-# Controller metrics: scraped over HTTPS with the Prometheus pod's own bearer
-# token (its ServiceAccount must be allowed to read /metrics — see the
-# metrics-reader ClusterRole, which admins bind to that SA).
+# Controller metrics: reconcile counters + node/daemon gauges, scraped over plain
+# HTTP from the metrics Service.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -10,7 +9,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "gpu-sharing.labels" . | nindent 4 }}
-    {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+    {{- with .Values.prometheus.additionalLabels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
@@ -21,16 +20,15 @@ spec:
     matchNames:
       - {{ .Release.Namespace }}
   endpoints:
-    - port: https
-      scheme: https
+    - port: http
+      scheme: http
       path: /metrics
-      interval: {{ .Values.metrics.serviceMonitor.interval }}
-      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
-      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-      tlsConfig:
-        insecureSkipVerify: {{ .Values.metrics.serviceMonitor.insecureSkipVerify }}
+      interval: {{ .Values.prometheus.interval }}
+      scrapeTimeout: {{ .Values.prometheus.scrapeTimeout }}
 ---
-# metricsd sidecars: plain HTTP per-pod GPU metrics on the sharingd DaemonSet pods.
+# metricsd sidecars: per-pod GPU metrics on the sharingd DaemonSet pods. A single
+# PodMonitor discovers every metricsd pod — Prometheus creates one scrape target
+# per pod, i.e. one per GPU node.
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
@@ -38,7 +36,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "gpu-sharing.labels" . | nindent 4 }}
-    {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+    {{- with .Values.prometheus.additionalLabels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
@@ -52,6 +50,6 @@ spec:
   podMetricsEndpoints:
     - port: metrics
       path: /metrics
-      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      interval: {{ .Values.prometheus.interval }}
 {{- end }}
 {{- end }}

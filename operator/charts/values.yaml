@@ -47,25 +47,23 @@ serviceAccount:
   name: ""
   annotations: {}
 
-# metrics configures the controller's Prometheus metrics endpoint. It is served
-# securely (HTTPS + controller-runtime authn/authz) on `port`; enabling it also
-# creates the auth-delegator binding the authz filter needs.
+# metrics configures the controller's Prometheus metrics endpoint, served over
+# plain HTTP on `port` (matching the metricsd GPU metrics and KAI-Scheduler).
 metrics:
+  # Serve controller metrics over plain HTTP on this port ("0" disables).
   enabled: true
-  port: 8443
-  secure: true
-  serviceMonitor:
-    # Create a ServiceMonitor (controller) + PodMonitor (metricsd sidecars).
-    # Requires the Prometheus Operator CRDs; templates no-op without them.
-    enabled: false
-    interval: 30s
-    scrapeTimeout: 10s
-    # The controller serves a self-signed cert by default, so skip verification.
-    # Point tlsConfig at a CA instead if you front it with a real certificate.
-    insecureSkipVerify: true
-    # Extra labels for the ServiceMonitor/PodMonitor (e.g. a Prometheus `release`
-    # selector label) so your Prometheus instance selects them.
-    additionalLabels: {}
+  port: 8080
+
+# Prometheus-Operator integration. When enabled (and the monitoring.coreos.com/v1
+# CRDs are present), installs a ServiceMonitor for the controller metrics and a
+# PodMonitor for the metricsd per-pod GPU metrics. Both scrape plain HTTP.
+prometheus:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Extra labels on the ServiceMonitor/PodMonitor (e.g. a Prometheus `release`
+  # selector label) so your Prometheus instance selects them.
+  additionalLabels: {}
 
 resources:
   operator:

@@ -58,7 +58,10 @@ spec:
             - --health-probe-bind-address=:8081
             {{- if .Values.metrics.enabled }}
             - --metrics-bind-address=:{{ .Values.metrics.port }}
-            - --metrics-secure={{ .Values.metrics.secure }}
+            # Plain HTTP: the metricsd GPU metrics are already unsecured and KAI
+            # exposes controller metrics the same way; restrict with a
+            # NetworkPolicy if needed.
+            - --metrics-secure=false
             {{- end }}
           ports:
             - name: health
