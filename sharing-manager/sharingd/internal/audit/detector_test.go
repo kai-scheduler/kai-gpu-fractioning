@@ -89,7 +89,7 @@ func TestDetectorViolations(t *testing.T) {
 		},
 		{
 			name: "missing NVIDIA_VISIBLE_DEVICES env (device assigned) is a violator",
-			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "GPU-abc123"),
+			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "trainer", "GPU-abc123"),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
@@ -100,7 +100,7 @@ func TestDetectorViolations(t *testing.T) {
 		},
 		{
 			name: "assigned device fully injected is not a violator",
-			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "GPU-abc123"),
+			pod:  withVisibleDevices(sharingPod("p", "pod", "trainer", "4Gi", ""), "trainer", "GPU-abc123"),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
@@ -250,21 +250,22 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 func sharingPod(id, name, containerName, limit, request string) *api.PodSandbox {
 	ann := map[string]string{}
 	if limit != "" {
-		ann[configuration.DefaultAnnotationPrefix+containerName+".limit"] = limit
+		ann[annotations.LimitAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = limit
 	}
 	if request != "" {
-		ann[configuration.DefaultAnnotationPrefix+containerName+".request"] = request
+		ann[annotations.RequestAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = request
 	}
 	return &api.PodSandbox{Id: id, Name: name, Namespace: "default", Uid: id + "-uid", Annotations: ann}
 }
 
-// withVisibleDevices records a GPU device assignment on the pod, as the scheduler
-// would, so the detector expects NVIDIA_VISIBLE_DEVICES to be injected.
-func withVisibleDevices(pod *api.PodSandbox, value string) *api.PodSandbox {
+// withVisibleDevices records a GPU device assignment for the named container on
+// the pod, as the scheduler would, so the detector expects NVIDIA_VISIBLE_DEVICES
+// to be injected.
+func withVisibleDevices(pod *api.PodSandbox, containerName, value string) *api.PodSandbox {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[annotations.VisibleDevicesAnnotation] = value
+	pod.Annotations[annotations.DevicesAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = value
 	return pod
 }
 

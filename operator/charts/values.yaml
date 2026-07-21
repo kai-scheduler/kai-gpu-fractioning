@@ -47,6 +47,24 @@ serviceAccount:
   name: ""
   annotations: {}
 
+# metrics configures the controller's Prometheus metrics endpoint, served over
+# plain HTTP on `port` (matching the metricsd GPU metrics and KAI-Scheduler).
+metrics:
+  # Serve controller metrics over plain HTTP on this port ("0" disables).
+  enabled: true
+  port: 8080
+
+# Prometheus-Operator integration. When enabled (and the monitoring.coreos.com/v1
+# CRDs are present), installs a ServiceMonitor for the controller metrics and a
+# PodMonitor for the metricsd per-pod GPU metrics. Both scrape plain HTTP.
+prometheus:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  # Extra labels on the ServiceMonitor/PodMonitor (e.g. a Prometheus `release`
+  # selector label) so your Prometheus instance selects them.
+  additionalLabels: {}
+
 resources:
   operator:
     limits:

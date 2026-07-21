@@ -1,6 +1,6 @@
 module github.com/kai-scheduler/gpu-sharing/test/e2e
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/prometheus/client_model v0.6.2

@@ -1,0 +1,59 @@
+{{- if and .Values.metrics.enabled .Values.prometheus.enabled }}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+# Controller metrics: reconcile counters + node/daemon gauges, scraped over plain
+# HTTP from the metrics Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "gpu-sharing.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
+    {{- with .Values.prometheus.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "gpu-sharing.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: http
+      scheme: http
+      path: /metrics
+      interval: {{ .Values.prometheus.interval }}
+      scrapeTimeout: {{ .Values.prometheus.scrapeTimeout }}
+---
+# metricsd sidecars: per-pod GPU metrics on the sharingd DaemonSet pods. A single
+# PodMonitor discovers every metricsd pod — Prometheus creates one scrape target
+# per pod, i.e. one per GPU node.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "gpu-sharing.fullname" . }}-metricsd
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gpu-sharing.labels" . | nindent 4 }}
+    {{- with .Values.prometheus.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # These values are fixed literals on purpose: the daemon pods are labelled by
+  # the operator (daemonmgr.ManagedByValue = "gpu-sharing" and the component
+  # name), not by Helm. The gpu-sharing.name helper would follow nameOverride and
+  # stop matching the operator-set label, so it must not be used here.
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: gpu-sharing
+      app.kubernetes.io/component: sharingd
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.prometheus.interval }}
+{{- end }}
+{{- end }}
