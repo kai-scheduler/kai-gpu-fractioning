@@ -50,9 +50,9 @@ the "works with KAI Scheduler" story explicit up top? -->
 
 - Kubernetes 1.28+
 - containerd 2.0+ with **NRI enabled**, or CRI-O with NRI support
-- An `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) (mpsd and metricsd run under it) — typically provided by the [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator)
-- NVIDIA GPU driver installed on nodes; Volta+ GPUs (compute capability 7.0+)
-- A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler) <!-- TODO(Hagay): confirm exact supported versions / any hard dependency to state here -->
+- **NVIDIA driver `r615` and CUDA 13.4**, delivered by the [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) (the upcoming release that ships them) <!-- TODO(Hagay): pin the exact GPU Operator version once released; note min GPU architecture supported by CUDA 13.4 -->
+- The GPU Operator also provides the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under
+- A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler) <!-- TODO(Hagay): confirm the minimum KAI Scheduler version -->
 
 ## Install
 
