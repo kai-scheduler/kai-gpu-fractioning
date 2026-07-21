@@ -56,6 +56,11 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			Name: resourceName,
 		}
 
+		defaultImages := map[string]gpusharingv1alpha1.ImageSpec{
+			"sharingd": {Repository: "example.com/sharingd", Tag: "test"},
+			"mpsd":     {Repository: "example.com/mpsd", Tag: "test"},
+		}
+
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind GpuSharingConfig")
 			resource := &gpusharingv1alpha1.GpuSharingConfig{
@@ -81,7 +86,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			// deletion only completes after another reconcile releases it.
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -97,7 +102,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -106,11 +111,11 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should check dependencies and requeue periodically after a healthy reconcile", func() {
+		It("should not check dependencies or requeue after a healthy reconcile", func() {
 			checker := &fakeDependencyChecker{}
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 			controllerReconciler.DependencyChecker = checker
 
@@ -118,11 +123,11 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(checker.calls).To(Equal(1))
-			Expect(result.RequeueAfter).To(Equal(dependencyCheckInterval))
+			Expect(checker.calls).To(Equal(0))
+			Expect(result).To(Equal(reconcile.Result{}))
 		})
 
-		It("should retry sooner when dependency checking fails", func() {
+		It("should check dependencies and retry sooner when readiness is false", func() {
 			checker := &fakeDependencyChecker{err: errors.New("dependency check failed")}
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
@@ -141,7 +146,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should update observedGeneration on reconcile", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -157,7 +162,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should handle not-found resources gracefully", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

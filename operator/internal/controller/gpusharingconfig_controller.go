@@ -46,11 +46,10 @@ import (
 )
 
 const (
-	requeueInterval         = 30 * time.Second
-	dependencyCheckInterval = 10 * time.Minute
-	podListPageSize         = 500
-	gpuDriverMajorLabel     = "nvidia.com/cuda.driver-version.major"
-	minGPUDriverMajor       = 615
+	requeueInterval     = 30 * time.Second
+	podListPageSize     = 500
+	gpuDriverMajorLabel = "nvidia.com/cuda.driver-version.major"
+	minGPUDriverMajor   = 615
 
 	// NodeConditionCleanupFinalizer blocks GpuSharingConfig deletion until the
 	// gpu-sharing.nvidia.com/Ready conditions the controller patched onto nodes
@@ -84,8 +83,8 @@ type GpuSharingConfigReconciler struct {
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
 
-	// DependencyChecker evaluates external GPU stack prerequisites and can adjust
-	// the aggregate Ready condition with dependency-specific failures.
+	// DependencyChecker evaluates external GPU stack prerequisites and can refine
+	// an already-false aggregate Ready condition with dependency-specific failures.
 	DependencyChecker DependencyChecker
 }
 
@@ -175,7 +174,7 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Aggregate Ready condition.
 	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
-	if r.DependencyChecker != nil {
+	if readyCond.Status == metav1.ConditionFalse && r.DependencyChecker != nil {
 		var err error
 		readyCond, err = r.DependencyChecker.Check(ctx, &config, readyCond)
 		if err != nil {
@@ -222,7 +221,7 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if needsRequeue {
 		return ctrl.Result{RequeueAfter: requeueInterval}, nil
 	}
-	return ctrl.Result{RequeueAfter: dependencyCheckInterval}, nil
+	return ctrl.Result{}, nil
 }
 
 // evaluateDriverUpgrade reports whether any GPU node targeted by the CR is
