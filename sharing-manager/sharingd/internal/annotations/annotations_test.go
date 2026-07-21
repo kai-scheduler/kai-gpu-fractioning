@@ -97,7 +97,7 @@ func TestParseVisibleDevices(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ParseVisibleDevices(tt.annotations, "nvidia.com/container.", "trainer"); got != tt.expected {
+			if got := ParseVisibleDevices(tt.annotations, "trainer", "nvidia.com/container."); got != tt.expected {
 				t.Errorf("ParseVisibleDevices() = %q, expected %q", got, tt.expected)
 			}
 		})

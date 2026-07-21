@@ -149,7 +149,7 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 // carries NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
 // verbatim otherwise — its format (UUID list, index list, or "all") is the
 // NVIDIA container runtime's contract, not this operator's.
-func ParseVisibleDevices(annotations map[string]string, prefix, containerName string) string {
+func ParseVisibleDevices(annotations map[string]string, containerName, prefix string) string {
 	return strings.TrimSpace(annotations[containerDevicesAnnotationKey(prefix, containerName)])
 }
 

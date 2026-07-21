@@ -103,7 +103,7 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 	// missing value defaulted from the other, so both env vars are expected.
 	cfg = cfg.ApplyDefaults()
 
-	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations(), d.annotationPrefix, container.GetName())
+	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations(), container.GetName(), d.annotationPrefix)
 	missing := d.missingInjection(cfg, visibleDevices, container)
 	if len(missing) == 0 {
 		return violator{}, false
