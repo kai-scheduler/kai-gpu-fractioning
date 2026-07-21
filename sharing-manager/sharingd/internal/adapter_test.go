@@ -17,10 +17,10 @@ func newAdapter() adapter {
 func gpuMemPod(containerName, limit, request string) *api.PodSandbox {
 	annotations := map[string]string{}
 	if limit != "" {
-		annotations[testMemPrefix+containerName+".limit"] = limit
+		annotations[testMemPrefix+containerName+".gpu-memory.limit"] = limit
 	}
 	if request != "" {
-		annotations[testMemPrefix+containerName+".request"] = request
+		annotations[testMemPrefix+containerName+".gpu-memory.request"] = request
 	}
 	return &api.PodSandbox{
 		Id:          "pod-id",
@@ -162,7 +162,7 @@ func TestContainersDropsNonGPUAndSiblingContainers(t *testing.T) {
 	infos := newAdapter().containers(
 		[]*api.PodSandbox{
 			{Id: "frac-pod-id", Name: "frac-pod", Namespace: "default", Uid: "frac-uid",
-				Annotations: map[string]string{testMemPrefix + "trainer.limit": "4Gi"}},
+				Annotations: map[string]string{testMemPrefix + "trainer.gpu-memory.limit": "4Gi"}},
 			{Id: "full-pod-id", Name: "full-pod", Namespace: "default", Uid: "full-uid"},
 		},
 		[]*api.Container{

@@ -24,7 +24,7 @@ import (
 const DefaultImage = "busybox:1.37"
 
 // FractionalPod describes a single-container pod carrying the
-// nvidia.com/gpu-memory.container.<name>.{limit,request} annotation that
+// nvidia.com/container.<name>.gpu-memory.{limit,request} annotation that
 // makes the sharingd NRI plugin track it — see
 // sharing-manager/sharingd/internal/adapter.go. Values/format mirror
 // sharing-manager/metricsd/test/workloads/test-fractional-gpu-pods.yaml.
@@ -34,7 +34,7 @@ type FractionalPod struct {
 	ContainerName string
 
 	// GPUMemoryLimitMiB/RequestMiB are written verbatim into the derived
-	// nvidia.com/gpu-memory.container.<name>.{limit,request} annotation
+	// nvidia.com/container.<name>.gpu-memory.{limit,request} annotation
 	// values (e.g. "2048"). Ignored when Annotations is non-nil.
 	GPUMemoryLimitMiB   string
 	GPUMemoryRequestMiB string
@@ -91,14 +91,14 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 	annotations := spec.Annotations
 	if annotations == nil {
 		// Key format must match sharingd's default annotation prefix
-		// (configuration.DefaultAnnotationPrefix = "nvidia.com/gpu-memory.container."):
-		//   nvidia.com/gpu-memory.container.<container>.{limit,request}
+		// (configuration.DefaultAnnotationPrefix = "nvidia.com/container."):
+		//   nvidia.com/container.<container>.gpu-memory.{limit,request}
 		// The value is parsed by sharingd as a k8s resource.Quantity, so it needs
 		// a unit — the fields are MiB, so append the "Mi" suffix (a bare "2048"
 		// would be read as 2048 bytes → 0 MB and rejected).
 		annotations = map[string]string{
-			fmt.Sprintf("nvidia.com/gpu-memory.container.%s.limit", spec.ContainerName):   spec.GPUMemoryLimitMiB + "Mi",
-			fmt.Sprintf("nvidia.com/gpu-memory.container.%s.request", spec.ContainerName): spec.GPUMemoryRequestMiB + "Mi",
+			fmt.Sprintf("nvidia.com/container.%s.gpu-memory.limit", spec.ContainerName):   spec.GPUMemoryLimitMiB + "Mi",
+			fmt.Sprintf("nvidia.com/container.%s.gpu-memory.request", spec.ContainerName): spec.GPUMemoryRequestMiB + "Mi",
 		}
 	}
 

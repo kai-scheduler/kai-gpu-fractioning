@@ -215,8 +215,8 @@ func (p *Plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *ap
 // buildAdjustment contains the GPU-memory / MPS mutation logic. It returns a nil
 // adjustment when the container has no GPU memory annotations, and an error only
 // when annotation parsing fails while FailOpen is false. For a GPU-sharing
-// container it additionally injects NVIDIA_VISIBLE_DEVICES from the pod's device
-// assignment annotation when present.
+// container it additionally injects NVIDIA_VISIBLE_DEVICES from the container's
+// device-assignment annotation when present.
 func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, error) {
 	gpuMemoryCfg, err := annotations.ParseGPUMemoryAnnotations(pod.Annotations, ctr.Name, p.AnnotationPrefix)
 	if err != nil {
@@ -269,7 +269,7 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	// nvidia.com/gpu). Our assignment must win: remove any existing value first so
 	// NRI applies the override instead of rejecting it as a conflict, and the
 	// container ends up with a single, correct value rather than a duplicate.
-	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations)
+	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations, p.AnnotationPrefix, ctr.Name)
 	if visibleDevices != "" {
 		if containerHasEnv(ctr, injection.EnvVisibleDevices) {
 			adj.RemoveEnv(injection.EnvVisibleDevices)

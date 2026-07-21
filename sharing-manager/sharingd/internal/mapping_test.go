@@ -17,12 +17,12 @@ import (
 // testMemPrefix is the GPU-memory annotation prefix used by the mapping tests. A
 // container is recorded for metrics iff it carries a well-formed annotation under
 // this prefix — the same signal the mutation path enforces on.
-const testMemPrefix = "nvidia.com/gpu-memory.container."
+const testMemPrefix = "nvidia.com/container."
 
 // memAnnotations builds the pod annotations granting the named container a GPU
 // memory limit (a Kubernetes quantity such as "4Gi").
 func memAnnotations(container, limit string) map[string]string {
-	return map[string]string{testMemPrefix + container + ".limit": limit}
+	return map[string]string{testMemPrefix + container + ".gpu-memory.limit": limit}
 }
 
 // testMappingPlugin builds a plugin whose mapping handoff goes through a

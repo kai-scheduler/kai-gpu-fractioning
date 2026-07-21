@@ -50,6 +50,10 @@ func TestParseToDecimalMB(t *testing.T) {
 	}
 }
 
+// visibleDevicesTestKey is the per-container device-assignment key for container
+// "trainer" under the default prefix: nvidia.com/container.trainer.gpus.devices.
+const visibleDevicesTestKey = "nvidia.com/container.trainer.gpus.devices"
+
 func TestParseVisibleDevices(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -58,22 +62,22 @@ func TestParseVisibleDevices(t *testing.T) {
 	}{
 		{
 			name:        "single UUID",
-			annotations: map[string]string{VisibleDevicesAnnotation: "GPU-abc123"},
+			annotations: map[string]string{visibleDevicesTestKey: "GPU-abc123"},
 			expected:    "GPU-abc123",
 		},
 		{
 			name:        "comma-separated UUIDs passed through verbatim",
-			annotations: map[string]string{VisibleDevicesAnnotation: "GPU-abc123,GPU-def456"},
+			annotations: map[string]string{visibleDevicesTestKey: "GPU-abc123,GPU-def456"},
 			expected:    "GPU-abc123,GPU-def456",
 		},
 		{
 			name:        "surrounding whitespace trimmed",
-			annotations: map[string]string{VisibleDevicesAnnotation: "  GPU-abc123  "},
+			annotations: map[string]string{visibleDevicesTestKey: "  GPU-abc123  "},
 			expected:    "GPU-abc123",
 		},
 		{
 			name:        "index value passed through",
-			annotations: map[string]string{VisibleDevicesAnnotation: "0"},
+			annotations: map[string]string{visibleDevicesTestKey: "0"},
 			expected:    "0",
 		},
 		{
@@ -83,7 +87,7 @@ func TestParseVisibleDevices(t *testing.T) {
 		},
 		{
 			name:        "blank annotation yields empty",
-			annotations: map[string]string{VisibleDevicesAnnotation: "   "},
+			annotations: map[string]string{visibleDevicesTestKey: "   "},
 			expected:    "",
 		},
 		{
@@ -95,7 +99,7 @@ func TestParseVisibleDevices(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ParseVisibleDevices(tt.annotations); got != tt.expected {
+			if got := ParseVisibleDevices(tt.annotations, "nvidia.com/container.", "trainer"); got != tt.expected {
 				t.Errorf("ParseVisibleDevices() = %q, expected %q", got, tt.expected)
 			}
 		})
@@ -116,8 +120,8 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "both request and limit",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.trainer.request": "2048Mi",
-				"nvidia.com/gpu-memory.container.trainer.limit":   "4Gi",
+				"nvidia.com/container.trainer.gpu-memory.request": "2048Mi",
+				"nvidia.com/container.trainer.gpu-memory.limit":   "4Gi",
 			},
 			containerName:   "trainer",
 			prefix:          configuration.DefaultAnnotationPrefix,
@@ -128,7 +132,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "only limit",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.main.limit": "1024M",
+				"nvidia.com/container.main.gpu-memory.limit": "1024M",
 			},
 			containerName:   "main",
 			prefix:          configuration.DefaultAnnotationPrefix,
@@ -139,7 +143,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "only request",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.worker.request": "512Mi",
+				"nvidia.com/container.worker.gpu-memory.request": "512Mi",
 			},
 			containerName:   "worker",
 			prefix:          configuration.DefaultAnnotationPrefix,
@@ -150,7 +154,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "no matching annotations",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.other.limit": "4096M",
+				"nvidia.com/container.other.gpu-memory.limit": "4096M",
 			},
 			containerName:   "main",
 			prefix:          configuration.DefaultAnnotationPrefix,
@@ -179,7 +183,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "malformed limit value",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.main.limit": "not-a-number",
+				"nvidia.com/container.main.gpu-memory.limit": "not-a-number",
 			},
 			containerName: "main",
 			prefix:        configuration.DefaultAnnotationPrefix,
@@ -188,7 +192,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "value below 1MB",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.main.limit": "500Ki",
+				"nvidia.com/container.main.gpu-memory.limit": "500Ki",
 			},
 			containerName: "main",
 			prefix:        configuration.DefaultAnnotationPrefix,
@@ -197,9 +201,9 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "multiple containers only target extracted",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.sidecar.limit": "1024M",
-				"nvidia.com/gpu-memory.container.main.limit":    "4096M",
-				"nvidia.com/gpu-memory.container.init.limit":    "512M",
+				"nvidia.com/container.sidecar.gpu-memory.limit": "1024M",
+				"nvidia.com/container.main.gpu-memory.limit":    "4096M",
+				"nvidia.com/container.init.gpu-memory.limit":    "512M",
 			},
 			containerName:   "main",
 			prefix:          configuration.DefaultAnnotationPrefix,
@@ -210,7 +214,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "container name with dashes",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.my-training-job.limit": "2048M",
+				"nvidia.com/container.my-training-job.gpu-memory.limit": "2048M",
 			},
 			containerName:   "my-training-job",
 			prefix:          configuration.DefaultAnnotationPrefix,
@@ -221,7 +225,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "custom prefix",
 			annotations: map[string]string{
-				"gpu-sharing.kai.scheduler/container.main.limit": "4Gi",
+				"gpu-sharing.kai.scheduler/container.main.gpu-memory.limit": "4Gi",
 			},
 			containerName:   "main",
 			prefix:          "gpu-sharing.kai.scheduler/container.",
@@ -232,7 +236,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 		{
 			name: "empty prefix still matches bare container keys",
 			annotations: map[string]string{
-				"main.limit": "4Gi",
+				"main.gpu-memory.limit": "4Gi",
 			},
 			containerName:   "main",
 			prefix:          "",

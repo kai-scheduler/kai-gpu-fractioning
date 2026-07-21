@@ -9,19 +9,23 @@ import (
 )
 
 const (
-	// Annotation key suffixes appended after the container name.
+	// Per-container GPU-sharing annotation keys have the shape
+	// <prefix><containerName>.<...>, where <prefix> is the configurable leading
+	// prefix (configuration.DefaultAnnotationPrefix = "nvidia.com/container."). The
+	// scheduler (KAI/Run:ai) emits, for a container named "trainer":
+	//
+	//	nvidia.com/container.trainer.gpu-memory.request
+	//	nvidia.com/container.trainer.gpu-memory.limit
+	//	nvidia.com/container.trainer.gpus.devices
+	//
+	// memoryInfix sits between the container name and the request/limit suffix;
+	// devicesSuffix is the trailing segment of the device-assignment key.
+	memoryInfix   = "gpu-memory"
+	devicesSuffix = "gpus.devices"
+
+	// Annotation key suffixes appended after the memory infix.
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
-
-	// VisibleDevicesAnnotation is the pod-level annotation key the scheduler
-	// (KAI/Run:ai) sets to the physical GPU device(s) it assigned to a fractional
-	// GPU-sharing pod: a comma-separated list of NVIDIA GPU UUIDs (or indices),
-	// e.g. "GPU-abc123,GPU-def456". A fractional pod does not request the
-	// nvidia.com/gpu resource, so the NVIDIA device plugin never injects
-	// NVIDIA_VISIBLE_DEVICES into its containers; sharingd reads this annotation
-	// and injects it (as injection.EnvVisibleDevices) so the container gets access
-	// to exactly the GPU the scheduler picked.
-	VisibleDevicesAnnotation = "nvidia.com/gpus.devices"
 
 	// Minimum value in decimal MB that MPS can meaningfully enforce.
 	minDecimalMB = 1
@@ -95,13 +99,13 @@ func (c GPUMemoryConfig) EffectiveMemoryMB() int64 {
 //
 // Annotation format:
 //
-//	<prefix><containerName>.request = "<quantity>"
-//	<prefix><containerName>.limit   = "<quantity>"
+//	<prefix><containerName>.gpu-memory.request = "<quantity>"
+//	<prefix><containerName>.gpu-memory.limit   = "<quantity>"
 //
-// With the default prefix "nvidia.com/gpu-memory.container.", a full key is:
+// With the default prefix "nvidia.com/container.", a full key is:
 //
-//	nvidia.com/gpu-memory.container.trainer.request
-//	nvidia.com/gpu-memory.container.trainer.limit
+//	nvidia.com/container.trainer.gpu-memory.request
+//	nvidia.com/container.trainer.gpu-memory.limit
 //
 // Values must be valid Kubernetes Quantities (e.g. "4Gi", "2048Mi", "4096M").
 // Returns an error if an annotation exists but cannot be parsed, or if the
@@ -131,15 +135,22 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 	return config, nil
 }
 
-// ParseVisibleDevices returns the GPU device assignment the scheduler recorded in
-// the pod's VisibleDevicesAnnotation, trimmed of surrounding whitespace. It
-// returns "" when the annotation is absent or blank, which the caller treats as
-// "no assignment to inject" (so a pod scheduled by a device plugin that already
-// sets NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
+// ParseVisibleDevices returns the GPU device assignment the scheduler recorded
+// for a specific container — the per-container key
+// "<prefix><containerName>.gpus.devices" (e.g.
+// "nvidia.com/container.trainer.gpus.devices") — trimmed of surrounding
+// whitespace. The value is a comma-separated list of NVIDIA GPU UUIDs (or
+// indices), e.g. "GPU-abc123,GPU-def456". A fractional container does not request
+// the nvidia.com/gpu resource, so the NVIDIA device plugin never injects
+// NVIDIA_VISIBLE_DEVICES; sharingd reads this annotation and injects it (as
+// injection.EnvVisibleDevices) so the container sees exactly the GPU the
+// scheduler picked. It returns "" when the annotation is absent or blank, which
+// the caller treats as "no assignment to inject" (so a container that already
+// carries NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
 // verbatim otherwise — its format (UUID list, index list, or "all") is the
 // NVIDIA container runtime's contract, not this operator's.
-func ParseVisibleDevices(annotations map[string]string) string {
-	return strings.TrimSpace(annotations[VisibleDevicesAnnotation])
+func ParseVisibleDevices(annotations map[string]string, prefix, containerName string) string {
+	return strings.TrimSpace(annotations[containerDevicesAnnotationKey(prefix, containerName)])
 }
 
 // quantityToDecimalMB converts a Kubernetes Quantity string to decimal megabytes.
@@ -175,11 +186,26 @@ func parseToDecimalMB(value string) (string, error) {
 
 // containerMemoryAnnotationKey builds the full annotation key for a container's
 // GPU memory setting.
-// Example: containerMemoryAnnotationKey("nvidia.com/gpu-memory.container.", "trainer", "limit")
+// Example: containerMemoryAnnotationKey("nvidia.com/container.", "trainer", "limit")
 //
-//	→ "nvidia.com/gpu-memory.container.trainer.limit"
+//	→ "nvidia.com/container.trainer.gpu-memory.limit"
 func containerMemoryAnnotationKey(prefix, containerName, suffix string) string {
-	return prefix + containerName + "." + suffix
+	return prefix + containerName + "." + memoryInfix + "." + suffix
+}
+
+// containerDevicesAnnotationKey builds the per-container GPU device-assignment
+// annotation key.
+// Example: containerDevicesAnnotationKey("nvidia.com/container.", "trainer")
+//
+//	→ "nvidia.com/container.trainer.gpus.devices"
+func containerDevicesAnnotationKey(prefix, containerName string) string {
+	return prefix + containerName + "." + devicesSuffix
+}
+
+// RequestAnnotationKey returns the annotation key sharingd looks up for a
+// container's GPU-memory request (e.g. for diagnostic logging).
+func RequestAnnotationKey(prefix, containerName string) string {
+	return containerMemoryAnnotationKey(prefix, containerName, annotationSuffixRequest)
 }
 
 // LimitAnnotationKey returns the annotation key sharingd looks up for a
