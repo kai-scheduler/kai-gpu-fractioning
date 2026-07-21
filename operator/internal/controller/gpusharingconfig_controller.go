@@ -35,6 +35,7 @@ import (
 
 	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/metrics"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/sharingmanager/components/mpsd"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/sharingmanager/components/sharingd"
 	"github.com/kai-scheduler/gpu-sharing/pkg/env"
@@ -153,6 +154,7 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 		cond := daemonmgr.DaemonHealthToCondition(daemon.Name(), health, config.Generation, reconcileErr)
 		daemonmgr.SetCondition(&config.Status, cond)
+		metrics.SetDaemonHealth(daemon.Name(), health.ReadyNodes, health.DesiredNodes)
 
 		if health.ReadyNodes < health.DesiredNodes {
 			needsRequeue = true
@@ -262,6 +264,8 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 	// with True when a later ready pod on the same node is encountered.
 	// In steady state (all healthy) this set stays empty.
 	unhealthyNodes := make(map[string]struct{})
+	// All managed nodes seen this pass, so we can emit ready/degraded gauges.
+	seenNodes := make(map[string]struct{})
 
 	// Per-node patch failures are collected and joined so the caller requeues
 	// and retries them; one bad node does not abort the rest of the pass.
@@ -279,6 +283,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			if pod.Spec.NodeName == "" {
 				continue
 			}
+			seenNodes[pod.Spec.NodeName] = struct{}{}
 
 			// Determine per-node health: if any daemon pod on this node is
 			// not ready, the node is marked unhealthy with the specific
@@ -310,6 +315,7 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 		}
 	}
 
+	metrics.SetNodeHealth(len(seenNodes)-len(unhealthyNodes), len(unhealthyNodes))
 	return len(unhealthyNodes) > 0, errors.Join(errs...)
 }
 
