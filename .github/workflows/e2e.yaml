@@ -1,26 +1,23 @@
 name: E2E
 
+# NOTE: no trigger-level `paths` filter. This job is a *required* status check,
+# and a path-filtered workflow never reports a status on PRs that don't touch its
+# paths — leaving the required check stuck "Expected — Waiting for status" and the
+# PR blocked forever (e.g. an operator-only PR). Instead the job always runs and
+# decides *internally* (the `changes` step below) whether the suite is relevant:
+# if so it runs for real (pending until done); if not, every real step is skipped
+# and the job passes immediately (exit 0), satisfying branch protection cheaply.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - "sharing-manager/metricsd/**"
-      - "sharing-manager/mpsd/**"
-      - "sharing-manager/sharingd/**"
-      - "test/e2e/**"
-      - ".github/workflows/e2e.yaml"
   push:
     branches: [main]
-    paths:
-      - "sharing-manager/metricsd/**"
-      - "sharing-manager/mpsd/**"
-      - "sharing-manager/sharingd/**"
-      - "test/e2e/**"
-      - ".github/workflows/e2e.yaml"
   workflow_dispatch: {}
 
 permissions:
   contents: read
+  # dorny/paths-filter reads the PR's changed files via the pulls API.
+  pull-requests: read
 
 # go.work is for local dev; CI builds via module-scoped make/skaffold targets.
 env:
@@ -42,6 +39,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Decide whether this change actually needs the e2e suite. The suite tests
+      # the daemon runtime (metricsd/mpsd/sharingd) via the e2e harness + skaffold
+      # build, so only those paths make it "needed". Everything below is gated on
+      # this — when false, the job is a fast, green no-op.
+      - name: Detect e2e-relevant changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            e2e:
+              # operator/** and operator/charts/** are deliberately NOT listed:
+              # an operator- or chart-only PR should pass this required check via
+              # the exit-0 path below without spinning up the full e2e cluster.
+              # The suite exercises the daemon runtime, so only the daemon
+              # modules, the e2e harness, and its build/setup inputs are relevant.
+              - 'sharing-manager/metricsd/**'
+              - 'sharing-manager/mpsd/**'
+              - 'sharing-manager/sharingd/**'
+              - 'test/e2e/**'
+              - 'skaffold.yaml'
+              - '.github/workflows/e2e.yaml'
+              - '.github/actions/e2e-setup/**'
+
+      - name: No e2e-relevant changes — skipping suite
+        if: ${{ steps.changes.outputs.e2e != 'true' }}
+        run: echo "No changes under e2e-relevant paths; the metrics suite is not required for this change. Passing."
+
       # Reclaim runner disk before building/loading images. The runner starts
       # ~79% full (16 GiB free); building the four images and importing them into
       # each of the k3d nodes' containerd would push it toward the kubelet's
@@ -49,6 +73,7 @@ jobs:
       # after everything is loaded (measured), well clear of that threshold —
       # protective headroom, not the fix for any specific failure.
       - name: Free disk space
+        if: ${{ steps.changes.outputs.e2e == 'true' }}
         run: |
           echo "before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
@@ -60,6 +85,7 @@ jobs:
       # Suite-agnostic infra: toolchain + k3d/fake-gpu-operator cluster.
       # Reused as-is by future e2e suites (mpsd/sharingd).
       - name: Set up e2e cluster
+        if: ${{ steps.changes.outputs.e2e == 'true' }}
         uses: ./.github/actions/e2e-setup
         with:
           gpu-worker-nodes: ${{ env.E2E_GPU_WORKER_NODES }}
@@ -73,9 +99,11 @@ jobs:
       # rollout, not the operator's aggregate Ready (mpsd can't schedule on k3d —
       # no "nvidia" RuntimeClass — and is out of scope).
       - name: Build, load and deploy the stack (skaffold + helm)
+        if: ${{ steps.changes.outputs.e2e == 'true' }}
         run: make e2e-deploy
 
       - name: Run metrics e2e tests
+        if: ${{ steps.changes.outputs.e2e == 'true' }}
         run: make test-e2e-metrics
 
       # Runs on a failed step AND on a timeout (job cancellation) — the previous
@@ -83,7 +111,7 @@ jobs:
       # exactly when a hung deploy/test needs to be diagnosed. Node conditions +
       # disk usage confirm or rule out the disk-pressure/ErrImageNeverPull path.
       - name: Collect diagnostics
-        if: ${{ failure() || cancelled() }}
+        if: ${{ (failure() || cancelled()) && steps.changes.outputs.e2e == 'true' }}
         run: |
           export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
           echo "::group::disk"; df -h / || true; echo "::endgroup::"
@@ -98,5 +126,5 @@ jobs:
           kubectl -n gpu-operator logs -l app=status-updater --tail=200 || true
 
       - name: Delete e2e cluster
-        if: always()
+        if: ${{ always() && steps.changes.outputs.e2e == 'true' }}
         run: make e2e-cluster-down
