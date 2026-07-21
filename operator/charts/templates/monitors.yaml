@@ -40,6 +40,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
+  # These values are fixed literals on purpose: the daemon pods are labelled by
+  # the operator (daemonmgr.ManagedByValue = "gpu-sharing" and the component
+  # name), not by Helm. The gpu-sharing.name helper would follow nameOverride and
+  # stop matching the operator-set label, so it must not be used here.
   selector:
     matchLabels:
       app.kubernetes.io/managed-by: gpu-sharing
