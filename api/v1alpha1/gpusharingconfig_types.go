@@ -74,7 +74,7 @@ type SharingAgentSpec struct {
 	// +optional
 	Image *ImageSpec `json:"image,omitempty"`
 
-	// annotationPrefix is the leading prefix for the scheduler's per-container
+	// AnnotationPrefix is the leading prefix for the scheduler's per-container
 	// GPU-sharing annotations, e.g. "<prefix><container>.gpu-memory.request" and
 	// "<prefix><container>.gpus.devices".
 	// Default: "nvidia.com/container."
