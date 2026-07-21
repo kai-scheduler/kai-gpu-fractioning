@@ -9,7 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/run-ai/gpu-sharing-operator/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 )
 
 func TestPodFailureReason(t *testing.T) {
