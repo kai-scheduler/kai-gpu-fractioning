@@ -50,8 +50,6 @@ func TestParseToDecimalMB(t *testing.T) {
 	}
 }
 
-// visibleDevicesTestKey is the per-container device-assignment key for container
-// "trainer" under the default prefix: nvidia.com/container.trainer.gpus.devices.
 const visibleDevicesTestKey = "nvidia.com/container.trainer.gpus.devices"
 
 func TestParseVisibleDevices(t *testing.T) {
