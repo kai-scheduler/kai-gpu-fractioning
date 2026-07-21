@@ -34,9 +34,8 @@ type violator struct {
 // yields a non-empty config for it — the same check the create hook uses. The
 // detector then reports any expected env/mount the live container lacks.
 type detector struct {
-	// annotationPrefix is the GPU-memory annotation prefix, e.g.
-	// "nvidia.com/gpu-memory.container." — must match the sharingd plugin's
-	// configured prefix.
+	// annotationPrefix is the leading GPU-sharing annotation prefix, e.g.
+	// "nvidia.com/container." — must match the sharingd plugin's configured prefix.
 	annotationPrefix string
 	// mpsPipeDirectory is the expected CUDA_MPS_PIPE_DIRECTORY value and MPS bind
 	// mount destination — must match the sharingd plugin's configured value.
@@ -84,8 +83,8 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 		// not exist, and recreating it would only hit the same parse error — skip
 		// rather than risk a container we cannot reason about. Log the raw
 		// annotation values so the offending input is visible, not just the error.
-		requestKey := d.annotationPrefix + container.GetName() + ".request"
-		limitKey := d.annotationPrefix + container.GetName() + ".limit"
+		requestKey := annotations.RequestAnnotationKey(d.annotationPrefix, container.GetName())
+		limitKey := annotations.LimitAnnotationKey(d.annotationPrefix, container.GetName())
 		ann := pod.GetAnnotations()
 		d.logger().Warn("audit: skipping container with unparseable GPU memory annotations",
 			"container", container.GetName(),
@@ -104,7 +103,7 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 	// missing value defaulted from the other, so both env vars are expected.
 	cfg = cfg.ApplyDefaults()
 
-	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations())
+	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations(), container.GetName(), d.annotationPrefix)
 	missing := d.missingInjection(cfg, visibleDevices, container)
 	if len(missing) == 0 {
 		return violator{}, false

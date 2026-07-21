@@ -16,13 +16,13 @@ import (
 //
 // A container is recorded for metrics using the same signal the mutation path
 // enforces on: a well-formed GPU-memory annotation (<annotationPrefix><name>.
-// {request,limit}). This is deliberately the identical decision — there is no
+// gpu-memory.{request,limit}). This is deliberately the identical decision — there is no
 // separate "is this a fractional GPU container" annotation — so a container is
 // recorded iff it is also mutated. adapter is stateless apart from the
 // configured prefix, so its methods are safe to call concurrently.
 type adapter struct {
-	// annotationPrefix is the GPU-memory annotation prefix (e.g.
-	// "nvidia.com/gpu-memory.container."). It is the same prefix the mutation path
+	// annotationPrefix is the leading GPU-sharing annotation prefix (e.g.
+	// "nvidia.com/container."). It is the same prefix the mutation path
 	// uses, so mapping and mutation select the same containers.
 	annotationPrefix string
 

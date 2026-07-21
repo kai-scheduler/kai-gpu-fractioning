@@ -12,17 +12,18 @@ import (
 
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/fsstore"
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/annotations"
 )
 
 // testMemPrefix is the GPU-memory annotation prefix used by the mapping tests. A
 // container is recorded for metrics iff it carries a well-formed annotation under
 // this prefix — the same signal the mutation path enforces on.
-const testMemPrefix = "nvidia.com/gpu-memory.container."
+const testMemPrefix = "nvidia.com/container."
 
 // memAnnotations builds the pod annotations granting the named container a GPU
 // memory limit (a Kubernetes quantity such as "4Gi").
 func memAnnotations(container, limit string) map[string]string {
-	return map[string]string{testMemPrefix + container + ".limit": limit}
+	return map[string]string{annotations.LimitAnnotationKey(testMemPrefix, container): limit}
 }
 
 // testMappingPlugin builds a plugin whose mapping handoff goes through a

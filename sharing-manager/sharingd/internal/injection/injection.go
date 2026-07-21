@@ -14,7 +14,8 @@ const (
 
 	// EnvVisibleDevices selects the physical GPU(s) the NVIDIA container runtime
 	// exposes to the container. The create hook sets it from the scheduler's
-	// device-assignment annotation (annotations.VisibleDevicesAnnotation) so a
+	// per-container device-assignment annotation (see
+	// annotations.ParseVisibleDevices) so a
 	// fractional GPU container — which does not request the nvidia.com/gpu
 	// resource and is therefore skipped by the NVIDIA device plugin — still sees
 	// exactly the GPU the scheduler picked. Unlike the keys above, it is injected
