@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,12 +33,19 @@ import (
 )
 
 func TestGpuOperatorDependencyChecker(t *testing.T) {
-	baseReady := metav1.Condition{
+	trueReady := metav1.Condition{
 		Type:               daemonmgr.ConditionReady,
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: 7,
 		Reason:             daemonmgr.ReasonAllComponentsReady,
 		Message:            daemonmgr.MessageAllComponentsReady,
+	}
+	falseReady := metav1.Condition{
+		Type:               daemonmgr.ConditionReady,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: 7,
+		Reason:             daemonmgr.ReasonComponentNotReady,
+		Message:            "not ready: SharingdReady",
 	}
 	config := &v1alpha1.GpuSharingConfig{
 		ObjectMeta: metav1.ObjectMeta{
@@ -48,22 +56,35 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 
 	tests := []struct {
 		name            string
+		input           metav1.Condition
 		objects         []client.Object
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
 		expectedMessage string
 	}{
 		{
-			name: "ready ClusterPolicy with supported version leaves Ready unchanged",
+			name:  "true Ready condition skips dependency check",
+			input: trueReady,
 			objects: []client.Object{
-				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.0"}, clusterPolicyStatus("ready", "True", "False", "")),
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.3.3"}, clusterPolicyStatus("ready", "True", "False", "")),
 			},
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  daemonmgr.ReasonAllComponentsReady,
 			expectedMessage: daemonmgr.MessageAllComponentsReady,
 		},
 		{
-			name: "ready ClusterPolicy with unsupported version blocks Ready",
+			name:  "ready ClusterPolicy with supported version leaves false Ready unchanged",
+			input: falseReady,
+			objects: []client.Object{
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.0"}, clusterPolicyStatus("ready", "True", "False", "")),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonComponentNotReady,
+			expectedMessage: "not ready: SharingdReady",
+		},
+		{
+			name:  "ready ClusterPolicy with unsupported version blocks Ready",
+			input: falseReady,
 			objects: []client.Object{
 				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.3.3"}, clusterPolicyStatus("ready", "True", "False", "")),
 			},
@@ -72,7 +93,8 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			expectedMessage: "v26.3.3",
 		},
 		{
-			name: "ClusterPolicy Error condition blocks Ready with its message",
+			name:  "ClusterPolicy Error condition blocks Ready with its message",
+			input: falseReady,
 			objects: []client.Object{
 				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.0"}, clusterPolicyStatus("notReady", "False", "True", "operand failed")),
 			},
@@ -82,12 +104,14 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 		},
 		{
 			name:            "missing ClusterPolicy blocks Ready",
+			input:           falseReady,
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonGPUOperatorNotReady,
 			expectedMessage: "not found",
 		},
 		{
-			name: "missing version label blocks Ready",
+			name:  "missing version label blocks Ready",
+			input: falseReady,
 			objects: []client.Object{
 				clusterPolicyObject(nil, clusterPolicyStatus("ready", "True", "False", "")),
 			},
@@ -105,7 +129,7 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 				Build()
 			checker := NewGpuOperatorDependencyChecker(reader)
 
-			got, err := checker.Check(context.Background(), config, baseReady)
+			got, err := checker.Check(context.Background(), config, tt.input)
 			if err != nil {
 				t.Fatalf("Check returned error: %v", err)
 			}
@@ -117,6 +141,138 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			}
 			if !strings.Contains(got.Message, tt.expectedMessage) {
 				t.Fatalf("Message = %q, expected to contain %q", got.Message, tt.expectedMessage)
+			}
+		})
+	}
+}
+
+func TestGpuDriverDependencyChecker(t *testing.T) {
+	tests := []struct {
+		name           string
+		status         corev1.ConditionStatus
+		labels         map[string]string
+		missingNode    bool
+		initialReason  string
+		expectedStatus corev1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "ready condition is not changed even with missing driver label",
+			status:         corev1.ConditionTrue,
+			labels:         nil,
+			initialReason:  daemonmgr.ReasonAllDaemonsReady,
+			expectedStatus: corev1.ConditionTrue,
+			expectedReason: daemonmgr.ReasonAllDaemonsReady,
+		},
+		{
+			name:           "not ready condition is enriched when driver label is missing",
+			status:         corev1.ConditionFalse,
+			labels:         nil,
+			initialReason:  "CrashLoopBackOff",
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: daemonmgr.ReasonGPUDriverVersionMissing,
+		},
+		{
+			name:           "not ready condition is enriched when driver version is too old",
+			status:         corev1.ConditionFalse,
+			labels:         map[string]string{gpuDriverMajorLabel: "614"},
+			initialReason:  "CrashLoopBackOff",
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: daemonmgr.ReasonGPUDriverVersionUnsupported,
+		},
+		{
+			name:           "not ready condition keeps pod failure when driver version is supported",
+			status:         corev1.ConditionFalse,
+			labels:         map[string]string{gpuDriverMajorLabel: "615"},
+			initialReason:  "CrashLoopBackOff",
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: "CrashLoopBackOff",
+		},
+		{
+			name:           "not ready condition keeps pod failure when node cannot be read",
+			status:         corev1.ConditionFalse,
+			missingNode:    true,
+			initialReason:  "CrashLoopBackOff",
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: "CrashLoopBackOff",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objects := []client.Object{}
+			if !tt.missingNode {
+				objects = append(objects, &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:   "node-a",
+					Labels: tt.labels,
+				}})
+			}
+			checker := NewGpuDriverDependencyChecker(fake.NewClientBuilder().WithObjects(objects...).Build())
+
+			got, err := checker.Check(context.Background(), "node-a", corev1.NodeCondition{
+				Type:    corev1.NodeConditionType(daemonmgr.NodeConditionType),
+				Status:  tt.status,
+				Reason:  tt.initialReason,
+				Message: "message",
+			})
+			if err != nil {
+				t.Fatalf("Check returned error: %v", err)
+			}
+			if got.Status != tt.expectedStatus {
+				t.Fatalf("status = %s, expected %s", got.Status, tt.expectedStatus)
+			}
+			if got.Reason != tt.expectedReason {
+				t.Fatalf("reason = %q, expected %q", got.Reason, tt.expectedReason)
+			}
+		})
+	}
+}
+
+func TestGpuDriverFailureReason(t *testing.T) {
+	tests := []struct {
+		name           string
+		labels         map[string]string
+		expectedFound  bool
+		expectedReason string
+	}{
+		{
+			name:           "missing label",
+			expectedFound:  true,
+			expectedReason: daemonmgr.ReasonGPUDriverVersionMissing,
+		},
+		{
+			name:           "invalid label",
+			labels:         map[string]string{gpuDriverMajorLabel: "615.34"},
+			expectedFound:  true,
+			expectedReason: daemonmgr.ReasonGPUDriverVersionInvalid,
+		},
+		{
+			name:           "too old",
+			labels:         map[string]string{gpuDriverMajorLabel: "614"},
+			expectedFound:  true,
+			expectedReason: daemonmgr.ReasonGPUDriverVersionUnsupported,
+		},
+		{
+			name:          "minimum supported",
+			labels:        map[string]string{gpuDriverMajorLabel: "615"},
+			expectedFound: false,
+		},
+		{
+			name:          "newer supported",
+			labels:        map[string]string{gpuDriverMajorLabel: "620"},
+			expectedFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Labels: tt.labels}}
+			gotReason, _, gotFound := gpuDriverFailureReason(node)
+			if gotFound != tt.expectedFound {
+				t.Fatalf("found = %t, expected %t", gotFound, tt.expectedFound)
+			}
+			if gotReason != tt.expectedReason {
+				t.Fatalf("reason = %q, expected %q", gotReason, tt.expectedReason)
 			}
 		})
 	}

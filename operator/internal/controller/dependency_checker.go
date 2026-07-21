@@ -63,6 +63,10 @@ func NewGpuOperatorDependencyChecker(reader client.Reader) GpuOperatorDependency
 }
 
 func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha1.GpuSharingConfig, ready metav1.Condition) (metav1.Condition, error) {
+	if ready.Status != metav1.ConditionFalse {
+		return ready, nil
+	}
+
 	clusterPolicy, err := c.clusterPolicy(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
