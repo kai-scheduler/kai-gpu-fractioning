@@ -26,7 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -165,6 +167,19 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
 	daemonmgr.SetCondition(&config.Status, readyCond)
 
+	// Reflect GPU driver-upgrade state on the CR. The nodeAffinity on the managed
+	// DaemonSets already drains daemons from upgrading nodes (see
+	// daemonmgr.driverUpgradeNodeAffinity); this surfaces that as a condition.
+	// The reconcile is retriggered by the owned DaemonSets' status changing as
+	// pods drain/return, so no Node watch is required.
+	upgrading, upErr := r.evaluateDriverUpgrade(ctx, &config)
+	if upErr != nil {
+		log.Error(upErr, "failed to evaluate driver-upgrade state, will requeue")
+		needsRequeue = true
+	} else {
+		daemonmgr.SetCondition(&config.Status, daemonmgr.DriverUpgradeCondition(upgrading, config.Generation))
+	}
+
 	// Patch gpu-sharing.nvidia.com/Ready on each node. We only list pods
 	// when something is unhealthy or when transitioning back to healthy
 	// (to flip nodes from False→True). In steady state this is skipped entirely.
@@ -189,6 +204,54 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: requeueInterval}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// evaluateDriverUpgrade reports whether any GPU node targeted by the CR is
+// actively undergoing a driver upgrade, and clears the stale gpu-sharing Ready
+// condition from those nodes. The filter is entirely server-side: nodes matching
+// the CR's nodeSelector whose gpu-operator upgrade-state label is set to
+// something other than the terminal "upgrade-done" — i.e. actively upgrading.
+// Excluding "upgrade-done" at the server matters because that label persists on
+// nodes after an upgrade, so a plain "has the label" list would return every
+// targeted GPU node in a mature cluster; the surviving set is just the nodes
+// mid-upgrade right now (bounded).
+//
+// Draining a node for an upgrade removes its daemon pods, and patchNodeConditions
+// is pod-driven, so it never revisits the node and would leave a stale
+// Ready=True there. We remove the condition here so the node stops advertising a
+// readiness it no longer has; it is re-added (Ready=True) once the daemons
+// reschedule after the upgrade. Reads go through the uncached APIReader for the
+// same reason as patchNodeConditions: no cluster-scale Node informer.
+func (r *GpuSharingConfigReconciler) evaluateDriverUpgrade(ctx context.Context, config *v1alpha1.GpuSharingConfig) (bool, error) {
+	// Exists is required alongside NotIn: set-based NotIn also matches nodes that
+	// lack the label, so on its own it would count non-upgrading nodes.
+	exists, err := labels.NewRequirement(daemonmgr.DriverUpgradeStateLabel, selection.Exists, nil)
+	if err != nil {
+		return false, err
+	}
+	notDone, err := labels.NewRequirement(daemonmgr.DriverUpgradeStateLabel, selection.NotIn, []string{daemonmgr.DriverUpgradeStateDone})
+	if err != nil {
+		return false, err
+	}
+	selector := labels.SelectorFromSet(config.Spec.NodeSelector).Add(*exists, *notDone)
+
+	var nodeList corev1.NodeList
+	if err := r.APIReader.List(ctx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return false, fmt.Errorf("listing driver-upgrade nodes: %w", err)
+	}
+
+	var errs []error
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		// Only patch when there is actually a condition to remove, so a node stays
+		// untouched across reconciles once cleared.
+		if _, found := daemonmgr.FindNodeCondition(node); found {
+			if err := daemonmgr.RemoveNodeCondition(ctx, r.Client, node.Name); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return len(nodeList.Items) > 0, errors.Join(errs...)
 }
 
 // buildOptions resolves the BuildOptions shared by all daemons. DefaultImages

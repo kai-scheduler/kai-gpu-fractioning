@@ -2,6 +2,7 @@ package mpsd
 
 import (
 	"strconv"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,14 @@ const (
 	mpsdCPURequest = "50m"
 	mpsdMemRequest = "64Mi"
 	mpsdMemLimit   = "256Mi"
+
+	// defaultGracefulStopDelay mirrors mpsd's supervisor.DefaultGracefulStopDelay
+	// (60s). It lives in a separate module, so it is duplicated here — keep in
+	// sync. It is the effective --graceful-stop-delay when the CR leaves it unset.
+	defaultGracefulStopDelay = 60 * time.Second
+	// terminationGraceBuffer is added to the graceful stop delay so kubelet gives
+	// mpsd time to finish quitting MPS before it SIGKILLs the pod on eviction.
+	terminationGraceBuffer = 15 * time.Second
 )
 
 type daemon struct {
@@ -53,6 +62,11 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
 	result.Spec.Template.Spec.RuntimeClassName = ptr.To(nvidiaRuntimeClass)
+	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
+	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
+	// 30s default, shorter than the graceful stop delay, defeating the graceful
+	// shutdown the driver-upgrade nodeAffinity relies on.
+	result.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To(d.terminationGraceSeconds())
 
 	image := opts.DefaultImages[daemonName]
 	if d.spec != nil && d.spec.Image != nil {
@@ -68,6 +82,17 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)
 
 	return result
+}
+
+// terminationGraceSeconds is the effective --graceful-stop-delay (the CR value,
+// else mpsd's 60s default) plus a teardown buffer, so the pod's termination
+// grace always covers mpsd's graceful MPS quit window.
+func (d *daemon) terminationGraceSeconds() int64 {
+	grace := defaultGracefulStopDelay
+	if d.spec != nil && d.spec.GracefulStopDelay != nil {
+		grace = d.spec.GracefulStopDelay.Duration
+	}
+	return int64((grace + terminationGraceBuffer).Seconds())
 }
 
 func (d *daemon) buildContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
