@@ -198,7 +198,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			Expect(ready).NotTo(BeNil())
 			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 			Expect(ready.Reason).To(Equal(daemonmgr.ReasonGPUOperatorNotReady))
-			Expect(ready.Message).To(ContainSubstring("NVIDIA GPU Operator ClusterPolicy"))
+			Expect(ready.Message).To(ContainSubstring("ClusterPolicy or ClusterServiceVersion"))
 		})
 
 		It("should update observedGeneration on reconcile", func() {

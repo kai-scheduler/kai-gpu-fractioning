@@ -98,6 +98,15 @@ rules:
     verbs:
       - get
       - list
+  # On OpenShift, NVIDIA GPU Operator installations may not expose a
+  # ClusterPolicy. Fall back to the OLM ClusterServiceVersion to discover the
+  # installed GPU Operator version. CSVs do not provide readiness, only version.
+  - apiGroups:
+      - operators.coreos.com
+    resources:
+      - clusterserviceversions
+    verbs:
+      - list
   # Emit Kubernetes Events to surface reconciliation activity
   # (e.g. "GpuSharingConfig reconciled successfully").
   - apiGroups:

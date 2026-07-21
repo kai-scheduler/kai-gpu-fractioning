@@ -8,6 +8,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.27.4
 	github.com/onsi/gomega v1.39.0
 	github.com/prometheus/client_golang v1.23.2
+	golang.org/x/mod v0.35.0
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.2
@@ -76,7 +77,6 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93 // indirect
-	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

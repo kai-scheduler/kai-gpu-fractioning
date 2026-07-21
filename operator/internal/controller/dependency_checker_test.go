@@ -107,7 +107,38 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			input:           falseReady,
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonGPUOperatorNotReady,
-			expectedMessage: "not found",
+			expectedMessage: "no gpu-operator ClusterServiceVersion found",
+		},
+		{
+			name:  "supported OpenShift ClusterServiceVersion leaves false Ready unchanged",
+			input: falseReady,
+			objects: []client.Object{
+				clusterServiceVersionObject("gpu-operator-certified.v26.7.0", "26.7.0"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonComponentNotReady,
+			expectedMessage: "not ready: SharingdReady",
+		},
+		{
+			name:  "unsupported OpenShift ClusterServiceVersion blocks Ready",
+			input: falseReady,
+			objects: []client.Object{
+				clusterServiceVersionObject("gpu-operator-certified.v26.3.3", "26.3.3"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
+			expectedMessage: "26.3.3",
+		},
+		{
+			name:  "ClusterPolicy takes precedence over OpenShift ClusterServiceVersion",
+			input: falseReady,
+			objects: []client.Object{
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.3.3"}, clusterPolicyStatus("ready", "True", "False", "")),
+				clusterServiceVersionObject("gpu-operator-certified.v26.7.0", "26.7.0"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
+			expectedMessage: "v26.3.3",
 		},
 		{
 			name:  "missing version label blocks Ready",
@@ -311,6 +342,8 @@ func clusterPolicyScheme(t *testing.T) *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	scheme.AddKnownTypeWithName(clusterPolicyGVK, &unstructured.Unstructured{})
 	scheme.AddKnownTypeWithName(clusterPolicyGVK.GroupVersion().WithKind(clusterPolicyGVK.Kind+"List"), &unstructured.UnstructuredList{})
+	scheme.AddKnownTypeWithName(clusterServiceVersionGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(clusterServiceVersionGVK.GroupVersion().WithKind(clusterServiceVersionGVK.Kind+"List"), &unstructured.UnstructuredList{})
 	return scheme
 }
 
@@ -322,6 +355,18 @@ func clusterPolicyObject(labels map[string]string, status map[string]any) *unstr
 	if status != nil {
 		obj.Object["status"] = status
 	}
+	return obj
+}
+
+func clusterServiceVersionObject(name, version string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"spec": map[string]any{
+			"version": version,
+		},
+	}}
+	obj.SetGroupVersionKind(clusterServiceVersionGVK)
+	obj.SetName(name)
+	obj.SetNamespace("openshift-operators")
 	return obj
 }
 
