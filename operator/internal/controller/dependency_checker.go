@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
@@ -98,21 +97,24 @@ func NewGpuDriverDependencyChecker(reader client.Reader) GpuDriverDependencyChec
 	return GpuDriverDependencyChecker{reader: reader}
 }
 
-func (c GpuDriverDependencyChecker) Check(ctx context.Context, nodeName string, ready bool, reason, message string) (bool, string, string) {
-	if ready {
-		return ready, reason, message
+func (c GpuDriverDependencyChecker) Check(ctx context.Context, nodeName string, condition corev1.NodeCondition) (corev1.NodeCondition, error) {
+	if condition.Status != corev1.ConditionFalse {
+		return condition, nil
 	}
 
 	node := &corev1.Node{}
 	if err := c.reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
-		logf.FromContext(ctx).V(1).Info("failed to read node for GPU driver dependency check", "node", nodeName, "error", err)
-		return ready, reason, message
+		if ctx.Err() != nil {
+			return condition, err
+		}
+		return condition, nil
 	}
 
 	if driverReason, driverMessage, found := gpuDriverFailureReason(node); found {
-		return false, driverReason, driverMessage
+		condition.Reason = driverReason
+		condition.Message = driverMessage
 	}
-	return ready, reason, message
+	return condition, nil
 }
 
 func (c GpuOperatorDependencyChecker) clusterPolicy(ctx context.Context) (*unstructured.Unstructured, error) {

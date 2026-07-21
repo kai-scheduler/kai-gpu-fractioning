@@ -380,9 +380,13 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 				continue
 			}
 
-			reason, msg := nodeConditionArgs(ready, pod)
-			ready, reason, msg = r.GpuDriverChecker.Check(ctx, pod.Spec.NodeName, ready, reason, msg)
-			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
+			condition := nodeConditionForPod(ready, pod)
+			condition, err := r.GpuDriverChecker.Check(ctx, pod.Spec.NodeName, condition)
+			if err != nil {
+				log.Error(err, "failed to check GPU driver dependency", "node", pod.Spec.NodeName)
+				errs = append(errs, err)
+			}
+			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, condition); err != nil {
 				log.Error(err, "failed to patch node condition", "node", pod.Spec.NodeName)
 				errs = append(errs, err)
 			}
@@ -416,14 +420,23 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func nodeConditionArgs(ready bool, pod *corev1.Pod) (reason, message string) {
+func nodeConditionForPod(ready bool, pod *corev1.Pod) corev1.NodeCondition {
 	if ready {
-		return daemonmgr.ReasonAllDaemonsReady, daemonmgr.MessageAllDaemonsReady
+		return corev1.NodeCondition{
+			Type:    corev1.NodeConditionType(daemonmgr.NodeConditionType),
+			Status:  corev1.ConditionTrue,
+			Reason:  daemonmgr.ReasonAllDaemonsReady,
+			Message: daemonmgr.MessageAllDaemonsReady,
+		}
 	}
-	reason = podFailureReason(pod)
+	reason := podFailureReason(pod)
 	daemonName := pod.Labels[daemonmgr.LabelComponent]
-	message = fmt.Sprintf("%s pod is not ready: %s", daemonName, reason)
-	return reason, message
+	return corev1.NodeCondition{
+		Type:    corev1.NodeConditionType(daemonmgr.NodeConditionType),
+		Status:  corev1.ConditionFalse,
+		Reason:  reason,
+		Message: fmt.Sprintf("%s pod is not ready: %s", daemonName, reason),
+	}
 }
 
 func podFailureReason(pod *corev1.Pod) string {

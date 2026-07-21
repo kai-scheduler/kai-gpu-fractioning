@@ -73,51 +73,51 @@ func waitingStatus(reason string) corev1.ContainerStatus {
 func TestGpuDriverDependencyChecker(t *testing.T) {
 	tests := []struct {
 		name           string
-		ready          bool
+		status         corev1.ConditionStatus
 		labels         map[string]string
 		missingNode    bool
 		initialReason  string
-		expectedReady  bool
+		expectedStatus corev1.ConditionStatus
 		expectedReason string
 	}{
 		{
 			name:           "ready condition is not changed even with missing driver label",
-			ready:          true,
+			status:         corev1.ConditionTrue,
 			labels:         nil,
 			initialReason:  daemonmgr.ReasonAllDaemonsReady,
-			expectedReady:  true,
+			expectedStatus: corev1.ConditionTrue,
 			expectedReason: daemonmgr.ReasonAllDaemonsReady,
 		},
 		{
 			name:           "not ready condition is enriched when driver label is missing",
-			ready:          false,
+			status:         corev1.ConditionFalse,
 			labels:         nil,
 			initialReason:  "CrashLoopBackOff",
-			expectedReady:  false,
+			expectedStatus: corev1.ConditionFalse,
 			expectedReason: daemonmgr.ReasonGPUDriverVersionMissing,
 		},
 		{
 			name:           "not ready condition is enriched when driver version is too old",
-			ready:          false,
+			status:         corev1.ConditionFalse,
 			labels:         map[string]string{gpuDriverMajorLabel: "614"},
 			initialReason:  "CrashLoopBackOff",
-			expectedReady:  false,
+			expectedStatus: corev1.ConditionFalse,
 			expectedReason: daemonmgr.ReasonGPUDriverVersionUnsupported,
 		},
 		{
 			name:           "not ready condition keeps pod failure when driver version is supported",
-			ready:          false,
+			status:         corev1.ConditionFalse,
 			labels:         map[string]string{gpuDriverMajorLabel: "615"},
 			initialReason:  "CrashLoopBackOff",
-			expectedReady:  false,
+			expectedStatus: corev1.ConditionFalse,
 			expectedReason: "CrashLoopBackOff",
 		},
 		{
 			name:           "not ready condition keeps pod failure when node cannot be read",
-			ready:          false,
+			status:         corev1.ConditionFalse,
 			missingNode:    true,
 			initialReason:  "CrashLoopBackOff",
-			expectedReady:  false,
+			expectedStatus: corev1.ConditionFalse,
 			expectedReason: "CrashLoopBackOff",
 		},
 	}
@@ -133,12 +133,20 @@ func TestGpuDriverDependencyChecker(t *testing.T) {
 			}
 			checker := NewGpuDriverDependencyChecker(fake.NewClientBuilder().WithObjects(objects...).Build())
 
-			gotReady, gotReason, _ := checker.Check(context.Background(), "node-a", tt.ready, tt.initialReason, "message")
-			if gotReady != tt.expectedReady {
-				t.Fatalf("ready = %t, expected %t", gotReady, tt.expectedReady)
+			got, err := checker.Check(context.Background(), "node-a", corev1.NodeCondition{
+				Type:    corev1.NodeConditionType(daemonmgr.NodeConditionType),
+				Status:  tt.status,
+				Reason:  tt.initialReason,
+				Message: "message",
+			})
+			if err != nil {
+				t.Fatalf("Check returned error: %v", err)
 			}
-			if gotReason != tt.expectedReason {
-				t.Fatalf("reason = %q, expected %q", gotReason, tt.expectedReason)
+			if got.Status != tt.expectedStatus {
+				t.Fatalf("status = %s, expected %s", got.Status, tt.expectedStatus)
+			}
+			if got.Reason != tt.expectedReason {
+				t.Fatalf("reason = %q, expected %q", got.Reason, tt.expectedReason)
 			}
 		})
 	}
