@@ -205,13 +205,20 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 }
 
 // evaluateDriverUpgrade reports whether any GPU node targeted by the CR is
-// actively undergoing a driver upgrade. The filter is entirely server-side:
-// nodes matching the CR's nodeSelector whose gpu-operator upgrade-state label is
-// set to something other than the terminal "upgrade-done" — i.e. actively
-// upgrading — capped at one result since we only need existence. Excluding
-// "upgrade-done" at the server matters because that label persists on nodes
-// after an upgrade, so a plain "has the label" list would return every targeted
-// GPU node in a mature cluster. Reads go through the uncached APIReader for the
+// actively undergoing a driver upgrade, and clears the stale gpu-sharing Ready
+// condition from those nodes. The filter is entirely server-side: nodes matching
+// the CR's nodeSelector whose gpu-operator upgrade-state label is set to
+// something other than the terminal "upgrade-done" — i.e. actively upgrading.
+// Excluding "upgrade-done" at the server matters because that label persists on
+// nodes after an upgrade, so a plain "has the label" list would return every
+// targeted GPU node in a mature cluster; the surviving set is just the nodes
+// mid-upgrade right now (bounded).
+//
+// Draining a node for an upgrade removes its daemon pods, and patchNodeConditions
+// is pod-driven, so it never revisits the node and would leave a stale
+// Ready=True there. We remove the condition here so the node stops advertising a
+// readiness it no longer has; it is re-added (Ready=True) once the daemons
+// reschedule after the upgrade. Reads go through the uncached APIReader for the
 // same reason as patchNodeConditions: no cluster-scale Node informer.
 func (r *GpuSharingConfigReconciler) evaluateDriverUpgrade(ctx context.Context, config *v1alpha1.GpuSharingConfig) (bool, error) {
 	// Exists is required alongside NotIn: set-based NotIn also matches nodes that
@@ -227,13 +234,22 @@ func (r *GpuSharingConfigReconciler) evaluateDriverUpgrade(ctx context.Context, 
 	selector := labels.SelectorFromSet(config.Spec.NodeSelector).Add(*exists, *notDone)
 
 	var nodeList corev1.NodeList
-	if err := r.APIReader.List(ctx, &nodeList,
-		client.MatchingLabelsSelector{Selector: selector},
-		client.Limit(1),
-	); err != nil {
+	if err := r.APIReader.List(ctx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return false, fmt.Errorf("listing driver-upgrade nodes: %w", err)
 	}
-	return len(nodeList.Items) > 0, nil
+
+	var errs []error
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		// Only patch when there is actually a condition to remove, so a node stays
+		// untouched across reconciles once cleared.
+		if _, found := daemonmgr.FindNodeCondition(node); found {
+			if err := daemonmgr.RemoveNodeCondition(ctx, r.Client, node.Name); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return len(nodeList.Items) > 0, errors.Join(errs...)
 }
 
 // buildOptions resolves the BuildOptions shared by all daemons. DefaultImages

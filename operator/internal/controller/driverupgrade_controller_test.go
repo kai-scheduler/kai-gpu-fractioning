@@ -18,6 +18,53 @@ func upgradeTestNode(name string, labels map[string]string) *corev1.Node {
 	return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}}
 }
 
+// TestEvaluateDriverUpgradeClearsStaleReady verifies that an actively-upgrading
+// node whose daemons were drained does not keep advertising a stale gpu-sharing
+// Ready condition (patchNodeConditions is pod-driven and would never revisit it).
+func TestEvaluateDriverUpgradeClearsStaleReady(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	node := upgradeTestNode("gpu-x", map[string]string{
+		"nvidia.com/gpu.present":          "true",
+		daemonmgr.DriverUpgradeStateLabel: "pod-deletion-required",
+	})
+	node.Status.Conditions = []corev1.NodeCondition{{
+		Type:   corev1.NodeConditionType(daemonmgr.NodeConditionType),
+		Status: corev1.ConditionTrue,
+	}}
+
+	fc := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&corev1.Node{}).
+		WithObjects(node).
+		Build()
+	r := &GpuSharingConfigReconciler{APIReader: fc, Client: fc}
+	cfg := &v1alpha1.GpuSharingConfig{
+		Spec: v1alpha1.GpuSharingConfigSpec{
+			NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
+		},
+	}
+
+	upgrading, err := r.evaluateDriverUpgrade(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("evaluateDriverUpgrade: %v", err)
+	}
+	if !upgrading {
+		t.Fatal("expected upgrading = true")
+	}
+
+	var got corev1.Node
+	if err := fc.Get(context.Background(), client.ObjectKey{Name: "gpu-x"}, &got); err != nil {
+		t.Fatalf("get node: %v", err)
+	}
+	if _, found := daemonmgr.FindNodeCondition(&got); found {
+		t.Errorf("stale gpu-sharing Ready condition was not removed: %+v", got.Status.Conditions)
+	}
+}
+
 func TestEvaluateDriverUpgrade(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
@@ -68,7 +115,7 @@ func TestEvaluateDriverUpgrade(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.nodes...).Build()
-			r := &GpuSharingConfigReconciler{APIReader: fc}
+			r := &GpuSharingConfigReconciler{APIReader: fc, Client: fc}
 			cfg := &v1alpha1.GpuSharingConfig{
 				Spec: v1alpha1.GpuSharingConfigSpec{
 					NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
