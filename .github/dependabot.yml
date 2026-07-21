@@ -1,7 +1,14 @@
 version: 2
 updates:
+  # Go modules — one entry per go.mod in the repo (root + the five sub-modules).
   - package-ecosystem: gomod
-    directory: /
+    directories:
+      - /
+      - /api
+      - /operator
+      - /pkg
+      - /sharing-manager/metricsd
+      - /test/e2e
     schedule:
       interval: weekly
     labels:
@@ -17,3 +24,17 @@ updates:
       - dependencies
     commit-message:
       prefix: "ci(deps):"
+
+  # Base images in the component Dockerfiles.
+  - package-ecosystem: docker
+    directories:
+      - /operator
+      - /sharing-manager/mpsd/build
+      - /sharing-manager/sharingd/build
+      - /sharing-manager/metricsd
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps):"

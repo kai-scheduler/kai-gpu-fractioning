@@ -145,6 +145,51 @@ docker-push-sharingd:
 	docker push $(DOCKER_REPO_BASE)/sharingd:$(VERSION)
 
 # -----------------------------------------------------------
+# Multi-arch image build/push (release)
+# -----------------------------------------------------------
+# Release builds go through `docker buildx` so a single command produces a
+# multi-platform manifest. Multi-platform manifests can't be loaded into the
+# local daemon, so they push directly (DOCKER_BUILDX_OUTPUT defaults to --push).
+# Requires a docker-container buildx builder (CI: docker/setup-buildx-action).
+#
+#   make docker-buildx VERSION=v0.1.0                          # amd64+arm64, push
+#   make docker-buildx-operator DOCKER_BUILDX_OUTPUT=--load \
+#     DOCKER_BUILD_PLATFORM=linux/amd64                        # single-arch, local
+#
+# NOTE: operator/mpsd/sharingd are CGO_ENABLED=0 and cross-compile natively on the
+# build host; metricsd links NVML via cgo, so its non-native arch is built under
+# qemu emulation (slower).
+
+# Comma-separated platform list. GPU nodes are amd64; releases also ship arm64.
+DOCKER_BUILD_PLATFORM ?= linux/amd64
+# Passed to `docker buildx build`: --push to publish, --load for a local single-arch image.
+DOCKER_BUILDX_OUTPUT  ?= --push
+# Escape hatch for any extra `docker buildx build` flags.
+DOCKER_BUILDX_ARGS    ?=
+
+.PHONY: docker-buildx docker-buildx-operator docker-buildx-mpsd docker-buildx-sharingd docker-buildx-metricsd
+
+# $(1)=Dockerfile path, $(2)=image name. Build context is always the repo root.
+define buildx-image
+docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) $(DOCKER_BUILDX_ARGS) \
+	-f $(1) -t $(DOCKER_REPO_BASE)/$(2):$(VERSION) .
+endef
+
+docker-buildx: docker-buildx-operator docker-buildx-mpsd docker-buildx-sharingd docker-buildx-metricsd
+
+docker-buildx-operator:
+	$(call buildx-image,operator/Dockerfile,operator)
+
+docker-buildx-mpsd:
+	$(call buildx-image,sharing-manager/mpsd/build/Dockerfile,mpsd)
+
+docker-buildx-sharingd:
+	$(call buildx-image,sharing-manager/sharingd/build/Dockerfile,sharingd)
+
+docker-buildx-metricsd:
+	$(call buildx-image,sharing-manager/metricsd/Dockerfile,metricsd)
+
+# -----------------------------------------------------------
 # Clean
 # -----------------------------------------------------------
 

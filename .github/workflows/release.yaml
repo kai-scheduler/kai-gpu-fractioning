@@ -1,0 +1,43 @@
+name: Release
+
+# Cutting a release: publish a GitHub Release for the tag (write the notes in the UI, or
+# use "Generate release notes"). That fires this workflow, which:
+#   1. builds + pushes the multi-arch images and chart to ghcr (reuses push-artifacts.yaml), and
+#   2. attaches the packaged chart .tgz to the Release for direct download.
+#
+# No PAT needed — the built-in `release: published` event triggers this, and the reusable
+# push-artifacts job inherits GITHUB_TOKEN (packages: write) via `secrets: inherit`.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  push-artifacts:
+    name: Push Artifacts
+    uses: ./.github/workflows/push-artifacts.yaml
+    with:
+      version: ${{ github.event.release.tag_name }}
+    secrets: inherit
+
+  attach-chart:
+    name: Attach chart to Release
+    needs: push-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v4
+
+      - name: Package chart
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        run: helm package operator/charts --version "$VERSION" --app-version "$VERSION" -d ./dist
+
+      - name: Upload chart as Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/gpu-sharing-${{ github.event.release.tag_name }}.tgz
