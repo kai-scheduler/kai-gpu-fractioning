@@ -47,7 +47,9 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 
 	now := metav1.NewTime(time.Now())
 	transitionTime := now
-	condition.Type = corev1.NodeConditionType(NodeConditionType)
+	if string(condition.Type) != NodeConditionType {
+		return fmt.Errorf("unexpected node condition type %q, expected %q", condition.Type, NodeConditionType)
+	}
 
 	// Read the current node to preserve LastTransitionTime when the condition
 	// status has not changed
