@@ -40,8 +40,8 @@ func TestBaseDaemonSetDriverUpgradeAffinity(t *testing.T) {
 		t.Errorf("term[0] = %+v, want %s DoesNotExist", got, DriverUpgradeStateLabel)
 	}
 	if got := terms[1].MatchExpressions[0]; got.Operator != corev1.NodeSelectorOpIn ||
-		len(got.Values) != 1 || got.Values[0] != driverUpgradeStateDone {
-		t.Errorf("term[1] = %+v, want In[%s]", got, driverUpgradeStateDone)
+		len(got.Values) != 1 || got.Values[0] != DriverUpgradeStateDone {
+		t.Errorf("term[1] = %+v, want In[%s]", got, DriverUpgradeStateDone)
 	}
 }
 

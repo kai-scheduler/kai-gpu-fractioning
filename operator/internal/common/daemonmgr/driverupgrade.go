@@ -12,12 +12,12 @@ const (
 	// gpu-operator and stays under nvidia.com.
 	DriverUpgradeStateLabel = "nvidia.com/gpu-driver-upgrade-state"
 
-	// driverUpgradeStateDone is the gpu-operator's terminal (idle) value for
+	// DriverUpgradeStateDone is the gpu-operator's terminal (idle) value for
 	// DriverUpgradeStateLabel. The label is absent on nodes the gpu-operator has
 	// never upgraded and set to "upgrade-done" once an upgrade completes; any
 	// other non-empty value (cordon-required, pod-deletion-required, …) means an
 	// upgrade is actively in progress on that node.
-	driverUpgradeStateDone = "upgrade-done"
+	DriverUpgradeStateDone = "upgrade-done"
 
 	// ConditionDriverUpgradeInProgress is the CR status condition set to True
 	// while any GPU node targeted by the CR is mid driver-upgrade (its managed
@@ -29,7 +29,7 @@ const (
 // DriverUpgradeActive reports whether a DriverUpgradeStateLabel value indicates
 // an in-progress upgrade: any value set other than the terminal "upgrade-done".
 func DriverUpgradeActive(labelValue string) bool {
-	return labelValue != "" && labelValue != driverUpgradeStateDone
+	return labelValue != "" && labelValue != DriverUpgradeStateDone
 }
 
 // driverUpgradeNodeAffinity returns a required nodeAffinity that schedules the
@@ -58,7 +58,7 @@ func driverUpgradeNodeAffinity() *corev1.Affinity {
 					{MatchExpressions: []corev1.NodeSelectorRequirement{{
 						Key:      DriverUpgradeStateLabel,
 						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{driverUpgradeStateDone},
+						Values:   []string{DriverUpgradeStateDone},
 					}}},
 				},
 			},
@@ -71,7 +71,9 @@ func driverUpgradeNodeAffinity() *corev1.Affinity {
 func DriverUpgradeCondition(active bool, generation int64) metav1.Condition {
 	status := metav1.ConditionFalse
 	reason := "NoDriverUpgrade"
-	message := "no targeted GPU node is undergoing a driver upgrade"
+	// Steady-state (nothing draining): the reason already says it, so leave the
+	// message empty rather than restating it.
+	message := ""
 	if active {
 		status = metav1.ConditionTrue
 		reason = "DriverUpgrading"

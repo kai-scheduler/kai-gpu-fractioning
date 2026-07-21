@@ -26,7 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -203,25 +205,35 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 }
 
 // evaluateDriverUpgrade reports whether any GPU node targeted by the CR is
-// undergoing a driver upgrade. The List filters server-side to nodes that both
-// carry the gpu-operator's upgrade-state label and match the CR's nodeSelector
-// (same nodeSelector filtering daemonmgr.RemoveNodeConditions uses) — a tiny,
-// usually-empty set. Reads go through the uncached APIReader for the same reason
-// as patchNodeConditions: no cluster-scale Node informer.
+// actively undergoing a driver upgrade. The filter is entirely server-side:
+// nodes matching the CR's nodeSelector whose gpu-operator upgrade-state label is
+// set to something other than the terminal "upgrade-done" — i.e. actively
+// upgrading — capped at one result since we only need existence. Excluding
+// "upgrade-done" at the server matters because that label persists on nodes
+// after an upgrade, so a plain "has the label" list would return every targeted
+// GPU node in a mature cluster. Reads go through the uncached APIReader for the
+// same reason as patchNodeConditions: no cluster-scale Node informer.
 func (r *GpuSharingConfigReconciler) evaluateDriverUpgrade(ctx context.Context, config *v1alpha1.GpuSharingConfig) (bool, error) {
+	// Exists is required alongside NotIn: set-based NotIn also matches nodes that
+	// lack the label, so on its own it would count non-upgrading nodes.
+	exists, err := labels.NewRequirement(daemonmgr.DriverUpgradeStateLabel, selection.Exists, nil)
+	if err != nil {
+		return false, err
+	}
+	notDone, err := labels.NewRequirement(daemonmgr.DriverUpgradeStateLabel, selection.NotIn, []string{daemonmgr.DriverUpgradeStateDone})
+	if err != nil {
+		return false, err
+	}
+	selector := labels.SelectorFromSet(config.Spec.NodeSelector).Add(*exists, *notDone)
+
 	var nodeList corev1.NodeList
 	if err := r.APIReader.List(ctx, &nodeList,
-		client.HasLabels{daemonmgr.DriverUpgradeStateLabel},
-		client.MatchingLabels(config.Spec.NodeSelector),
+		client.MatchingLabelsSelector{Selector: selector},
+		client.Limit(1),
 	); err != nil {
 		return false, fmt.Errorf("listing driver-upgrade nodes: %w", err)
 	}
-	for i := range nodeList.Items {
-		if daemonmgr.DriverUpgradeActive(nodeList.Items[i].Labels[daemonmgr.DriverUpgradeStateLabel]) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return len(nodeList.Items) > 0, nil
 }
 
 // buildOptions resolves the BuildOptions shared by all daemons. DefaultImages

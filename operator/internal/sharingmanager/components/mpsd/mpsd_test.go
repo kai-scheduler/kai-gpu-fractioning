@@ -176,6 +176,34 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 	}
 }
 
+func TestDaemon_BuildDaemonSet_TerminationGrace(t *testing.T) {
+	// Default (no configured graceful-stop-delay): mpsd's 60s default + buffer,
+	// and always ≥ the graceful-stop-delay so kubelet can't SIGKILL mpsd before
+	// its MPS graceful-quit window completes (the driver-upgrade guarantee).
+	grace := NewMpsdDaemon(nil, false).BuildDaemonSet(defaultOpts()).Spec.Template.Spec.TerminationGracePeriodSeconds
+	if grace == nil {
+		t.Fatal("terminationGracePeriodSeconds is nil; mpsd inherits the 30s default and can be killed mid-quit")
+	}
+	if want := int64((defaultGracefulStopDelay + terminationGraceBuffer).Seconds()); *grace != want {
+		t.Errorf("default grace = %d, want %d", *grace, want)
+	}
+	if *grace < int64(defaultGracefulStopDelay.Seconds()) {
+		t.Errorf("grace %d < graceful-stop-delay %d", *grace, int64(defaultGracefulStopDelay.Seconds()))
+	}
+
+	// A configured graceful-stop-delay is tracked (plus buffer), still ≥ it.
+	d := NewMpsdDaemon(&v1alpha1.MpsDaemonSpec{
+		GracefulStopDelay: &metav1.Duration{Duration: 90 * time.Second},
+	}, false)
+	grace = d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec.TerminationGracePeriodSeconds
+	if want := int64((90*time.Second + terminationGraceBuffer).Seconds()); grace == nil || *grace != want {
+		t.Fatalf("configured grace = %v, want %d", grace, want)
+	}
+	if *grace <= 90 {
+		t.Errorf("grace %d must exceed the configured 90s graceful-stop-delay", *grace)
+	}
+}
+
 func TestDaemon_BuildDaemonSet_ImageOverride(t *testing.T) {
 	d := NewMpsdDaemon(&v1alpha1.MpsDaemonSpec{
 		Image: &v1alpha1.ImageSpec{
