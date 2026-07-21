@@ -12,6 +12,7 @@ const (
 	// Annotation key suffixes appended after the container name.
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
+	annotationPathGPUMemory = "gpu-memory"
 
 	// VisibleDevicesAnnotation is the pod-level annotation key the scheduler
 	// (KAI/Run:ai) sets to the physical GPU device(s) it assigned to a fractional
@@ -21,7 +22,7 @@ const (
 	// NVIDIA_VISIBLE_DEVICES into its containers; sharingd reads this annotation
 	// and injects it (as injection.EnvVisibleDevices) so the container gets access
 	// to exactly the GPU the scheduler picked.
-	VisibleDevicesAnnotation = "nvidia.com/gpus.devices"
+	annotationSuffixDevices = "gpus.devices"
 
 	// Minimum value in decimal MB that MPS can meaningfully enforce.
 	minDecimalMB = 1
@@ -95,13 +96,13 @@ func (c GPUMemoryConfig) EffectiveMemoryMB() int64 {
 //
 // Annotation format:
 //
-//	<prefix><containerName>.request = "<quantity>"
-//	<prefix><containerName>.limit   = "<quantity>"
+//	<prefix><containerName>.gpu-memory.request = "<quantity>"
+//	<prefix><containerName>.gpu-memory.limit   = "<quantity>"
 //
-// With the default prefix "nvidia.com/gpu-memory.container.", a full key is:
+// With the default prefix "nvidia.com/container.", a full key is:
 //
-//	nvidia.com/gpu-memory.container.trainer.request
-//	nvidia.com/gpu-memory.container.trainer.limit
+//	nvidia.com/container.trainer.gpu-memory.request
+//	nvidia.com/container.trainer.gpu-memory.limit
 //
 // Values must be valid Kubernetes Quantities (e.g. "4Gi", "2048Mi", "4096M").
 // Returns an error if an annotation exists but cannot be parsed, or if the
@@ -131,15 +132,22 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 	return config, nil
 }
 
-// ParseVisibleDevices returns the GPU device assignment the scheduler recorded in
-// the pod's VisibleDevicesAnnotation, trimmed of surrounding whitespace. It
-// returns "" when the annotation is absent or blank, which the caller treats as
-// "no assignment to inject" (so a pod scheduled by a device plugin that already
-// sets NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
+// ParseVisibleDevices returns the GPU device assignment the scheduler recorded
+// for the named container, trimmed of surrounding whitespace. It returns "" when
+// the annotation is absent or blank, which the caller treats as "no assignment
+// to inject" (so a pod scheduled by a device plugin that already sets
+// NVIDIA_VISIBLE_DEVICES is left untouched). The value is passed through
 // verbatim otherwise — its format (UUID list, index list, or "all") is the
 // NVIDIA container runtime's contract, not this operator's.
-func ParseVisibleDevices(annotations map[string]string) string {
-	return strings.TrimSpace(annotations[VisibleDevicesAnnotation])
+func ParseVisibleDevices(annotations map[string]string, containerName, prefix string) string {
+	if annotations == nil {
+		return ""
+	}
+	key := ContainerDevicesAnnotationKey(prefix, containerName)
+	if val := strings.TrimSpace(annotations[key]); val != "" {
+		return val
+	}
+	return ""
 }
 
 // quantityToDecimalMB converts a Kubernetes Quantity string to decimal megabytes.
@@ -173,13 +181,42 @@ func parseToDecimalMB(value string) (string, error) {
 	return strconv.FormatInt(mb, 10), nil
 }
 
+// ParseContainerAnnotationKey extracts the container name and annotation path
+// from a key in the shared container-scoped format:
+//
+//	<prefix><containerName>.<path>
+//
+// Example: ParseContainerAnnotationKey("nvidia.com/container.trainer.gpu-memory.limit", "nvidia.com/container.")
+// returns "trainer", "gpu-memory.limit", true.
+func ParseContainerAnnotationKey(key, prefix string) (containerName, path string, ok bool) {
+	rest, ok := strings.CutPrefix(key, prefix)
+	if !ok {
+		return "", "", false
+	}
+	containerName, path, ok = strings.Cut(rest, ".")
+	if !ok || containerName == "" || path == "" {
+		return "", "", false
+	}
+	return containerName, path, true
+}
+
 // containerMemoryAnnotationKey builds the full annotation key for a container's
 // GPU memory setting.
-// Example: containerMemoryAnnotationKey("nvidia.com/gpu-memory.container.", "trainer", "limit")
+// Example: containerMemoryAnnotationKey("nvidia.com/container.", "trainer", "limit")
 //
-//	→ "nvidia.com/gpu-memory.container.trainer.limit"
+//	→ "nvidia.com/container.trainer.gpu-memory.limit"
 func containerMemoryAnnotationKey(prefix, containerName, suffix string) string {
-	return prefix + containerName + "." + suffix
+	return containerAnnotationKey(prefix, containerName, annotationPathGPUMemory+"."+suffix)
+}
+
+// ContainerDevicesAnnotationKey returns the annotation key for a container's GPU
+// device assignment.
+func ContainerDevicesAnnotationKey(prefix, containerName string) string {
+	return containerAnnotationKey(prefix, containerName, annotationSuffixDevices)
+}
+
+func containerAnnotationKey(prefix, containerName, path string) string {
+	return prefix + containerName + "." + path
 }
 
 // LimitAnnotationKey returns the annotation key sharingd looks up for a
@@ -187,4 +224,10 @@ func containerMemoryAnnotationKey(prefix, containerName, suffix string) string {
 // non-sharing container is missing).
 func LimitAnnotationKey(prefix, containerName string) string {
 	return containerMemoryAnnotationKey(prefix, containerName, annotationSuffixLimit)
+}
+
+// RequestAnnotationKey returns the annotation key sharingd looks up for a
+// container's GPU-memory request.
+func RequestAnnotationKey(prefix, containerName string) string {
+	return containerMemoryAnnotationKey(prefix, containerName, annotationSuffixRequest)
 }

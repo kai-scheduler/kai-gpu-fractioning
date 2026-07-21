@@ -28,8 +28,8 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "both request and limit",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.trainer.request": "2048Mi",
-				"nvidia.com/gpu-memory.container.trainer.limit":   "4Gi",
+				"nvidia.com/container.trainer.gpu-memory.request": "2048Mi",
+				"nvidia.com/container.trainer.gpu-memory.limit":   "4Gi",
 			},
 			containerName:   "trainer",
 			expectedNil:     false,
@@ -40,7 +40,7 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "only limit defaults request to the limit",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.main.limit": "4Gi",
+				"nvidia.com/container.main.gpu-memory.limit": "4Gi",
 			},
 			containerName:   "main",
 			expectedNil:     false,
@@ -51,7 +51,7 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "only request defaults limit to the request",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.worker.request": "1Gi",
+				"nvidia.com/container.worker.gpu-memory.request": "1Gi",
 			},
 			containerName:   "worker",
 			expectedNil:     false,
@@ -62,8 +62,8 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "injects assigned GPU devices alongside memory config",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.trainer.limit": "4Gi",
-				"nvidia.com/gpus.devices":                       "GPU-abc123,GPU-def456",
+				"nvidia.com/container.trainer.gpu-memory.limit": "4Gi",
+				"nvidia.com/container.trainer.gpus.devices":     "GPU-abc123,GPU-def456",
 			},
 			containerName:   "trainer",
 			expectedNil:     false,
@@ -74,7 +74,7 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "device assignment without memory annotation is not injected",
 			annotations: map[string]string{
-				"nvidia.com/gpus.devices": "GPU-abc123",
+				"nvidia.com/container.trainer.gpus.devices": "GPU-abc123",
 			},
 			containerName: "trainer",
 			expectedNil:   true,
@@ -94,7 +94,7 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "different container returns nil",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.other.limit": "4Gi",
+				"nvidia.com/container.other.gpu-memory.limit": "4Gi",
 			},
 			containerName: "main",
 			expectedNil:   true,
@@ -102,7 +102,7 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "malformed value returns error (fail-closed)",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.main.limit": "not-valid",
+				"nvidia.com/container.main.gpu-memory.limit": "not-valid",
 			},
 			containerName: "main",
 			expectedErr:   true,
@@ -110,7 +110,7 @@ func TestCreateContainer(t *testing.T) {
 		{
 			name: "below 1MB returns error (fail-closed)",
 			annotations: map[string]string{
-				"nvidia.com/gpu-memory.container.main.limit": "500Ki",
+				"nvidia.com/container.main.gpu-memory.limit": "500Ki",
 			},
 			containerName: "main",
 			expectedErr:   true,
@@ -188,8 +188,8 @@ func TestCreateContainerOverwritesExistingVisibleDevices(t *testing.T) {
 	pod := &api.PodSandbox{
 		Name: "test-pod",
 		Annotations: map[string]string{
-			"nvidia.com/gpu-memory.container.trainer.limit": "4Gi",
-			"nvidia.com/gpus.devices":                       "GPU-assigned",
+			"nvidia.com/container.trainer.gpu-memory.limit": "4Gi",
+			"nvidia.com/container.trainer.gpus.devices":     "GPU-assigned",
 		},
 	}
 	// The container already carries NVIDIA_VISIBLE_DEVICES (e.g. "void" injected
@@ -251,7 +251,7 @@ func TestCreateContainer_FailOpenLogsWarning(t *testing.T) {
 	pod := &api.PodSandbox{
 		Name: "test-pod",
 		Annotations: map[string]string{
-			"nvidia.com/gpu-memory.container.main.limit": "garbage-value",
+			"nvidia.com/container.main.gpu-memory.limit": "garbage-value",
 		},
 	}
 	ctr := &api.Container{Name: "main"}
@@ -326,10 +326,10 @@ func enforcingPlugin(t *testing.T, stopper *fakeStopper) *Plugin {
 func syncSnapshot() ([]*api.PodSandbox, []*api.Container) {
 	pods := []*api.PodSandbox{
 		{Id: "p1", Name: "pod1", Namespace: "default", Annotations: map[string]string{
-			configuration.DefaultAnnotationPrefix + "trainer.limit": "4Gi",
+			configuration.DefaultAnnotationPrefix + "trainer.gpu-memory.limit": "4Gi",
 		}},
 		{Id: "p2", Name: "pod2", Namespace: "default", Annotations: map[string]string{
-			configuration.DefaultAnnotationPrefix + "trainer.limit": "4Gi",
+			configuration.DefaultAnnotationPrefix + "trainer.gpu-memory.limit": "4Gi",
 		}},
 	}
 	containers := []*api.Container{
@@ -375,8 +375,8 @@ func TestSynchronizeEnforcesMissingVisibleDevices(t *testing.T) {
 	// see the correct GPU, so retroactive enforcement must stop it.
 	pods := []*api.PodSandbox{
 		{Id: "p1", Name: "pod1", Namespace: "default", Annotations: map[string]string{
-			configuration.DefaultAnnotationPrefix + "trainer.limit": "4Gi",
-			"nvidia.com/gpus.devices":                               "GPU-abc123",
+			configuration.DefaultAnnotationPrefix + "trainer.gpu-memory.limit": "4Gi",
+			configuration.DefaultAnnotationPrefix + "trainer.gpus.devices":     "GPU-abc123",
 		}},
 	}
 	containers := []*api.Container{

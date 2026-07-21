@@ -317,8 +317,8 @@ func resetNVMLMockOnCleanup(t *testing.T, c *cluster.Client) {
 type multiContainerPodSpec struct {
 	Namespace    string
 	Name         string
-	Containers   []string          // container names; each gets its own GPU annotation + unique marker
-	MemoryMiB    string            // GPU memory per container (same for all)
+	Containers   []string // container names; each gets its own GPU annotation + unique marker
+	MemoryMiB    string   // GPU memory per container (same for all)
 	NodeSelector map[string]string
 }
 
@@ -344,8 +344,8 @@ func applyMultiContainerFractionalPod(ctx context.Context, c *cluster.Client, sp
 	// One annotation pair per container so sharingd tracks every container.
 	annotations := make(map[string]string, len(spec.Containers)*2)
 	for _, name := range spec.Containers {
-		annotations[fmt.Sprintf("nvidia.com/gpu-memory.container.%s.limit", name)] = spec.MemoryMiB + "Mi"
-		annotations[fmt.Sprintf("nvidia.com/gpu-memory.container.%s.request", name)] = spec.MemoryMiB + "Mi"
+		annotations[fmt.Sprintf("nvidia.com/container.%s.gpu-memory.limit", name)] = spec.MemoryMiB + "Mi"
+		annotations[fmt.Sprintf("nvidia.com/container.%s.gpu-memory.request", name)] = spec.MemoryMiB + "Mi"
 	}
 
 	containers := make([]corev1.Container, 0, len(spec.Containers))

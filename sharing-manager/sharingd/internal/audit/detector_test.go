@@ -250,10 +250,10 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 func sharingPod(id, name, containerName, limit, request string) *api.PodSandbox {
 	ann := map[string]string{}
 	if limit != "" {
-		ann[configuration.DefaultAnnotationPrefix+containerName+".limit"] = limit
+		ann[configuration.DefaultAnnotationPrefix+containerName+".gpu-memory.limit"] = limit
 	}
 	if request != "" {
-		ann[configuration.DefaultAnnotationPrefix+containerName+".request"] = request
+		ann[configuration.DefaultAnnotationPrefix+containerName+".gpu-memory.request"] = request
 	}
 	return &api.PodSandbox{Id: id, Name: name, Namespace: "default", Uid: id + "-uid", Annotations: ann}
 }
@@ -264,7 +264,7 @@ func withVisibleDevices(pod *api.PodSandbox, value string) *api.PodSandbox {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[annotations.VisibleDevicesAnnotation] = value
+	pod.Annotations[annotations.ContainerDevicesAnnotationKey(configuration.DefaultAnnotationPrefix, "trainer")] = value
 	return pod
 }
 

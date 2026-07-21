@@ -2156,7 +2156,7 @@ spec:
                   annotationPrefix:
                     description: |-
                       annotationPrefix is the prefix for GPU memory annotations on pods.
-                      Default: "nvidia.com/gpu-memory.container."
+                      Default: "nvidia.com/container."
                     type: string
                   criSocketPath:
                     description: |-

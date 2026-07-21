@@ -20,9 +20,10 @@ package configuration
 
 const (
 	// DefaultAnnotationPrefix is the annotation prefix for per-container GPU
-	// memory configuration. Format: <prefix><containerName>.<request|limit>
-	// Configurable via the CRD.
-	DefaultAnnotationPrefix = "nvidia.com/gpu-memory.container."
+	// sharing configuration. Format:
+	// <prefix><containerName>.gpu-memory.<request|limit> and
+	// <prefix><containerName>.gpus.devices. Configurable via the CRD.
+	DefaultAnnotationPrefix = "nvidia.com/container."
 
 	// DefaultMPSPipeDirectory is the host path where the MPS daemon creates its
 	// named pipe. Both mpsd (creates it) and sharingd (mounts it into containers)

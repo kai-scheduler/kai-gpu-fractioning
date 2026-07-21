@@ -269,7 +269,7 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	// nvidia.com/gpu). Our assignment must win: remove any existing value first so
 	// NRI applies the override instead of rejecting it as a conflict, and the
 	// container ends up with a single, correct value rather than a duplicate.
-	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations)
+	visibleDevices := annotations.ParseVisibleDevices(pod.Annotations, ctr.Name, p.AnnotationPrefix)
 	if visibleDevices != "" {
 		if containerHasEnv(ctr, injection.EnvVisibleDevices) {
 			adj.RemoveEnv(injection.EnvVisibleDevices)

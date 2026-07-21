@@ -75,7 +75,7 @@ type SharingAgentSpec struct {
 	Image *ImageSpec `json:"image,omitempty"`
 
 	// annotationPrefix is the prefix for GPU memory annotations on pods.
-	// Default: "nvidia.com/gpu-memory.container."
+	// Default: "nvidia.com/container."
 	// +optional
 	AnnotationPrefix string `json:"annotationPrefix,omitempty"`
 
