@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
+
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/annotations"
 )
 
 // newAdapter returns an adapter configured with the default GPU-memory prefix,
@@ -15,19 +17,19 @@ func newAdapter() adapter {
 // gpuMemPod builds a pod sandbox granting the named container GPU memory. Pass
 // empty strings to omit either annotation. Values are Kubernetes quantities.
 func gpuMemPod(containerName, limit, request string) *api.PodSandbox {
-	annotations := map[string]string{}
+	ann := map[string]string{}
 	if limit != "" {
-		annotations[testMemPrefix+containerName+".gpu-memory.limit"] = limit
+		ann[annotations.LimitAnnotationKey(testMemPrefix, containerName)] = limit
 	}
 	if request != "" {
-		annotations[testMemPrefix+containerName+".gpu-memory.request"] = request
+		ann[annotations.RequestAnnotationKey(testMemPrefix, containerName)] = request
 	}
 	return &api.PodSandbox{
 		Id:          "pod-id",
 		Name:        "pod",
 		Namespace:   "default",
 		Uid:         "pod-uid",
-		Annotations: annotations,
+		Annotations: ann,
 	}
 }
 
@@ -162,7 +164,7 @@ func TestContainersDropsNonGPUAndSiblingContainers(t *testing.T) {
 	infos := newAdapter().containers(
 		[]*api.PodSandbox{
 			{Id: "frac-pod-id", Name: "frac-pod", Namespace: "default", Uid: "frac-uid",
-				Annotations: map[string]string{testMemPrefix + "trainer.gpu-memory.limit": "4Gi"}},
+				Annotations: map[string]string{annotations.LimitAnnotationKey(testMemPrefix, "trainer"): "4Gi"}},
 			{Id: "full-pod-id", Name: "full-pod", Namespace: "default", Uid: "full-uid"},
 		},
 		[]*api.Container{

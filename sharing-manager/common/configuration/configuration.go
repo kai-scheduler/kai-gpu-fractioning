@@ -20,7 +20,7 @@ package configuration
 
 const (
 	// DefaultAnnotationPrefix is the leading prefix for the scheduler's
-	// per-container GPU-sharing annotations. Full keys (KAI/Run:ai format):
+	// per-container GPU-sharing annotations. Full keys:
 	//	<prefix><containerName>.gpu-memory.request
 	//	<prefix><containerName>.gpu-memory.limit
 	//	<prefix><containerName>.gpus.devices

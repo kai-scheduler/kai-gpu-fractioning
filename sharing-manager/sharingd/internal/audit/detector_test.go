@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/configuration"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/annotations"
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/injection"
 )
 
@@ -249,10 +250,10 @@ func TestDetectorViolationsAcrossMultipleContainers(t *testing.T) {
 func sharingPod(id, name, containerName, limit, request string) *api.PodSandbox {
 	ann := map[string]string{}
 	if limit != "" {
-		ann[configuration.DefaultAnnotationPrefix+containerName+".gpu-memory.limit"] = limit
+		ann[annotations.LimitAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = limit
 	}
 	if request != "" {
-		ann[configuration.DefaultAnnotationPrefix+containerName+".gpu-memory.request"] = request
+		ann[annotations.RequestAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = request
 	}
 	return &api.PodSandbox{Id: id, Name: name, Namespace: "default", Uid: id + "-uid", Annotations: ann}
 }
@@ -264,7 +265,7 @@ func withVisibleDevices(pod *api.PodSandbox, containerName, value string) *api.P
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[configuration.DefaultAnnotationPrefix+containerName+".gpus.devices"] = value
+	pod.Annotations[annotations.DevicesAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = value
 	return pod
 }
 

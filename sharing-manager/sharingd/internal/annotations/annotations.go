@@ -12,7 +12,7 @@ const (
 	// Per-container GPU-sharing annotation keys have the shape
 	// <prefix><containerName>.<...>, where <prefix> is the configurable leading
 	// prefix (configuration.DefaultAnnotationPrefix = "nvidia.com/container."). The
-	// scheduler (KAI/Run:ai) emits, for a container named "trainer":
+	// scheduler emits, for a container named "trainer":
 	//
 	//	nvidia.com/container.trainer.gpu-memory.request
 	//	nvidia.com/container.trainer.gpu-memory.limit
@@ -206,6 +206,12 @@ func containerDevicesAnnotationKey(prefix, containerName string) string {
 // container's GPU-memory request (e.g. for diagnostic logging).
 func RequestAnnotationKey(prefix, containerName string) string {
 	return containerMemoryAnnotationKey(prefix, containerName, annotationSuffixRequest)
+}
+
+// DevicesAnnotationKey returns the annotation key sharingd looks up for a
+// container's GPU device assignment.
+func DevicesAnnotationKey(prefix, containerName string) string {
+	return containerDevicesAnnotationKey(prefix, containerName)
 }
 
 // LimitAnnotationKey returns the annotation key sharingd looks up for a

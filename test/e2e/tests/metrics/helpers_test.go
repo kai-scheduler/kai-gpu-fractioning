@@ -24,7 +24,7 @@ import (
 )
 
 // attributionTestNamespace hosts every workload pod these tests create —
-// kept separate from any Run:ai project namespace so the tests don't depend
+// kept separate from any scheduler project namespace so the tests don't depend
 // on scaffolding this e2e cluster may not have.
 const attributionTestNamespace = "metricsd-e2e"
 
