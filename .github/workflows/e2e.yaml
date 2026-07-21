@@ -49,6 +49,11 @@ jobs:
         with:
           filters: |
             e2e:
+              # operator/** and operator/charts/** are deliberately NOT listed:
+              # an operator- or chart-only PR should pass this required check via
+              # the exit-0 path below without spinning up the full e2e cluster.
+              # The suite exercises the daemon runtime, so only the daemon
+              # modules, the e2e harness, and its build/setup inputs are relevant.
               - 'sharing-manager/metricsd/**'
               - 'sharing-manager/mpsd/**'
               - 'sharing-manager/sharingd/**'
