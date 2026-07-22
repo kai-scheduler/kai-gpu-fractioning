@@ -147,6 +147,16 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			}).Should(BeTrue())
 		})
 
+		It("should reject changing nodeSelector on a live resource (immutable)", func() {
+			resource := &gpusharingv1alpha1.GpuSharingConfig{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+
+			resource.Spec.NodeSelector = map[string]string{"nvidia.com/gpu.present": "false"}
+			err := k8sClient.Update(ctx, resource)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nodeSelector is immutable"))
+		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := NewGpuSharingConfigReconciler(
