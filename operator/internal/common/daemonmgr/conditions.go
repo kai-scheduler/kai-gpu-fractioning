@@ -42,16 +42,14 @@ func FindNodeCondition(node *corev1.Node) (corev1.NodeCondition, bool) {
 // so caching every Node cluster-wide (a cluster-scoped informer) would be pure
 // overhead. writer performs the status patch, which always goes to the API
 // server regardless of caching.
-func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, ready bool, reason, message string) error {
+func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client.Client, nodeName string, condition corev1.NodeCondition) error {
 	log := logf.FromContext(ctx).WithValues("node", nodeName)
-
-	condStatus := corev1.ConditionFalse
-	if ready {
-		condStatus = corev1.ConditionTrue
-	}
 
 	now := metav1.NewTime(time.Now())
 	transitionTime := now
+	if string(condition.Type) != NodeConditionType {
+		return fmt.Errorf("unexpected node condition type %q, expected %q", condition.Type, NodeConditionType)
+	}
 
 	// Read the current node to preserve LastTransitionTime when the condition
 	// status has not changed
@@ -62,8 +60,8 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 			log.Error(err, "failed to read node for condition check; LastTransitionTime will reset")
 		}
 	} else {
-		if existing, found := FindNodeCondition(node); found && existing.Status == condStatus {
-			if existing.Reason == reason && existing.Message == message {
+		if existing, found := FindNodeCondition(node); found && existing.Status == condition.Status {
+			if existing.Reason == condition.Reason && existing.Message == condition.Message {
 				return nil // nothing to update
 			}
 			// same status, therefore LastTransitionTime should be preserved.
@@ -71,14 +69,8 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 		}
 	}
 
-	condition := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(NodeConditionType),
-		Status:             condStatus,
-		Reason:             reason,
-		Message:            message,
-		LastHeartbeatTime:  now,
-		LastTransitionTime: transitionTime,
-	}
+	condition.LastHeartbeatTime = now
+	condition.LastTransitionTime = transitionTime
 
 	patch := map[string]any{
 		"status": map[string]any{
@@ -100,7 +92,7 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 		return fmt.Errorf("patching node %s condition: %w", nodeName, err)
 	}
 
-	log.V(1).Info("patched node condition", "condition", NodeConditionType, "status", condStatus, "reason", reason)
+	log.V(1).Info("patched node condition", "condition", NodeConditionType, "status", condition.Status, "reason", condition.Reason)
 	return nil
 }
 

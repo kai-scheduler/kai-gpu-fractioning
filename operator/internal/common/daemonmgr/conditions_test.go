@@ -2,6 +2,7 @@ package daemonmgr
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -87,5 +88,23 @@ func TestRemoveNodeCondition_MissingNode(t *testing.T) {
 
 	if err := RemoveNodeCondition(context.Background(), c, "no-such-node"); err != nil {
 		t.Fatalf("RemoveNodeCondition() on missing node error = %v, expected nil", err)
+	}
+}
+
+func TestPatchNodeCondition_RejectsUnexpectedConditionType(t *testing.T) {
+	node := nodeWithConditions("node-a")
+	c := fake.NewClientBuilder().WithObjects(node).Build()
+
+	err := PatchNodeCondition(context.Background(), c, c, node.Name, corev1.NodeCondition{
+		Type:    corev1.NodeReady,
+		Status:  corev1.ConditionFalse,
+		Reason:  "BadType",
+		Message: "bad type",
+	})
+	if err == nil {
+		t.Fatal("PatchNodeCondition() error = nil, expected error")
+	}
+	if !strings.Contains(err.Error(), "unexpected node condition type") {
+		t.Fatalf("PatchNodeCondition() error = %q, expected unexpected type message", err)
 	}
 }

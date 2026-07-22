@@ -1,0 +1,345 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"golang.org/x/mod/semver"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
+)
+
+const (
+	clusterPolicyVersionLabel   = "app.kubernetes.io/version"
+	minimumGPUOperatorVersion   = "v26.7.0"
+	clusterPolicyReadyState     = "ready"
+	clusterPolicyReadyCondition = "Ready"
+	clusterPolicyErrorCondition = "Error"
+	clusterServiceVersionPrefix = "gpu-operator"
+
+	gpuDriverMajorLabel = "nvidia.com/cuda.driver-version.major"
+	minGPUDriverMajor   = 615
+)
+
+var clusterPolicyGVK = schema.GroupVersionKind{
+	Group:   "nvidia.com",
+	Version: "v1",
+	Kind:    "ClusterPolicy",
+}
+
+var clusterServiceVersionGVK = schema.GroupVersionKind{
+	Group:   "operators.coreos.com",
+	Version: "v1alpha1",
+	Kind:    "ClusterServiceVersion",
+}
+
+// GpuOperatorDependencyChecker checks the NVIDIA GPU Operator ClusterPolicy.
+type GpuOperatorDependencyChecker struct {
+	reader client.Reader
+}
+
+func NewGpuOperatorDependencyChecker(reader client.Reader) GpuOperatorDependencyChecker {
+	return GpuOperatorDependencyChecker{reader: reader}
+}
+
+func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha1.GpuSharingConfig, ready metav1.Condition) (metav1.Condition, error) {
+	if ready.Status != metav1.ConditionFalse {
+		return ready, nil
+	}
+
+	clusterPolicy, err := c.clusterPolicy(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ready, err
+		}
+		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady,
+			fmt.Sprintf("unable to read NVIDIA GPU Operator ClusterPolicy: %v", err)), nil
+	}
+	if clusterPolicy == nil {
+		version, err := c.clusterServiceVersionGPUOperatorVersion(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ready, err
+			}
+			return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady,
+				fmt.Sprintf("unable to discover NVIDIA GPU Operator version from ClusterPolicy or ClusterServiceVersion: %v", err)), nil
+		}
+		// OpenShift installations may not expose the NVIDIA ClusterPolicy CR.
+		// In that case the OLM ClusterServiceVersion can tell us the installed
+		// GPU Operator version, but not operand/readiness state. If the CSV
+		// version is supported, treat the GPU Operator dependency as not the
+		// cause of the current GpuSharingConfig failure and leave the original
+		// Ready condition unchanged.
+		if msg := gpuOperatorVersionFailureMessage(version, "ClusterServiceVersion"); msg != "" {
+			return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorVersionUnsupported, msg), nil
+		}
+		return ready, nil
+	}
+
+	if msg := clusterPolicyReadinessFailureMessage(clusterPolicy); msg != "" {
+		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady, msg), nil
+	}
+
+	version := gpuOperatorVersionFromClusterPolicy(clusterPolicy)
+	if msg := gpuOperatorVersionFailureMessage(version, fmt.Sprintf("ClusterPolicy label %q", clusterPolicyVersionLabel)); msg != "" {
+		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorVersionUnsupported, msg), nil
+	}
+
+	return ready, nil
+}
+
+// GpuDriverDependencyChecker checks the CUDA driver label on a node. It is
+// used only to refine already-unhealthy node conditions with a clearer reason.
+type GpuDriverDependencyChecker struct {
+	reader client.Reader
+}
+
+func NewGpuDriverDependencyChecker(reader client.Reader) GpuDriverDependencyChecker {
+	return GpuDriverDependencyChecker{reader: reader}
+}
+
+func (c GpuDriverDependencyChecker) Check(ctx context.Context, nodeName string, condition corev1.NodeCondition) (corev1.NodeCondition, error) {
+	if condition.Status != corev1.ConditionFalse {
+		return condition, nil
+	}
+
+	node := &corev1.Node{}
+	if err := c.reader.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
+		if ctx.Err() != nil {
+			return condition, err
+		}
+		return condition, nil
+	}
+
+	if driverReason, driverMessage, found := gpuDriverFailureReason(node); found {
+		condition.Reason = driverReason
+		condition.Message = driverMessage
+	}
+	return condition, nil
+}
+
+func (c GpuOperatorDependencyChecker) clusterPolicy(ctx context.Context) (*unstructured.Unstructured, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(clusterPolicyGVK.GroupVersion().WithKind(clusterPolicyGVK.Kind + "List"))
+
+	if err := c.reader.List(ctx, list); err != nil {
+		if meta.IsNoMatchError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if len(list.Items) == 0 {
+		return nil, nil
+	}
+	return &list.Items[0], nil
+}
+
+func (c GpuOperatorDependencyChecker) clusterServiceVersionGPUOperatorVersion(ctx context.Context) (string, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(clusterServiceVersionGVK.GroupVersion().WithKind(clusterServiceVersionGVK.Kind + "List"))
+
+	if err := c.reader.List(ctx, list); err != nil {
+		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+			return "", fmt.Errorf("ClusterServiceVersion API was not found")
+		}
+		return "", fmt.Errorf("failed to list ClusterServiceVersions: %w", err)
+	}
+
+	for _, csv := range list.Items {
+		if strings.HasPrefix(csv.GetName(), clusterServiceVersionPrefix) {
+			version, _, _ := unstructured.NestedString(csv.Object, "spec", "version")
+			return strings.TrimSpace(version), nil
+		}
+	}
+
+	return "", fmt.Errorf("no gpu-operator ClusterServiceVersion found")
+}
+
+func clusterPolicyReadinessFailureMessage(clusterPolicy *unstructured.Unstructured) string {
+	if cond, found := clusterPolicyCondition(clusterPolicy, clusterPolicyErrorCondition); found && conditionStatusIsTrue(cond.Status) {
+		if cond.Message != "" {
+			return cond.Message
+		}
+		return "NVIDIA GPU Operator ClusterPolicy reports Error=True"
+	}
+
+	if cond, found := clusterPolicyCondition(clusterPolicy, clusterPolicyReadyCondition); found && !conditionStatusIsTrue(cond.Status) {
+		if cond.Message != "" {
+			return cond.Message
+		}
+		return fmt.Sprintf("NVIDIA GPU Operator ClusterPolicy Ready condition is %s", conditionStatusText(cond.Status))
+	}
+
+	state, found, _ := unstructured.NestedString(clusterPolicy.Object, "status", "state")
+	if found && !strings.EqualFold(strings.TrimSpace(state), clusterPolicyReadyState) {
+		return fmt.Sprintf("NVIDIA GPU Operator ClusterPolicy state is %q, expected %q", state, clusterPolicyReadyState)
+	}
+
+	if !found {
+		if _, hasReady := clusterPolicyCondition(clusterPolicy, clusterPolicyReadyCondition); !hasReady {
+			return "NVIDIA GPU Operator ClusterPolicy status does not report readiness"
+		}
+	}
+
+	return ""
+}
+
+func gpuOperatorVersionFromClusterPolicy(clusterPolicy *unstructured.Unstructured) string {
+	return strings.TrimSpace(clusterPolicy.GetLabels()[clusterPolicyVersionLabel])
+}
+
+func gpuOperatorVersionFailureMessage(rawVersion, source string) string {
+	rawVersion = strings.TrimSpace(rawVersion)
+	if rawVersion == "" {
+		return fmt.Sprintf("NVIDIA GPU Operator version from %s is missing; minimum supported version is %s",
+			source, minimumGPUOperatorVersion)
+	}
+
+	version, ok := normalizeGPUOperatorVersion(rawVersion)
+	if !ok {
+		return fmt.Sprintf("NVIDIA GPU Operator version %q from %s is invalid; minimum supported version is %s",
+			rawVersion, source, minimumGPUOperatorVersion)
+	}
+
+	if semver.Compare(version, minimumGPUOperatorVersion) < 0 {
+		return fmt.Sprintf("NVIDIA GPU Operator version %s is below minimum supported version %s",
+			rawVersion, minimumGPUOperatorVersion)
+	}
+
+	return ""
+}
+
+func gpuDriverFailureReason(node *corev1.Node) (reason, message string, found bool) {
+	rawMajor := strings.TrimSpace(node.Labels[gpuDriverMajorLabel])
+	if rawMajor == "" {
+		return daemonmgr.ReasonGPUDriverVersionMissing,
+			fmt.Sprintf("CUDA driver major version label %q is missing; minimum supported major version is %d", gpuDriverMajorLabel, minGPUDriverMajor),
+			true
+	}
+
+	major, err := strconv.Atoi(rawMajor)
+	if err != nil {
+		return daemonmgr.ReasonGPUDriverVersionInvalid,
+			fmt.Sprintf("CUDA driver major version %q from label %q is invalid; minimum supported major version is %d", rawMajor, gpuDriverMajorLabel, minGPUDriverMajor),
+			true
+	}
+
+	if major < minGPUDriverMajor {
+		return daemonmgr.ReasonGPUDriverVersionUnsupported,
+			fmt.Sprintf("CUDA driver major version %d is below minimum supported major version %d", major, minGPUDriverMajor),
+			true
+	}
+
+	return "", "", false
+}
+
+func normalizeGPUOperatorVersion(version string) (string, bool) {
+	normalized := strings.TrimSpace(version)
+	if normalized == "" {
+		return "", false
+	}
+	if !strings.HasPrefix(normalized, "v") {
+		normalized = "v" + normalized
+	}
+
+	if semver.IsValid(normalized) {
+		return semver.Canonical(normalized), true
+	}
+
+	main, suffix := splitSemverSuffix(normalized)
+	if strings.Count(main, ".") == 1 {
+		withPatch := main + ".0" + suffix
+		if semver.IsValid(withPatch) {
+			return semver.Canonical(withPatch), true
+		}
+	}
+
+	return "", false
+}
+
+func splitSemverSuffix(version string) (main, suffix string) {
+	idx := strings.IndexAny(version, "-+")
+	if idx == -1 {
+		return version, ""
+	}
+	return version[:idx], version[idx:]
+}
+
+type clusterPolicyStatusCondition struct {
+	Status  string
+	Message string
+}
+
+func clusterPolicyCondition(clusterPolicy *unstructured.Unstructured, condType string) (clusterPolicyStatusCondition, bool) {
+	conditions, found, err := unstructured.NestedSlice(clusterPolicy.Object, "status", "conditions")
+	if err != nil || !found {
+		return clusterPolicyStatusCondition{}, false
+	}
+
+	for _, condition := range conditions {
+		conditionMap, ok := condition.(map[string]any)
+		if !ok {
+			continue
+		}
+		currentType, _, _ := unstructured.NestedString(conditionMap, "type")
+		if currentType != condType {
+			continue
+		}
+		status, _, _ := unstructured.NestedString(conditionMap, "status")
+		message, _, _ := unstructured.NestedString(conditionMap, "message")
+		return clusterPolicyStatusCondition{Status: status, Message: message}, true
+	}
+
+	return clusterPolicyStatusCondition{}, false
+}
+
+func conditionStatusIsTrue(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), string(metav1.ConditionTrue))
+}
+
+func conditionStatusText(status string) string {
+	if strings.TrimSpace(status) == "" {
+		return "Unknown"
+	}
+	return status
+}
+
+func gpuOperatorReadyCondition(generation int64, reason, message string) metav1.Condition {
+	return metav1.Condition{
+		Type:               daemonmgr.ConditionReady,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: generation,
+		LastTransitionTime: metav1.NewTime(time.Now()),
+		Reason:             reason,
+		Message:            message,
+	}
+}

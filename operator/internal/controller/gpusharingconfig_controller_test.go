@@ -18,12 +18,14 @@ package controller
 
 import (
 	"context"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +37,64 @@ import (
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 )
 
+func TestPodFailureReason(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      corev1.Pod
+		expected string
+	}{
+		{
+			name: "regular container waiting reason",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{waitingStatus("CrashLoopBackOff")},
+			}},
+			expected: "CrashLoopBackOff",
+		},
+		{
+			name: "stuck init container takes precedence",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				InitContainerStatuses: []corev1.ContainerStatus{waitingStatus("ImagePullBackOff")},
+				ContainerStatuses:     []corev1.ContainerStatus{waitingStatus("PodInitializing")},
+			}},
+			expected: "ImagePullBackOff",
+		},
+		{
+			name: "empty waiting reason falls through to phase",
+			pod: corev1.Pod{Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{waitingStatus("")},
+				Phase:             corev1.PodPending,
+			}},
+			expected: "Pending",
+		},
+		{
+			name:     "failed phase",
+			pod:      corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed}},
+			expected: "Failed",
+		},
+		{
+			name:     "running but not ready",
+			pod:      corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning}},
+			expected: "NotReady",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := podFailureReason(&tt.pod); got != tt.expected {
+				t.Errorf("podFailureReason() = %q, expected %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func waitingStatus(reason string) corev1.ContainerStatus {
+	return corev1.ContainerStatus{
+		State: corev1.ContainerState{
+			Waiting: &corev1.ContainerStateWaiting{Reason: reason},
+		},
+	}
+}
+
 var _ = Describe("GpuSharingConfig Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "default"
@@ -43,6 +103,11 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name: resourceName,
+		}
+
+		defaultImages := map[string]gpusharingv1alpha1.ImageSpec{
+			"sharingd": {Repository: "example.com/sharingd", Tag: "test"},
+			"mpsd":     {Repository: "example.com/mpsd", Tag: "test"},
 		}
 
 		BeforeEach(func() {
@@ -70,7 +135,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			// deletion only completes after another reconcile releases it.
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -86,7 +151,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -95,10 +160,51 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should update observedGeneration on reconcile", func() {
+		It("should not check dependencies or requeue after a healthy reconcile", func() {
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", defaultImages, true,
+			)
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var updated gpusharingv1alpha1.GpuSharingConfig
+			Expect(k8sClient.Get(ctx, typeNamespacedName, &updated)).To(Succeed())
+			ready := meta.FindStatusCondition(updated.Status.Conditions, daemonmgr.ConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+			Expect(ready.Reason).To(Equal(daemonmgr.ReasonAllComponentsReady))
+		})
+
+		It("should check GPU Operator dependencies and retry sooner when readiness is false", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
 				"default", nil, true,
+			)
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+			var updated gpusharingv1alpha1.GpuSharingConfig
+			Expect(k8sClient.Get(ctx, typeNamespacedName, &updated)).To(Succeed())
+			ready := meta.FindStatusCondition(updated.Status.Conditions, daemonmgr.ConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(daemonmgr.ReasonGPUOperatorNotReady))
+			Expect(ready.Message).To(ContainSubstring("ClusterPolicy or ClusterServiceVersion"))
+		})
+
+		It("should update observedGeneration on reconcile", func() {
+			controllerReconciler := NewGpuSharingConfigReconciler(
+				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", defaultImages, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -114,7 +220,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 		It("should handle not-found resources gracefully", func() {
 			controllerReconciler := NewGpuSharingConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, true,
+				"default", defaultImages, true,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

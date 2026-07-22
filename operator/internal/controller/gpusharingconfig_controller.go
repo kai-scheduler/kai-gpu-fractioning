@@ -78,6 +78,14 @@ type GpuSharingConfigReconciler struct {
 	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
+
+	// GpuOperatorChecker refines an already-false aggregate Ready condition
+	// with NVIDIA GPU Operator dependency failures.
+	GpuOperatorChecker GpuOperatorDependencyChecker
+
+	// GpuDriverChecker refines already-false node Ready conditions with CUDA
+	// driver dependency failures.
+	GpuDriverChecker GpuDriverDependencyChecker
 }
 
 // NewGpuSharingConfigReconciler creates a reconciler with safe defaults.
@@ -98,6 +106,8 @@ func NewGpuSharingConfigReconciler(
 		Namespace:           namespace,
 		DefaultImages:       defaultImages,
 		DefaultMpsdAuditLog: defaultMpsdAuditLog,
+		GpuOperatorChecker:  NewGpuOperatorDependencyChecker(apiReader),
+		GpuDriverChecker:    NewGpuDriverDependencyChecker(apiReader),
 	}
 }
 
@@ -165,6 +175,15 @@ func (r *GpuSharingConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Aggregate Ready condition.
 	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
+	if readyCond.Status == metav1.ConditionFalse {
+		var err error
+		readyCond, err = r.GpuOperatorChecker.Check(ctx, &config, readyCond)
+		if err != nil {
+			r.Recorder.Eventf(&config, corev1.EventTypeWarning, "DependencyCheckError", "%v", err)
+			log.Error(err, "failed to check GPU stack dependencies")
+			needsRequeue = true
+		}
+	}
 	daemonmgr.SetCondition(&config.Status, readyCond)
 
 	// Reflect GPU driver-upgrade state on the CR. The nodeAffinity on the managed
@@ -349,8 +368,9 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 			seenNodes[pod.Spec.NodeName] = struct{}{}
 
 			// Determine per-node health: if any daemon pod on this node is
-			// not ready, the node is marked unhealthy with the specific
-			// failure reason (e.g. CrashLoopBackOff, ImagePullBackOff).
+			// not ready, the node is marked unhealthy. The GPU driver checker may
+			// refine the message with a GPU driver version issue if the node's
+			// labels explain why the daemon cannot start.
 			// Once a node is marked unhealthy, later healthy pods on the
 			// same node are skipped to avoid overwriting the False condition.
 			ready := isPodReady(pod)
@@ -360,8 +380,13 @@ func (r *GpuSharingConfigReconciler) patchNodeConditions(ctx context.Context, na
 				continue
 			}
 
-			reason, msg := nodeConditionArgs(ready, pod)
-			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, ready, reason, msg); err != nil {
+			condition := nodeConditionForPod(ready, pod)
+			condition, err := r.GpuDriverChecker.Check(ctx, pod.Spec.NodeName, condition)
+			if err != nil {
+				log.Error(err, "failed to check GPU driver dependency", "node", pod.Spec.NodeName)
+				errs = append(errs, err)
+			}
+			if err := daemonmgr.PatchNodeCondition(ctx, r.APIReader, r.Client, pod.Spec.NodeName, condition); err != nil {
 				log.Error(err, "failed to patch node condition", "node", pod.Spec.NodeName)
 				errs = append(errs, err)
 			}
@@ -395,14 +420,23 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func nodeConditionArgs(ready bool, pod *corev1.Pod) (reason, message string) {
+func nodeConditionForPod(ready bool, pod *corev1.Pod) corev1.NodeCondition {
 	if ready {
-		return "AllDaemonsReady", "all gpu-sharing daemons are running"
+		return corev1.NodeCondition{
+			Type:    corev1.NodeConditionType(daemonmgr.NodeConditionType),
+			Status:  corev1.ConditionTrue,
+			Reason:  daemonmgr.ReasonAllDaemonsReady,
+			Message: daemonmgr.MessageAllDaemonsReady,
+		}
 	}
-	reason = podFailureReason(pod)
+	reason := podFailureReason(pod)
 	daemonName := pod.Labels[daemonmgr.LabelComponent]
-	message = fmt.Sprintf("%s pod is not ready: %s", daemonName, reason)
-	return reason, message
+	return corev1.NodeCondition{
+		Type:    corev1.NodeConditionType(daemonmgr.NodeConditionType),
+		Status:  corev1.ConditionFalse,
+		Reason:  reason,
+		Message: fmt.Sprintf("%s pod is not ready: %s", daemonName, reason),
+	}
 }
 
 func podFailureReason(pod *corev1.Pod) string {

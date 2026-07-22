@@ -18,21 +18,28 @@ const (
 	ConditionReady = "Ready"
 
 	// Condition reasons.
-	ReasonReconcileError     = "ReconcileError"
-	ReasonNoTargetNodes      = "NoTargetNodes"
-	ReasonAllPodsReady       = "AllPodsReady"
-	ReasonPartiallyAvailable = "PartiallyAvailable"
-	ReasonRolloutInProgress  = "RolloutInProgress"
-	ReasonComponentNotReady  = "ComponentNotReady"
-	ReasonComponentUnknown   = "ComponentUnknown"
-	ReasonAllComponentsReady = "AllComponentsReady"
-	ReasonNoComponents       = "NoComponents"
+	ReasonReconcileError                = "ReconcileError"
+	ReasonNoTargetNodes                 = "NoTargetNodes"
+	ReasonAllPodsReady                  = "AllPodsReady"
+	ReasonPartiallyAvailable            = "PartiallyAvailable"
+	ReasonRolloutInProgress             = "RolloutInProgress"
+	ReasonComponentNotReady             = "ComponentNotReady"
+	ReasonComponentUnknown              = "ComponentUnknown"
+	ReasonAllComponentsReady            = "AllComponentsReady"
+	ReasonNoComponents                  = "NoComponents"
+	ReasonAllDaemonsReady               = "AllDaemonsReady"
+	ReasonGPUOperatorNotReady           = "GPUOperatorNotReady"
+	ReasonGPUOperatorVersionUnsupported = "GPUOperatorVersionUnsupported"
+	ReasonGPUDriverVersionMissing       = "GPUDriverVersionMissing"
+	ReasonGPUDriverVersionInvalid       = "GPUDriverVersionInvalid"
+	ReasonGPUDriverVersionUnsupported   = "GPUDriverVersionUnsupported"
 
 	// Condition messages.
 	MessageNoTargetNodes      = "no target nodes found"
 	MessageComponentUnknown   = "one or more components have unknown status"
 	MessageAllComponentsReady = "all components are healthy"
 	MessageNoComponents       = "no components have been evaluated"
+	MessageAllDaemonsReady    = "all gpu-sharing daemons are running"
 )
 
 // DaemonHealthToCondition maps a DaemonHealth to a metav1.Condition for the CR.
