@@ -27,12 +27,13 @@ type GpuSharingConfigSpec struct {
 	// target. All daemons share the same selector.
 	// Example: {"nvidia.com/gpu.present": "true"} (set by the Helm chart's default CR).
 	//
-	// TODO: Make immutable via a validating webhook. Changing nodeSelector on a
-	// live CR would leave stale node conditions on nodes removed from the target
-	// set. Until the webhook is in place, nodeSelector must not be changed after
-	// initial creation.
+	// The field is immutable (enforced by CEL, no webhook needed): changing it on
+	// a live CR would strand stale node conditions on nodes removed from the
+	// target set, so retargeting requires deleting and recreating the
+	// GpuSharingConfig (which cleans those conditions up).
 	//
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="nodeSelector is immutable; delete and recreate the GpuSharingConfig to change it"
 	NodeSelector map[string]string `json:"nodeSelector"`
 
 	// sharingAgent configures the NRI-based sharing agent (sharingd).
