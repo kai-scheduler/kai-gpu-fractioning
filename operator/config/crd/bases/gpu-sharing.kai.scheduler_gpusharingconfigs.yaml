@@ -2146,16 +2146,21 @@ spec:
                   target. All daemons share the same selector.
                   Example: {"nvidia.com/gpu.present": "true"} (set by the Helm chart's default CR).
 
-                  live CR would leave stale node conditions on nodes removed from the target
-                  set. Until the webhook is in place, nodeSelector must not be changed after
-                  initial creation.
+                  The field is immutable (enforced by CEL, no webhook needed): changing it on
+                  a live CR would strand stale node conditions on nodes removed from the
+                  target set, so retargeting requires deleting and recreating the
+                  GpuSharingConfig (which cleans those conditions up).
                 type: object
+                x-kubernetes-validations:
+                - message: nodeSelector is immutable; delete and recreate the GpuSharingConfig
+                    to change it
+                  rule: self == oldSelf
               sharingAgent:
                 description: sharingAgent configures the NRI-based sharing agent (sharingd).
                 properties:
                   annotationPrefix:
                     description: |-
-                      annotationPrefix is the leading prefix for the scheduler's per-container
+                      AnnotationPrefix is the leading prefix for the scheduler's per-container
                       GPU-sharing annotations, e.g. "<prefix><container>.gpu-memory.request" and
                       "<prefix><container>.gpus.devices".
                       Default: "nvidia.com/container."
