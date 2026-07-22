@@ -113,14 +113,17 @@ A single cluster-scoped CR configures the whole stack. Field docs are authoritat
 
 | Field | Description |
 |-------|-------------|
-| `spec.nodeSelector` *(required)* | Which nodes the sharingd/mpsd DaemonSets target. **Do not change after creation** (a validating webhook to enforce this is planned). |
+| `spec.nodeSelector` *(required)* | Which nodes the sharingd/mpsd DaemonSets target. **Immutable** — set once at creation. |
 | `spec.sharingAgent` | sharingd options (annotation prefix, log level, fail-open, retroactive enforcement). |
 | `spec.metricsAgent` | metricsd options (`enabled`, `runtimeClassName`, metric-name overrides). |
 | `spec.mpsDaemon` | mpsd supervisor options (e.g. `gracefulStopDelay`). |
 
 Status is surfaced as conditions on the CR:
-- **`Ready`** — aggregate health of the managed daemons.
+- **`SharingdReady`** / **`MpsdReady`** — per-daemon rollout health (ready vs desired nodes).
+- **`Ready`** — aggregate health of the managed daemons. When not ready, it is refined with NVIDIA GPU Operator dependency failures (e.g. the GPU Operator is missing or below the required version) to explain why.
 - **`DriverUpgradeInProgress`** — `True` while a targeted GPU node is undergoing an NVIDIA driver upgrade; the daemons are automatically drained from that node (so MPS shuts down cleanly before the driver unloads) and rescheduled when it completes.
+
+Per-node health is also published as a `gpu-sharing.nvidia.com/Ready` **node condition** (refined with the CUDA driver version when a node is unhealthy).
 
 ## Observability
 
@@ -133,10 +136,6 @@ metricsd exports per-pod GPU metrics (Prometheus, plain HTTP). Built-in metric n
 The controller also exports operational metrics (`gpu_sharing_daemon_ready_nodes`, `gpu_sharing_daemon_desired_nodes`, `gpu_sharing_nodes_ready`, `gpu_sharing_nodes_degraded`) plus the standard controller-runtime `controller_runtime_reconcile_*` series.
 
 With the Prometheus Operator installed, set `prometheus.enabled=true` to have the chart create a `ServiceMonitor` (controller) and a `PodMonitor` (metricsd, one scrape target per GPU node). Both scrape over plain HTTP; restrict access with a NetworkPolicy if needed. Metric names are overridable via `metricsAgent.metricNames` / `spec.metricsAgent.metricNames`.
-
-## Troubleshooting
-
-See [`docs/troubleshooting.md`](docs/troubleshooting.md) for common issues (mpsd unschedulable without the `nvidia` RuntimeClass, NRI not enabled, CUDA OOM on limit exceed, driver-upgrade drains, reading CR/node conditions and metrics). <!-- TODO: add docs/troubleshooting.md (separate task in D). -->
 
 ## Repository structure
 
@@ -160,8 +159,6 @@ make build      # build all binaries
 make test       # run unit tests
 make validate   # format, vet, and lint
 ```
-
-Full dev/build/e2e setup will live in [`DEVELOPMENT.md`](DEVELOPMENT.md) <!-- TODO: add (separate task in D) -->; see [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ## License
 
