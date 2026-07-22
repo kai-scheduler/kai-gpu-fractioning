@@ -105,7 +105,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 			Name: resourceName,
 		}
 
-		defaultImages := map[string]gpusharingv1alpha1.ImageSpec{
+		defaultImages := map[string]daemonmgr.ImageSpec{
 			"sharingd": {Repository: "example.com/sharingd", Tag: "test"},
 			"mpsd":     {Repository: "example.com/mpsd", Tag: "test"},
 		}
@@ -332,7 +332,7 @@ var _ = Describe("GpuSharingConfig Controller", func() {
 
 			// Default images are required for the DaemonSets to pass API
 			// validation (an empty image is rejected).
-			defaultImages := map[string]gpusharingv1alpha1.ImageSpec{
+			defaultImages := map[string]daemonmgr.ImageSpec{
 				"sharingd": {Repository: "example.com/sharingd", Tag: "test"},
 				"mpsd":     {Repository: "example.com/mpsd", Tag: "test"},
 			}

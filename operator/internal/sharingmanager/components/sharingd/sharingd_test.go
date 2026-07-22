@@ -441,7 +441,7 @@ func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
 		Namespace:    "gpu-sharing-system",
 		NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
-		DefaultImages: map[string]v1alpha1.ImageSpec{
+		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"sharingd": {
 				Repository: "fake.io/org/sharingd",
 				Tag:        "v0.1.0",

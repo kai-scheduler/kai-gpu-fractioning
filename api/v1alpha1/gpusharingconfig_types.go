@@ -51,30 +51,8 @@ type GpuSharingConfigSpec struct {
 	MpsDaemon *MpsDaemonSpec `json:"mpsDaemon,omitempty"`
 }
 
-// ImageSpec defines a container image reference.
-// The full image is constructed as <repository>:<tag>.
-type ImageSpec struct {
-	// repository is the full image path including registry and image name
-	// (e.g. "ghcr.io/kai-scheduler/gpu-sharing/sharingd").
-	// +optional
-	Repository string `json:"repository,omitempty"`
-
-	// tag is the image tag (e.g. "v0.1.0"). Defaults to the chart appVersion.
-	// +optional
-	Tag string `json:"tag,omitempty"`
-
-	// imagePullPolicy controls when the kubelet pulls the image.
-	// One of Always, IfNotPresent, Never. Default: IfNotPresent.
-	// +optional
-	ImagePullPolicy string `json:"imagePullPolicy,omitempty"`
-}
-
 // SharingAgentSpec configures the sharingd DaemonSet managed by the controller.
 type SharingAgentSpec struct {
-	// image overrides the default sharingd container image set via Helm env vars (SHARINGD_IMAGE_*).
-	// +optional
-	Image *ImageSpec `json:"image,omitempty"`
-
 	// AnnotationPrefix is the leading prefix for the scheduler's per-container
 	// GPU-sharing annotations, e.g. "<prefix><container>.gpu-memory.request" and
 	// "<prefix><container>.gpus.devices".
@@ -139,11 +117,6 @@ type SharingAgentSpec struct {
 
 // MetricsAgentSpec configures the metricsd sidecar in the sharingd DaemonSet.
 type MetricsAgentSpec struct {
-	// image overrides the default metricsd container image set via Helm env vars
-	// (METRICSD_IMAGE_*).
-	// +optional
-	Image *ImageSpec `json:"image,omitempty"`
-
 	// enabled controls whether the metricsd sidecar is added to the DaemonSet.
 	// When false, no metrics container is deployed.
 	// +optional
@@ -208,10 +181,6 @@ type MetricNamesSpec struct {
 // mpsd supervises nvidia-cuda-mps-control, providing GPU multi-process
 // service to containers sharing a GPU.
 type MpsDaemonSpec struct {
-	// image overrides the default mpsd container image set via Helm env vars (MPSD_IMAGE_*).
-	// +optional
-	Image *ImageSpec `json:"image,omitempty"`
-
 	// logLevel controls the logging verbosity of the MPS daemon supervisor.
 	// One of debug, info, warn, error. Default: info.
 	// +optional
