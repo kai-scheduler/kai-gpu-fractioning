@@ -107,8 +107,6 @@ spec:
 - **request** feeds accounting/metrics (the pod's GPU fraction); **limit** is the hard memory cap MPS enforces. If only one is set, the other defaults to it.
 - The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); sharingd injects `NVIDIA_VISIBLE_DEVICES` from it. <!-- TODO(Hagay): expand the KAI Scheduler request flow here, or link to KAI docs. -->
 
-Runnable examples live in [`operator/config/samples/`](operator/config/samples/). <!-- TODO: add samples (separate task in D). -->
-
 ## `GpuSharingConfig` reference
 
 A single cluster-scoped CR configures the whole stack. Field docs are authoritative in [`api/v1alpha1/gpusharingconfig_types.go`](api/v1alpha1/gpusharingconfig_types.go).
