@@ -99,11 +99,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	podSpec.NodeSelector = opts.NodeSelector
 	podSpec.HostPID = true
 
-	sharingdImage := opts.DefaultImages[daemonName]
-	if d.sharingSpec != nil && d.sharingSpec.Image != nil {
-		sharingdImage = sharingdImage.MergeWith(*d.sharingSpec.Image)
-	}
-	sharingdContainer, sharingdVolumes := d.buildSharingdContainer(sharingdImage)
+	sharingdContainer, sharingdVolumes := d.buildSharingdContainer(opts.DefaultImages[daemonName])
 	podSpec.Volumes = append(podSpec.Volumes, sharingdVolumes...)
 
 	metricsOn := d.metricsEnabled()
@@ -152,15 +148,11 @@ func metricsSharedVolume() (corev1.Volume, corev1.VolumeMount) {
 
 // applyMetricsSidecar adds the metricsd container and Prometheus scrape
 // annotations to the DaemonSet.
-func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map[string]v1alpha1.ImageSpec) {
-	metricsImage := defaultImages[metricsdName]
-	if d.metricsSpec != nil && d.metricsSpec.Image != nil {
-		metricsImage = metricsImage.MergeWith(*d.metricsSpec.Image)
-	}
+func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map[string]daemonmgr.ImageSpec) {
 	if d.metricsSpec != nil {
 		result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, d.metricsSpec.Volumes...)
 	}
-	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(metricsImage))
+	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(defaultImages[metricsdName]))
 
 	if result.Spec.Template.Annotations == nil {
 		result.Spec.Template.Annotations = map[string]string{}
@@ -205,7 +197,7 @@ func (d *daemon) metricsAnnotationPath() string {
 
 // buildSharingdContainer returns the main sharingd container and its required
 // host-path volumes. The map-dir mount is added by the caller when metricsd is enabled.
-func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
+func (d *daemon) buildSharingdContainer(image daemonmgr.ImageSpec) (corev1.Container, []corev1.Volume) {
 	// sharingd retries its NRI connection indefinitely by default, so the
 	// process stays Running even when it never registers with containerd. The
 	// binary serves /readyz on the readiness port, flipping to ready only once
@@ -242,7 +234,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 	container := corev1.Container{
 		Name:            daemonName,
 		Image:           image.FullImage(),
-		ImagePullPolicy: pullPolicy(image),
+		ImagePullPolicy: image.PullPolicy(),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildArgs(),
 		ReadinessProbe:  readinessProbe,
@@ -317,7 +309,7 @@ func (d *daemon) buildSharingdContainer(image v1alpha1.ImageSpec) (corev1.Contai
 // required so the NVIDIA container runtime mounts libnvidia-ml.so into the
 // container at create time (the "utility" capability is sufficient for
 // read-only NVML; "compute" is not needed).
-func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Container {
+func (d *daemon) buildMetricsdContainer(image daemonmgr.ImageSpec) corev1.Container {
 	port := d.metricsListenPort()
 
 	// Readiness gates pod readiness on the exporter answering; liveness restarts a
@@ -343,7 +335,7 @@ func (d *daemon) buildMetricsdContainer(image v1alpha1.ImageSpec) corev1.Contain
 	c := corev1.Container{
 		Name:            metricsdName,
 		Image:           image.FullImage(),
-		ImagePullPolicy: pullPolicy(image),
+		ImagePullPolicy: image.PullPolicy(),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildMetricsdArgs(),
 		ReadinessProbe:  readinessProbe,
@@ -475,14 +467,6 @@ func (d *daemon) nriSocketDir() string {
 	}
 
 	return filepath.Dir(d.sharingSpec.NRISocketPath)
-}
-
-// pullPolicy resolves the image pull policy, defaulting to IfNotPresent.
-func pullPolicy(image v1alpha1.ImageSpec) corev1.PullPolicy {
-	if image.ImagePullPolicy != "" {
-		return corev1.PullPolicy(image.ImagePullPolicy)
-	}
-	return corev1.PullIfNotPresent
 }
 
 // retroactiveEnforcementEnabled reports whether sharingd should stop offending

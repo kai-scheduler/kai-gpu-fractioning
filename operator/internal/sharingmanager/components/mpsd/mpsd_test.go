@@ -204,27 +204,11 @@ func TestDaemon_BuildDaemonSet_TerminationGrace(t *testing.T) {
 	}
 }
 
-func TestDaemon_BuildDaemonSet_ImageOverride(t *testing.T) {
-	d := NewMpsdDaemon(&v1alpha1.MpsDaemonSpec{
-		Image: &v1alpha1.ImageSpec{
-			Tag: "custom-tag",
-		},
-	}, true)
-
-	ds := d.BuildDaemonSet(defaultOpts())
-	ctr := ds.Spec.Template.Spec.Containers[0]
-
-	want := "fake.io/org/mpsd:custom-tag"
-	if ctr.Image != want {
-		t.Errorf("container image = %q, want %q", ctr.Image, want)
-	}
-}
-
 func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
 		Namespace:    "gpu-sharing-system",
 		NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
-		DefaultImages: map[string]v1alpha1.ImageSpec{
+		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"mpsd": {
 				Repository: "fake.io/org/mpsd",
 				Tag:        "v0.1.0",

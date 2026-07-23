@@ -72,16 +72,6 @@ spec:
                   description: sharingAgent configures the NRI-based sharing agent (sharingd).
                   type: object
                   properties:
-                    image:
-                      description: image overrides the default sharingd container image.
-                      type: object
-                      properties:
-                        repository:
-                          type: string
-                        tag:
-                          type: string
-                        imagePullPolicy:
-                          type: string
                     annotationPrefix:
                       type: string
                     failOpen:
@@ -114,16 +104,6 @@ spec:
                     sharingd and reads the container→pod mapping from a shared volume.
                   type: object
                   properties:
-                    image:
-                      description: image overrides the default metricsd container image.
-                      type: object
-                      properties:
-                        repository:
-                          type: string
-                        tag:
-                          type: string
-                        imagePullPolicy:
-                          type: string
                     enabled:
                       description: >-
                         enabled controls whether the metricsd sidecar is added to
@@ -179,16 +159,6 @@ spec:
                   description: mpsDaemon configures the MPS daemon supervisor (mpsd).
                   type: object
                   properties:
-                    image:
-                      description: image overrides the default mpsd container image.
-                      type: object
-                      properties:
-                        repository:
-                          type: string
-                        tag:
-                          type: string
-                        imagePullPolicy:
-                          type: string
                     logLevel:
                       type: string
                     backoff:
