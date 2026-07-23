@@ -37,6 +37,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # QEMU/binfmt is required to build metricsd's non-native arch: its Dockerfile
+      # builds on $TARGETPLATFORM (cgo/NVML), so the arm64 build runs arm64 binaries
+      # on the amd64 runner. Must precede setup-buildx-action.
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: azure/setup-helm@v4
