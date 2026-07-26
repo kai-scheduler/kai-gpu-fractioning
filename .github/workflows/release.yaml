@@ -38,6 +38,6 @@ jobs:
         run: helm package operator/charts --version "$VERSION" --app-version "$VERSION" -d ./dist
 
       - name: Upload chart as Release asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/gpu-sharing-${{ github.event.release.tag_name }}.tgz
