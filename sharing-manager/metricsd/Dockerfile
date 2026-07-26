@@ -13,8 +13,12 @@
 # `docker buildx build --platform linux/amd64`.
 FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
 
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+# TARGETOS/TARGETARCH are populated by BuildKit from --platform. Do NOT give them
+# defaults: a default value shadows BuildKit's built-in, so a linux/arm64 build
+# would run on an arm64 toolchain while still setting GOARCH=amd64, making cgo
+# cross-link with the native gcc ("unrecognized command-line option '-m64'").
+ARG TARGETOS
+ARG TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
@@ -34,7 +38,7 @@ COPY sharing-manager/ sharing-manager/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     cd sharing-manager/metricsd && \
-    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -trimpath -tags="${GO_TAGS}" \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/metricsd ./cmd
