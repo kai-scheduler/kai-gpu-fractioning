@@ -44,7 +44,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       - name: Resolve version and platforms
         id: cfg
