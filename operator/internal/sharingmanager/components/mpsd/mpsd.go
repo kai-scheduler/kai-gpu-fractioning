@@ -68,12 +68,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	// shutdown the driver-upgrade nodeAffinity relies on.
 	result.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To(d.terminationGraceSeconds())
 
-	image := opts.DefaultImages[daemonName]
-	if d.spec != nil && d.spec.Image != nil {
-		image = image.MergeWith(*d.spec.Image)
-	}
-
-	container, volumes := d.buildContainer(image)
+	container, volumes := d.buildContainer(opts.DefaultImages[daemonName])
 	container.Env = append(container.Env, corev1.EnvVar{
 		Name:  "MPS_MEMACCT_AUDIT_LOG",
 		Value: strconv.FormatBool(d.auditLog),
@@ -95,12 +90,7 @@ func (d *daemon) terminationGraceSeconds() int64 {
 	return int64((grace + terminationGraceBuffer).Seconds())
 }
 
-func (d *daemon) buildContainer(image v1alpha1.ImageSpec) (corev1.Container, []corev1.Volume) {
-	pullPolicy := corev1.PullIfNotPresent
-	if image.ImagePullPolicy != "" {
-		pullPolicy = corev1.PullPolicy(image.ImagePullPolicy)
-	}
-
+func (d *daemon) buildContainer(image daemonmgr.ImageSpec) (corev1.Container, []corev1.Volume) {
 	hostPathDirOrCreate := corev1.HostPathDirectoryOrCreate
 
 	// The MPS control socket at /run/nvidia-mps/control is created by
@@ -137,7 +127,7 @@ func (d *daemon) buildContainer(image v1alpha1.ImageSpec) (corev1.Container, []c
 	container := corev1.Container{
 		Name:            daemonName,
 		Image:           image.FullImage(),
-		ImagePullPolicy: pullPolicy,
+		ImagePullPolicy: image.PullPolicy(),
 		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
 		Args:            d.buildArgs(),
 		ReadinessProbe:  mpsControlSocketProbe,

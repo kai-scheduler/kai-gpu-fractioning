@@ -123,11 +123,12 @@ e2e-kubeconfig-unmerge:
 #     their repo/tag to the operator, which creates the DaemonSets), so Skaffold's
 #     rendered-manifest scan can't see them. False positives, not real problems.
 #
-# It then waits on the sharingd DaemonSet specifically, NOT the operator's
-# aggregate CR Ready condition: the chart also creates the mpsd DaemonSet, which
-# sets RuntimeClassName "nvidia" and therefore never schedules on a plain k3d
-# cluster (no such runtime) — that's out of scope for the metrics suite and must
-# not gate it.
+# It then waits on the sharingd DaemonSet specifically (which hosts the metricsd
+# sidecar under test), NOT the operator's aggregate CR Ready condition. The chart
+# also creates the mpsd DaemonSet; under the e2e profile that runs the fake-mps
+# image (hack/fake-mps) on the runc-backed "nvidia" RuntimeClass, so mpsd does
+# reach Ready here — but the metrics suite doesn't depend on it, so we keep the
+# wait scoped to sharingd and let the operator E2E suite assert mpsd/CR Ready.
 E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --cache-artifacts=false --verbosity=error
 
 e2e-deploy:
