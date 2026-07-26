@@ -3,8 +3,10 @@
 
 Uses an env-driven pydantic-settings config, a typer CLI, and
 retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
-single fake-GPU node pool and fake-gpu-operator installed. No other
-cluster-level components are deployed here.
+single fake-GPU node pool and fake-gpu-operator installed. The only other
+cluster-level tweak is repointing the "nvidia" RuntimeClass at the runc handler
+so the mpsd DaemonSet can run on the GPU-less fake cluster (see
+configure_nvidia_runtimeclass); no application components are deployed here.
 
 Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
@@ -80,6 +82,30 @@ def write_containerd_nri_template() -> str:
     with tempfile.NamedTemporaryFile("w", suffix=".toml.tmpl", delete=False) as f:
         f.write(CONTAINERD_NRI_CONFIG_TEMPLATE)
         return f.name
+
+
+# The mpsd DaemonSet hard-codes runtimeClassName: nvidia (mpsd.go — there is no
+# spec/Helm override, unlike the sharingd+metricsd pod, which clears it via
+# metricsAgent.runtimeClassName=""). k3s ships a "nvidia" RuntimeClass whose
+# handler is "nvidia", but the underlying nvidia containerd runtime isn't
+# registered on a GPU-less k3d node, so mpsd pods stay stuck at container
+# creation ("no runtime for \"nvidia\" is configured") and the operator's
+# aggregate Ready never flips. The metrics suite tolerates that (it waits only on
+# sharingd), but the operator/controller e2e suite asserts
+# MpsdReady/Ready/the node condition, all of which need mpsd actually running.
+#
+# Re-point the "nvidia" RuntimeClass at the default "runc" handler (always
+# registered on k3s) so the mpsd DaemonSet — tested exactly as shipped — schedules
+# and runs on the fake cluster. RuntimeClass.handler is immutable, so this is a
+# delete-then-create, not an apply. (Real MPS multiplexing still needs a real GPU;
+# this only makes the daemon runnable so its lifecycle/readiness can be tested.)
+NVIDIA_RUNTIME_CLASS_MANIFEST = """\
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: runc
+"""
 
 
 class ClusterConfig(BaseSettings):
@@ -220,6 +246,15 @@ def wait_for_nodes(config: ClusterConfig) -> None:
     log("Waiting for all nodes to be ready...")
     sh.kubectl("wait", "--for=condition=Ready", "nodes", "--all", "--timeout=120s")
     log("All nodes are ready.")
+
+
+def configure_nvidia_runtimeclass(config: ClusterConfig) -> None:
+    # See NVIDIA_RUNTIME_CLASS_MANIFEST: repoint the "nvidia" RuntimeClass at the
+    # runc handler so the mpsd DaemonSet can run on the GPU-less fake cluster.
+    # handler is immutable, so delete (if present) then create.
+    log('Repointing "nvidia" RuntimeClass at the runc handler (for mpsd)...')
+    sh.kubectl("delete", "runtimeclass", "nvidia", "--ignore-not-found")
+    sh.kubectl("create", "-f", "-", _in=NVIDIA_RUNTIME_CLASS_MANIFEST)
 
 
 def install_fake_gpu_operator(config: ClusterConfig) -> None:
@@ -377,6 +412,8 @@ def main(
     write_kubeconfig(config)
 
     wait_for_nodes(config)
+
+    configure_nvidia_runtimeclass(config)
 
     if not skip_fake_gpu_operator:
         install_fake_gpu_operator(config)

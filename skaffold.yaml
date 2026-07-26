@@ -80,6 +80,15 @@ deploy:
 profiles:
   - name: e2e
     patches:
+      # mpsd: use the fake-mps image (hack/fake-mps) instead of the real
+      # nvidia/cuda-based build. It bundles the REAL mpsd supervisor plus a fake
+      # nvidia-cuda-mps-control that just creates the MPS control socket and idles,
+      # so mpsd reaches Ready on a GPU-less k3d node (real MPS multiplexing needs a
+      # real GPU). Paired with create-cluster.py repointing the "nvidia"
+      # RuntimeClass at runc, this lets the operator reach full Ready without a GPU.
+      - op: replace
+        path: /build/artifacts/2/docker/dockerfile
+        value: hack/fake-mps/Dockerfile
       # metricsd: use the e2e Dockerfile which bakes in the nvml-mock .so so
       # NVML calls resolve on fake-GPU k3d clusters without a real NVIDIA driver.
       - op: replace

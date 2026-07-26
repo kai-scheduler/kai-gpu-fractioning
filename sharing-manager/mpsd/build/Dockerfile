@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder
 ARG TARGETARCH
 
 WORKDIR /workspace
@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./sharing-mana
 # Runtime stage — nvidia/cuda base provides nvidia-cuda-mps-control which mpsd
 # needs to exec. The NVIDIA container runtime only injects device access, not
 # the MPS control binary itself.
-FROM nvidia/cuda:12.8.1-base-ubuntu24.04
+FROM nvidia/cuda:13.3.0-base-ubuntu24.04
 
 COPY --from=builder /mpsd /usr/local/bin/mpsd
 

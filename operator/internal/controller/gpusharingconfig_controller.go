@@ -73,7 +73,7 @@ type GpuSharingConfigReconciler struct {
 
 	// DefaultImages holds the Helm-injected default image for each daemon,
 	// keyed by daemon name (e.g. "sharingd").
-	DefaultImages map[string]v1alpha1.ImageSpec
+	DefaultImages map[string]daemonmgr.ImageSpec
 
 	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct
 	// audit log, forwarded to the mpsd container via env.
@@ -95,7 +95,7 @@ func NewGpuSharingConfigReconciler(
 	scheme *runtime.Scheme,
 	recorder record.EventRecorder,
 	namespace string,
-	defaultImages map[string]v1alpha1.ImageSpec,
+	defaultImages map[string]daemonmgr.ImageSpec,
 	defaultMpsdAuditLog bool,
 ) *GpuSharingConfigReconciler {
 	return &GpuSharingConfigReconciler{
@@ -473,8 +473,8 @@ func (r *GpuSharingConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // ReadImageFromEnv reads the <PREFIX>_REPOSITORY, <PREFIX>_TAG, and
 // <PREFIX>_PULL_POLICY env vars and returns an ImageSpec.
-func ReadImageFromEnv(prefix string) v1alpha1.ImageSpec {
-	return v1alpha1.ImageSpec{
+func ReadImageFromEnv(prefix string) daemonmgr.ImageSpec {
+	return daemonmgr.ImageSpec{
 		Repository:      env.String(prefix+"_REPOSITORY", ""),
 		Tag:             env.String(prefix+"_TAG", ""),
 		ImagePullPolicy: env.String(prefix+"_PULL_POLICY", ""),

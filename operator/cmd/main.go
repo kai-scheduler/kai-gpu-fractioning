@@ -32,6 +32,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/config"
 	"github.com/kai-scheduler/gpu-sharing/operator/internal/controller"
 	"github.com/kai-scheduler/gpu-sharing/pkg/env"
@@ -104,13 +105,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Component images (defaults from Helm, overridable via CRD) ──────
+	// ── Component images (from Helm-injected env vars) ──────────────────
 	sharingdImage := controller.ReadImageFromEnv("SHARINGD_IMAGE")
-	setupLog.Info("sharingd default image", "image", sharingdImage.FullImage())
 	metricsdImage := controller.ReadImageFromEnv("METRICSD_IMAGE")
-	setupLog.Info("metricsd default image", "image", metricsdImage.FullImage())
-
 	mpsdImage := controller.ReadImageFromEnv("MPSD_IMAGE")
+
+	for name, img := range map[string]daemonmgr.ImageSpec{
+		"sharingd": sharingdImage,
+		"metricsd": metricsdImage,
+		"mpsd":     mpsdImage,
+	} {
+		if img.FullImage() == "" {
+			setupLog.Error(nil, "component image is not configured; set the corresponding Helm value", "component", name)
+			os.Exit(1)
+		}
+	}
+	setupLog.Info("sharingd default image", "image", sharingdImage.FullImage())
+	setupLog.Info("metricsd default image", "image", metricsdImage.FullImage())
 	setupLog.Info("mpsd default image", "image", mpsdImage.FullImage())
 
 	// ── mpsd MPS config (Helm-injected default; forwarded to the mpsd pod) ──
@@ -125,7 +136,7 @@ func main() {
 		//nolint:staticcheck // record.EventRecorder is still supported; migrating the reconciler to the new events API is tracked separately.
 		mgr.GetEventRecorderFor("gpusharingconfig-controller"),
 		podNamespace,
-		map[string]v1alpha1.ImageSpec{
+		map[string]daemonmgr.ImageSpec{
 			"sharingd": sharingdImage,
 			"metricsd": metricsdImage,
 			"mpsd":     mpsdImage,
