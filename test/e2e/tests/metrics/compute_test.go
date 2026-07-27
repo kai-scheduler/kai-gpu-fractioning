@@ -48,12 +48,11 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	quarterMemMiB := strconv.Itoa(c.Config.GPUMemoryMiB / 4)
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc10-no-compute-throttle-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   quarterMemMiB,
-		GPUMemoryRequestMiB: quarterMemMiB,
-		NodeSelector:        map[string]string{"kubernetes.io/hostname": targetNode},
+		Namespace:     attributionTestNamespace,
+		Name:          "tc10-no-compute-throttle-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", quarterMemMiB, quarterMemMiB),
+		NodeSelector:  map[string]string{"kubernetes.io/hostname": targetNode},
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -87,7 +86,7 @@ func TestE2E_SoloFractionalPodIsNotComputeThrottled(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

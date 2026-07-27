@@ -317,8 +317,8 @@ func resetNVMLMockOnCleanup(t *testing.T, c *cluster.Client) {
 type multiContainerPodSpec struct {
 	Namespace    string
 	Name         string
-	Containers   []string          // container names; each gets its own GPU annotation + unique marker
-	MemoryMiB    string            // GPU memory per container (same for all)
+	Containers   []string // container names; each gets its own GPU annotation + unique marker
+	MemoryMiB    string   // GPU memory per container (same for all)
 	NodeSelector map[string]string
 }
 
