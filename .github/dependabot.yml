@@ -1,20 +1,30 @@
 version: 2
 updates:
-  # Go modules — one entry per go.mod in the repo (root + the five sub-modules).
+  # Go modules. The root go.work makes this single entry cover every module in
+  # the workspace (api, operator, pkg, sharing-manager/metricsd, test/e2e), so
+  # listing those directories separately only produces duplicate PRs.
+  #
+  # Grouping is load-bearing here, not cosmetic: an ungrouped bump opens one PR
+  # per dependency, and every one of them rewrites the same set of go.sum files.
+  # Merging any single PR then conflicts all the others, so the queue can never
+  # be drained without rebasing each survivor in turn.
   - package-ecosystem: gomod
-    directories:
-      - /
-      - /api
-      - /operator
-      - /pkg
-      - /sharing-manager/metricsd
-      - /test/e2e
+    directory: /
     schedule:
       interval: weekly
     labels:
       - dependencies
     commit-message:
       prefix: "chore(deps):"
+    groups:
+      # The k8s libraries are released in lockstep and must be bumped together.
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      go-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: github-actions
     directory: /
@@ -24,6 +34,10 @@ updates:
       - dependencies
     commit-message:
       prefix: "ci(deps):"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Base images in the component Dockerfiles.
   - package-ecosystem: docker
@@ -38,3 +52,7 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps):"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
