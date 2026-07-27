@@ -58,7 +58,7 @@ export E2E_KUBECONFIG
 
 .PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps \
 	e2e-deploy e2e-undeploy e2e-kubeconfig-merge e2e-kubeconfig-unmerge \
-	test-e2e test-e2e-metrics run-e2e
+	test-e2e test-e2e-metrics test-e2e-operator test-e2e-sharingd run-e2e
 
 e2e: e2e-cluster-up e2e-deploy test-e2e
 
@@ -147,6 +147,22 @@ test-e2e:
 
 test-e2e-metrics:
 	$(E2E_GO_TEST) ./tests/metrics/...
+
+# The operator suite drives CR lifecycle, rollouts, fault injection and config
+# propagation, so it needs a longer timeout than the metrics suite (several
+# delete→recreate rollouts + fault-recovery windows). It does NOT need nvml-mock
+# (it asserts operator behavior, not GPU metrics). E2E_GPU_NODE_COUNT primes the
+# preflight.
+test-e2e-operator:
+	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 40m ./tests/operator/...
+
+# The sharingd suite exercises the sharingd NRI data plane (env/mount injection
+# on annotated workloads). Like the operator suite it asserts daemon behavior,
+# not GPU metrics, so it does NOT need nvml-mock. It creates a handful of
+# workload pods and does one CR re-roll (fail-open), so it's much shorter than
+# the operator suite — a 20m timeout clears it with margin, under the job limit.
+test-e2e-sharingd:
+	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 20m ./tests/sharingd/...
 
 # run-e2e runs the suite against whatever cluster the caller provides
 # (set E2E_KUBECONFIG=...). The suite never provisions a cluster, so this works
