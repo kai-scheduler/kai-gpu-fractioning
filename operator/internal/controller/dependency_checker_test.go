@@ -76,7 +76,7 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			name:  "ready ClusterPolicy with supported version leaves false Ready unchanged",
 			input: falseReady,
 			objects: []client.Object{
-				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.0"}, clusterPolicyStatus("ready", "True", "False", "")),
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.1"}, clusterPolicyStatus("ready", "True", "False", "")),
 			},
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonComponentNotReady,
@@ -93,10 +93,22 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			expectedMessage: "v26.3.3",
 		},
 		{
+			// v26.7.0 is the immediately preceding patch release; the supported
+			// floor is v26.7.1, so it must be rejected.
+			name:  "ready ClusterPolicy one patch below the minimum blocks Ready",
+			input: falseReady,
+			objects: []client.Object{
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.0"}, clusterPolicyStatus("ready", "True", "False", "")),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
+			expectedMessage: "v26.7.0",
+		},
+		{
 			name:  "ClusterPolicy Error condition blocks Ready with its message",
 			input: falseReady,
 			objects: []client.Object{
-				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.0"}, clusterPolicyStatus("notReady", "False", "True", "operand failed")),
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.1"}, clusterPolicyStatus("notReady", "False", "True", "operand failed")),
 			},
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonGPUOperatorNotReady,
@@ -113,7 +125,7 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			name:  "supported OpenShift ClusterServiceVersion leaves false Ready unchanged",
 			input: falseReady,
 			objects: []client.Object{
-				clusterServiceVersionObject("gpu-operator-certified.v26.7.0", "26.7.0"),
+				clusterServiceVersionObject("gpu-operator-certified.v26.7.1", "26.7.1"),
 			},
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonComponentNotReady,
@@ -134,7 +146,7 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			input: falseReady,
 			objects: []client.Object{
 				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.3.3"}, clusterPolicyStatus("ready", "True", "False", "")),
-				clusterServiceVersionObject("gpu-operator-certified.v26.7.0", "26.7.0"),
+				clusterServiceVersionObject("gpu-operator-certified.v26.7.1", "26.7.1"),
 			},
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
