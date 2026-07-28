@@ -2,20 +2,17 @@
 
 A Kubernetes operator that enables **multiple pods to safely share a single GPU with enforced memory boundaries**.
 
-The operator manages the full lifecycle of GPU sharing on a cluster: it configures [NVIDIA MPS](https://docs.nvidia.com/deploy/mps/index.html) for hardware-level memory enforcement and deploys an [NRI](https://github.com/containerd/nri) plugin that injects per-container GPU memory limits at container creation time — before the container process starts.
+The operator manages the full lifecycle of GPU sharing on a cluster: it deploys an [NRI](https://github.com/containerd/nri) plugin that injects per-container GPU memory limits at container creation time — before the container process starts — and runs [NVIDIA MPS](https://docs.nvidia.com/deploy/mps/index.html) with GPU memory accounting enabled on every shared GPU.
 
-<!-- TODO(Hagay): positioning / messaging pass. In particular, how we frame this
-relative to KAI Scheduler: gpu-sharing enforces the memory boundaries and exports
-per-pod metrics for the fractional GPUs that KAI Scheduler assigns. Want to make
-the "works with KAI Scheduler" story explicit up top? -->
+It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler): KAI Scheduler decides *which* fraction of *which* GPU a workload gets, and gpu-sharing enforces that memory boundary on the node and exports per-pod metrics for the resulting fractional GPUs.
 
 ## How It Works
 
 1. A cluster admin installs the operator and a `GpuSharingConfig` custom resource is created (the Helm chart ships a default one).
 2. The **operator** (controller) reconciles the CR and rolls out the node-level components as DaemonSets to the selected GPU nodes.
-3. **mpsd** runs an NVIDIA MPS control daemon on each node, enabling per-process GPU memory accounting and enforcement.
-4. **sharingd** registers as an NRI plugin with the container runtime. When a pod carrying GPU-memory annotations is created, sharingd injects the MPS memory-limit environment variables (and the MPS pipe mount) into the container **before it starts**.
-5. MPS enforces the memory cap at the hardware level — a container that exceeds its allocation gets a CUDA out-of-memory error instead of impacting its neighbors on the same GPU.
+3. **mpsd** runs an NVIDIA MPS control daemon on each node with per-process GPU memory accounting (`memacct`) enabled and context-share disabled.
+4. **sharingd** registers as an NRI plugin with the container runtime. When a pod carrying GPU-memory annotations is created, sharingd injects `NVIDIA_GPU_MEMORY_REQUESTS` / `NVIDIA_GPU_MEMORY_LIMITS` (and the MPS pipe mount) into the container **before it starts**.
+5. The NVIDIA driver enforces `NVIDIA_GPU_MEMORY_LIMITS` as a hard cap, so a container cannot allocate beyond its share and impact its neighbors on the same GPU. A container that exceeds its limit is terminated (out-of-memory), the same way a container exceeding its Kubernetes memory limit is.
 6. **metricsd** (a sidecar alongside sharingd) exports per-pod GPU memory and utilization metrics for the shared GPUs.
 
 ## Architecture
@@ -50,8 +47,8 @@ the "works with KAI Scheduler" story explicit up top? -->
 
 - Kubernetes 1.28+
 - containerd 2.0+ with **NRI enabled**, or CRI-O with NRI support
-- [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.0+**, which delivers **NVIDIA driver `r615` / CUDA 13.4** and the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under <!-- TODO(Hagay): note the min GPU architecture supported by CUDA 13.4 -->
-- A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler) <!-- TODO(Hagay): confirm the minimum KAI Scheduler version -->
+- [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer**, which delivers the **NVIDIA driver `r615` or newer / CUDA 13.4** and the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under
+- A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler)
 
 ## Install
 
@@ -95,6 +92,7 @@ metadata:
   annotations:
     # nvidia.com/container.<container-name>.gpu-memory.<request|limit>
     nvidia.com/container.trainer.gpu-memory.request: 8Gi
+    # limit is optional; omit it and it defaults to the request
     nvidia.com/container.trainer.gpu-memory.limit: 16Gi
 spec:
   containers:
@@ -104,8 +102,10 @@ spec:
 ```
 
 - The container name in the annotation key selects which container the limits apply to; a pod may carry annotations for several containers.
-- **request** feeds accounting/metrics (the pod's GPU fraction); **limit** is the hard memory cap MPS enforces. If only one is set, the other defaults to it.
-- The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); sharingd injects `NVIDIA_VISIBLE_DEVICES` from it. <!-- TODO(Hagay): expand the KAI Scheduler request flow here, or link to KAI docs. -->
+- **Both `request` and `limit` are optional**, but at least one must be present for the container to be treated as a shared-GPU container. If only one is set, the other defaults to it — so a request-only container is capped at its request rather than left unbounded, and a limit-only container gets its request populated for accounting.
+- **limit** is the hard memory cap the driver enforces. **request** is the workload's declared share; the GPU fraction used to normalize SM-utilization metrics is derived from the limit, falling back to the request.
+- Values are Kubernetes quantities (`8Gi`, `512Mi`, …) and must resolve to at least 1 MB. A malformed value fails container creation unless sharingd is running fail-open.
+- The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); sharingd injects `NVIDIA_VISIBLE_DEVICES` from it.
 
 ## `GpuSharingConfig` reference
 
