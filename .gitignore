@@ -6,6 +6,12 @@ testbin/
 .gomod-cache/
 .cache/
 
+# Go build/test cache (workspace-local GOCACHE used by e2e runs)
+.gocache/
+
+# Python bytecode cache (e2e cluster-prep scripts)
+__pycache__/
+
 # Local dev/test files
 .local/
 
