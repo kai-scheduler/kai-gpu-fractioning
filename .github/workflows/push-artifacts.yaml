@@ -1,0 +1,85 @@
+name: Push Artifacts
+
+# Publishes the four component images and the Helm chart to
+# ghcr.io/kai-scheduler/gpu-sharing.
+#
+#   * push to main        → dev artifacts, single-arch (amd64), version 0.0.0-<short-sha>.
+#   * workflow_call(v...)  → release artifacts, multi-arch (amd64+arm64), version = tag.
+#
+# release.yaml calls this on `release: published`, passing the tag as `version`.
+on:
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      version:
+        description: 'Release version, e.g. v0.1.0 (omit for a dev build off main)'
+        required: false
+        type: string
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GOWORK: "off"
+  DOCKER_REPO_BASE: ghcr.io/kai-scheduler/gpu-sharing
+
+jobs:
+  push-artifacts:
+    name: Build and publish to ghcr
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # QEMU/binfmt is required to build metricsd's non-native arch: its Dockerfile
+      # builds on $TARGETPLATFORM (cgo/NVML), so the arm64 build runs arm64 binaries
+      # on the amd64 runner. Must precede setup-buildx-action.
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: azure/setup-helm@v5
+
+      - name: Resolve version and platforms
+        id: cfg
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push images
+        run: |
+          make docker-buildx \
+            VERSION="${{ steps.cfg.outputs.version }}" \
+            DOCKER_BUILD_PLATFORM="${{ steps.cfg.outputs.platforms }}" \
+            DOCKER_BUILDX_OUTPUT="--push"
+
+      - name: Package and push Helm chart
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.cfg.outputs.version }}"
+          # The chart's image repositories already point at ghcr.io/kai-scheduler/gpu-sharing/*
+          # and image tags default to .Chart.AppVersion, so no values rewrite is needed —
+          # packaging with --app-version pins every daemon image to this version.
+          helm package operator/charts --version "$VERSION" --app-version "$VERSION" -d ./dist
+          helm push "./dist/gpu-sharing-$VERSION.tgz" "oci://${DOCKER_REPO_BASE}"

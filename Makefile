@@ -145,6 +145,62 @@ docker-push-sharingd:
 	docker push $(DOCKER_REPO_BASE)/sharingd:$(VERSION)
 
 # -----------------------------------------------------------
+# Multi-arch image build/push (release)
+# -----------------------------------------------------------
+# Release builds go through `docker buildx` so a single command produces a
+# multi-platform manifest. Multi-platform manifests can't be loaded into the
+# local daemon, so they push directly (DOCKER_BUILDX_OUTPUT defaults to --push).
+# Requires a docker-container buildx builder (CI: docker/setup-buildx-action) plus
+# QEMU/binfmt (docker/setup-qemu-action) for building any non-native platform.
+#
+#   make docker-buildx VERSION=v0.1.0 \
+#     DOCKER_BUILD_PLATFORM=linux/amd64,linux/arm64             # multi-arch, push
+#   make docker-buildx-operator DOCKER_BUILDX_OUTPUT=--load \
+#     DOCKER_BUILD_PLATFORM=linux/amd64                         # single-arch, local
+#
+# NOTE: operator/mpsd/sharingd are CGO_ENABLED=0 and cross-compile natively on the
+# build host; metricsd links NVML via cgo, so its non-native arch is built under
+# qemu emulation (slower).
+
+# Comma-separated platform list. GPU nodes may be amd64 or arm64 (e.g. GB200 is
+# arm64), so releases build both — the release workflow passes the full list. The
+# default here is a single arch for convenient local `--load` builds.
+DOCKER_BUILD_PLATFORM ?= linux/amd64
+# Passed to `docker buildx build`: --push to publish, --load for a local single-arch image.
+DOCKER_BUILDX_OUTPUT  ?= --push
+# Escape hatch for any extra `docker buildx build` flags.
+DOCKER_BUILDX_ARGS    ?=
+
+# Release metadata for images that bake it into the binary (currently metricsd only).
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+.PHONY: docker-buildx docker-buildx-operator docker-buildx-mpsd docker-buildx-sharingd docker-buildx-metricsd
+
+# $(1)=Dockerfile path, $(2)=image name, $(3)=optional extra build args.
+# Build context is always the repo root.
+define buildx-image
+docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) $(DOCKER_BUILDX_ARGS) $(3) \
+	-f $(1) -t $(DOCKER_REPO_BASE)/$(2):$(VERSION) .
+endef
+
+docker-buildx: docker-buildx-operator docker-buildx-mpsd docker-buildx-sharingd docker-buildx-metricsd
+
+docker-buildx-operator:
+	$(call buildx-image,operator/Dockerfile,operator)
+
+docker-buildx-mpsd:
+	$(call buildx-image,sharing-manager/mpsd/build/Dockerfile,mpsd)
+
+docker-buildx-sharingd:
+	$(call buildx-image,sharing-manager/sharingd/build/Dockerfile,sharingd)
+
+# metricsd bakes version metadata into the binary via ldflags (ARG VERSION/COMMIT/DATE
+# in its Dockerfile), so pass them through — otherwise a release image reports version=dev.
+docker-buildx-metricsd:
+	$(call buildx-image,sharing-manager/metricsd/Dockerfile,metricsd,--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(GIT_COMMIT) --build-arg DATE=$(BUILD_DATE))
+
+# -----------------------------------------------------------
 # Clean
 # -----------------------------------------------------------
 

@@ -45,7 +45,7 @@ jobs:
       # this — when false, the job is a fast, green no-op.
       - name: Detect e2e-relevant changes
         id: changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             e2e:
