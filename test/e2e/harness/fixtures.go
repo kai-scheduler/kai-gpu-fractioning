@@ -4,7 +4,6 @@ package harness
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -164,12 +163,9 @@ func (h *Harness) WithCRConfig(ctx context.Context, t *testing.T, patch, revert 
 // operatorDeploymentAvailable reports whether the operator Deployment has >=1
 // available replica.
 func (h *Harness) operatorDeploymentAvailable(ctx context.Context) (bool, error) {
-	deps, err := h.listOperatorDeployments(ctx)
+	dep, err := h.operatorDeployment(ctx)
 	if err != nil {
 		return false, err
 	}
-	if len(deps) == 0 {
-		return false, fmt.Errorf("no operator Deployment in namespace %s", h.NS())
-	}
-	return deps[0].Status.AvailableReplicas >= 1, nil
+	return dep.Status.AvailableReplicas >= 1, nil
 }
