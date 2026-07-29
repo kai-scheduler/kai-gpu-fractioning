@@ -140,13 +140,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Unlike the metrics suite, the operator suite exercises the controller
-      # itself, so operator/** and the chart/API are e2e-relevant here. sharingd's
-      # NRI data plane is now its own suite/job (see the `sharingd` job below), so
-      # sharing-manager/sharingd/** is deliberately NOT listed here — a
-      # sharingd-only PR shouldn't force the operator job. mpsd stays (the suite
-      # asserts mpsd pod spec + fault/recovery); metricsd is covered by the
-      # metrics job. Same exit-0-when-irrelevant pattern so this stays cheap.
+      # The operator suite exercises the controller itself, so operator/** and the
+      # chart/API are e2e-relevant here. sharing-manager/sharingd/** is
+      # intentionally NOT listed: a sharingd-only change can't affect what this
+      # suite asserts — the sharingd pod spec it checks is rendered by the operator
+      # + chart, not by sharingd's source. (If sharingd ever needs a new mount/env,
+      # that's an operator/chart change, already covered by operator/**.) Such a
+      # change is validated by the dedicated sharingd job (below), which redeploys
+      # the full stack and re-asserts steady state, so running this ~long job too
+      # would be redundant. mpsd stays (this suite asserts the mpsd pod spec +
+      # fault/recovery); metricsd is covered by the metrics job. Same
+      # exit-0-when-irrelevant pattern so this stays cheap.
       - name: Detect e2e-relevant changes
         id: changes
         uses: dorny/paths-filter@v3
