@@ -45,7 +45,7 @@ func devicesFromNodes(container *api.Container) []store.GPUDevice {
 			continue
 		}
 		seen[index] = struct{}{}
-		devices = append(devices, store.GPUDevice{Index: index})
+		devices = append(devices, store.GPUDevice{MinorNumber: index})
 	}
 	return devices
 }

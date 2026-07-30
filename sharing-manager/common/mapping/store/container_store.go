@@ -6,7 +6,8 @@ import (
 )
 
 type GPUDevice struct {
-	Index int `json:"index"`
+	Index       int `json:"index"`
+	MinorNumber int `json:"minorNumber"`
 	// UUID is the GPU/MIG UUID as reported by the kubelet PodResources API. The
 	// production NRI path leaves it empty and identifies devices by Index; it is
 	// populated by the PodResources metrics backend, and by the fake-GPU (e2e)

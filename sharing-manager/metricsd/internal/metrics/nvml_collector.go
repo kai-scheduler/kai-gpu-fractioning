@@ -89,10 +89,11 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 
 	joined := map[gpuProcessKey]GPUProcessMetric{}
 	deviceUUIDs := map[int]string{}
+	deviceMinorToNVMLIndex := map[int]int{}
 	deviceTotalMemory := map[int]uint64{}
 	var errs []error
 
-	for index := 0; index < count; index++ {
+	for index := range count {
 		device, ret := nvml.DeviceGetHandleByIndex(index)
 		if !errors.Is(ret, nvml.SUCCESS) {
 			errs = append(errs, fmt.Errorf("get NVML device %d: %s", index, ret.Error()))
@@ -104,6 +105,9 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 			continue
 		}
 		deviceUUIDs[index] = uuid
+		if minorNumber, ret := device.GetMinorNumber(); errors.Is(ret, nvml.SUCCESS) {
+			deviceMinorToNVMLIndex[minorNumber] = index
+		}
 
 		if total, err := deviceTotalMemoryBytes(device); err != nil {
 			errs = append(errs, fmt.Errorf("get memory info for GPU %s: %w", uuid, err))
@@ -127,6 +131,7 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 	c.setSnapshot(GPUProcessSnapshot{
 		Processes:              processes,
 		DeviceUUIDs:            deviceUUIDs,
+		DeviceMinorToNVMLIndex: deviceMinorToNVMLIndex,
 		DeviceTotalMemoryBytes: deviceTotalMemory,
 		DeviceErrors:           errors.Join(errs...),
 	})
@@ -238,6 +243,10 @@ func cloneGPUProcessSnapshot(in GPUProcessSnapshot) GPUProcessSnapshot {
 	for k, v := range in.DeviceUUIDs {
 		deviceUUIDs[k] = v
 	}
+	minorToNVMLIndex := map[int]int{}
+	for k, v := range in.DeviceMinorToNVMLIndex {
+		minorToNVMLIndex[k] = v
+	}
 	deviceTotalMemory := map[int]uint64{}
 	for k, v := range in.DeviceTotalMemoryBytes {
 		deviceTotalMemory[k] = v
@@ -245,6 +254,7 @@ func cloneGPUProcessSnapshot(in GPUProcessSnapshot) GPUProcessSnapshot {
 	return GPUProcessSnapshot{
 		Processes:              append([]GPUProcessMetric(nil), in.Processes...),
 		DeviceUUIDs:            deviceUUIDs,
+		DeviceMinorToNVMLIndex: minorToNVMLIndex,
 		DeviceTotalMemoryBytes: deviceTotalMemory,
 		DeviceErrors:           in.DeviceErrors,
 	}
