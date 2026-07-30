@@ -47,6 +47,75 @@ func caseMountsMPSPipeDir(ctx context.Context, t *testing.T) {
 	}
 }
 
+// InjectsVisibleDevices — sharingd promotes the scheduler's per-container device
+// assignment (…gpus.devices) to NVIDIA_VISIBLE_DEVICES. A fractional container
+// does not request the nvidia.com/gpu resource, so the NVIDIA device plugin never
+// sets that env var; sharingd injects it so the container sees exactly the GPU(s)
+// the scheduler picked. The value is a scheduler/runtime contract passed through
+// verbatim, so we assert both a single-GPU assignment and a multi-GPU
+// comma-separated list survive intact (the multi-GPU assignment case). The
+// device handles are opaque to sharingd; nothing on the fake cluster interprets
+// them (the workload uses the default runtime), so any token round-trips.
+func caseInjectsVisibleDevices(ctx context.Context, t *testing.T) {
+	assertVisible := func(t *testing.T, name, assignment string) {
+		// The gpus.devices assignment is only promoted when the container is a
+		// GPU-sharing container, so keep the standard gpu-memory annotations too.
+		annotations := h.DefaultWorkloadAnnotations()
+		annotations[h.DevicesAnnotationKey(harness.WorkloadContainer)] = assignment
+		pod := h.ApplyRunningWorkload(ctx, t, name, annotations)
+		env := h.GetPodEnv(ctx, t, pod, harness.WorkloadContainer)
+		if env[harness.EnvVisibleDevices] != assignment {
+			t.Errorf("%s = %q, want %q", harness.EnvVisibleDevices, env[harness.EnvVisibleDevices], assignment)
+		}
+	}
+	t.Run("single-gpu", func(t *testing.T) {
+		assertVisible(t, "inject-visible-single", "GPU-e2e-00000000")
+	})
+	t.Run("multi-gpu", func(t *testing.T) {
+		assertVisible(t, "inject-visible-multi", "GPU-e2e-00000000,GPU-e2e-11111111")
+	})
+}
+
+// MultiContainerInjection — a pod with two annotated containers gets each
+// container's own GPU-memory config injected, keyed by container name, with no
+// cross-container leakage (sharingd looks up annotations per container, so the
+// two containers must end up with different injected values).
+func caseMultiContainerInjection(ctx context.Context, t *testing.T) {
+	const (
+		ctrA = "cuda-a"
+		ctrB = "cuda-b"
+		memA = "1024" // MiB; request==limit so both injected vars carry this
+		memB = "3072"
+	)
+	annotations := map[string]string{}
+	for k, v := range workload.FractionalAnnotations(ctrA, memA, memA) {
+		annotations[k] = v
+	}
+	for k, v := range workload.FractionalAnnotations(ctrB, memB, memB) {
+		annotations[k] = v
+	}
+	pod := applyRunningMultiContainer(ctx, t, "inject-multi-container", []string{ctrA, ctrB}, annotations)
+
+	wantA := harness.ExpectedDecimalMB(t, memA)
+	wantB := harness.ExpectedDecimalMB(t, memB)
+
+	envA := h.GetPodEnv(ctx, t, pod, ctrA)
+	if envA[harness.EnvGPUMemLimits] != wantA || envA[harness.EnvGPUMemRequests] != wantA {
+		t.Errorf("container %s: req=%q lim=%q, want both %q", ctrA,
+			envA[harness.EnvGPUMemRequests], envA[harness.EnvGPUMemLimits], wantA)
+	}
+	// Isolation: container A must not receive container B's config.
+	if envA[harness.EnvGPUMemLimits] == wantB {
+		t.Errorf("container %s leaked container %s's limit %q", ctrA, ctrB, wantB)
+	}
+
+	envB := h.GetPodEnv(ctx, t, pod, ctrB)
+	if envB[harness.EnvGPUMemLimits] != wantB || envB[harness.EnvGPUMemRequests] != wantB {
+		t.Errorf("container %s: req=%q lim=%q, want both %q", ctrB,
+			envB[harness.EnvGPUMemRequests], envB[harness.EnvGPUMemLimits], wantB)
+	}
+}
+
 // SkipsUnannotatedContainer — a container with no gpu-sharing
 // annotation is left untouched (no injection).
 func caseSkipsUnannotatedContainer(ctx context.Context, t *testing.T) {
@@ -128,6 +197,43 @@ func caseFailOpenSkips(ctx context.Context, t *testing.T) {
 			}
 		}
 	})
+}
+
+// applyRunningMultiContainer creates a pod with several busybox containers on a
+// GPU node, carrying the given annotations verbatim, waits for it to reach
+// Running, and registers cleanup. The shared workload.Apply builds only
+// single-container pods, so the multi-container case builds its own.
+func applyRunningMultiContainer(ctx context.Context, t *testing.T, name string, containerNames []string, annotations map[string]string) *corev1.Pod {
+	t.Helper()
+	if err := workload.EnsureNamespace(ctx, h.Client(), harness.WorkloadNamespace); err != nil {
+		t.Fatalf("ensure namespace: %v", err)
+	}
+	if err := workload.Delete(ctx, h.Client(), harness.WorkloadNamespace, name); err != nil {
+		t.Fatalf("pre-clean %s: %v", name, err)
+	}
+	pod := &corev1.Pod{}
+	pod.Name = name
+	pod.Namespace = harness.WorkloadNamespace
+	pod.Annotations = annotations
+	pod.Spec.RestartPolicy = corev1.RestartPolicyNever
+	pod.Spec.NodeSelector = h.GPUSelectorMap(t)
+	for _, cn := range containerNames {
+		pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{
+			Name:    cn,
+			Image:   workload.DefaultImage,
+			Command: []string{"sh", "-c", "sleep 86400 & wait"},
+		})
+	}
+	if err := h.Client().Ctrl.Create(ctx, pod); err != nil {
+		t.Fatalf("create multi-container workload %s: %v", name, err)
+	}
+	t.Cleanup(func() { _ = workload.Delete(context.Background(), h.Client(), harness.WorkloadNamespace, name) })
+	p, err := workload.WaitRunning(ctx, h.Client(), harness.WorkloadNamespace, name,
+		h.Client().Config.PodReadyTimeout, h.Client().Config.PollInterval)
+	if err != nil {
+		t.Fatalf("multi-container workload %s did not reach Running: %v", name, err)
+	}
+	return p
 }
 
 // ── FailClosedBlocks helpers ─────────────────────────────────────────────────

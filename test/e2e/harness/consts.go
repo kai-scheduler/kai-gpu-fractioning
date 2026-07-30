@@ -30,6 +30,10 @@ const (
 	EnvGPUMemRequests = "NVIDIA_GPU_MEMORY_REQUESTS"
 	EnvGPUMemLimits   = "NVIDIA_GPU_MEMORY_LIMITS"
 	EnvMPSPipeDir     = "CUDA_MPS_PIPE_DIRECTORY"
+	// EnvVisibleDevices is set from the scheduler's per-container device
+	// assignment (…gpus.devices) so a fractional pod sees exactly the GPU(s) the
+	// scheduler picked (injection.EnvVisibleDevices).
+	EnvVisibleDevices = "NVIDIA_VISIBLE_DEVICES"
 
 	// MPS pipe dir (configuration.DefaultMPSPipeDirectory).
 	MPSPipeDir = "/run/nvidia-mps"

@@ -29,6 +29,13 @@ func (h *Harness) AnnKey(container, suffix string) string {
 	return fmt.Sprintf("%s%s.gpu-memory.%s", AnnotationPrefix, container, suffix)
 }
 
+// DevicesAnnotationKey builds the per-container GPU device-assignment annotation
+// key (…gpus.devices) that the scheduler emits and sharingd promotes to
+// NVIDIA_VISIBLE_DEVICES.
+func (h *Harness) DevicesAnnotationKey(container string) string {
+	return fmt.Sprintf("%s%s.gpus.devices", AnnotationPrefix, container)
+}
+
 // DefaultWorkloadAnnotations returns the standard request+limit fractional-GPU
 // annotations for the shared workload container and memory values — the pair a
 // well-formed fractional pod carries.

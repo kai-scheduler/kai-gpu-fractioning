@@ -21,6 +21,8 @@ func TestSharingd(t *testing.T) {
 	t.Run("Injection", func(t *testing.T) {
 		t.Run("InjectsMemoryEnv", func(t *testing.T) { caseInjectsMemoryEnv(ctx, t) })
 		t.Run("MountsMPSPipeDir", func(t *testing.T) { caseMountsMPSPipeDir(ctx, t) })
+		t.Run("InjectsVisibleDevices", func(t *testing.T) { caseInjectsVisibleDevices(ctx, t) })
+		t.Run("MultiContainerInjection", func(t *testing.T) { caseMultiContainerInjection(ctx, t) })
 		t.Run("SkipsUnannotatedContainer", func(t *testing.T) { caseSkipsUnannotatedContainer(ctx, t) })
 		t.Run("RequestOrLimitOnly", func(t *testing.T) { caseRequestOrLimitOnly(ctx, t) })
 		t.Run("FailClosedBlocks", func(t *testing.T) { caseFailClosedBlocks(ctx, t) })
