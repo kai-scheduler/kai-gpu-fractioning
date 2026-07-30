@@ -1,9 +1,15 @@
 # metricsd
 
-`metricsd` is the containerd NRI plugin component. It handles
-container lifecycle events, reads GPU memory annotations, patches annotated
-containers with NVIDIA GPU memory environment variables and the MPS pipe
-directory mount, and exports pod-level GPU metrics.
+`metricsd` is the per-node GPU metrics exporter. It runs as a sidecar alongside
+sharingd, samples NVML for per-process GPU memory and utilization, resolves each
+GPU process back to the Kubernetes pod that owns it, and exports the result as
+Prometheus metrics.
+
+It is an observer only: it does not register as an NRI plugin and it does not
+modify containers. Injecting the GPU memory environment variables and the MPS
+pipe mount is sharingd's job — see [`../sharingd`](../sharingd). metricsd learns
+which container belongs to which pod by reading the container→pod mapping that
+sharingd writes to a shared directory (`--map-dir`).
 
 ## Layout
 
@@ -11,10 +17,8 @@ directory mount, and exports pod-level GPU metrics.
 metricsd/
   Dockerfile
   Makefile
-  cmd/metricsd/
+  cmd/
   internal/metrics/
-  internal/plugin/
-  internal/store/
   go.mod
   go.sum
 ```
@@ -30,6 +34,10 @@ make -C sharing-manager/metricsd fmt
 make -C sharing-manager/metricsd test
 make -C sharing-manager/metricsd build
 ```
+
+metricsd is not covered by the top-level `make build`, because it links the
+NVIDIA Go NVML bindings and therefore builds with cgo. The root `make test` and
+`make docker-build` do include it.
 
 The component build writes:
 
@@ -59,86 +67,58 @@ For multi-platform builds:
 make -C sharing-manager/metricsd docker-buildx TAG=dev
 ```
 
-The image uses `metricsd/Dockerfile` and runs the plugin from a
-distroless base image. The plugin links the NVIDIA Go NVML bindings, so the
-component build uses cgo and the runtime image uses the Debian distroless base.
+The image uses `metricsd/Dockerfile`. Because of the cgo/NVML dependency the
+runtime image uses the Debian distroless base rather than the static one.
 
 ## Runtime Flags
 
 ```text
---config          plugin configuration file, default /etc/metricsd/config.yaml
---socket          NRI socket path, default /var/run/nri/nri.sock
---plugin-name     NRI plugin name, default metricsd
---plugin-index    NRI plugin ordering index, default 10
---log-level       debug, info, warn, or error
---retry-interval  reconnect delay after NRI exits, default 5s
+--map-dir           shared directory sharingd writes the container->pod mapping to,
+                    default /var/run/gpu-sharing/map
+--log-level         debug, info, warn, or error; default info
+--metrics-enabled   run the Prometheus exporter, default true
+--metrics-address   exporter listen address, default :2112
+--metrics-path      metrics HTTP path, default /metrics
+--metrics-interval  NVML sampling interval, default 5s (floored at 2s)
+--proc-root         /proc root used to resolve GPU process PIDs to cgroups, default /proc
+--sm-util-window    sliding-window averaging for SM utilization; 0 (default) disables
+--metric-name-gpu-memory-used-bytes
+--metric-name-gpu-sm-utilization-percent
+--metric-name-gpu-sm-utilization-percent-normalized
+                    override the corresponding metric name
 ```
 
-The same settings can be provided with `CONFIG_PATH`, `NRI_SOCKET_PATH`,
-`PLUGIN_NAME`, `PLUGIN_INDEX`, `LOG_LEVEL`, and `RETRY_INTERVAL`.
+Every flag can also be set from the environment: `MAP_DIR`, `LOG_LEVEL`,
+`METRICS_ENABLED`, `METRICS_ADDRESS`, `METRICS_PATH`, `METRICS_INTERVAL`,
+`PROC_ROOT`, `SM_UTIL_WINDOW`, and the `METRIC_NAME_*` overrides. There is no
+configuration file.
 
-## Configuration
-
-```yaml
-logPodEvents: true
-metrics:
-  enabled: true
-  address: :2112
-  path: /metrics
-  interval: 5s
-  procRoot: /proc
-```
-
-When either targeted annotation is present on the pod or container for the
-container currently being created, the plugin patches:
-
-- `NVIDIA_GPU_MEMORY_REQUESTS`
-- `NVIDIA_GPU_MEMORY_LIMITS`
-- `CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps/`
-- a bind mount from `/run/nvidia-mps/` on the host to `/tmp/nvidia-mps/` in the
-  container
-
-The annotation key includes the target container name:
-
-```yaml
-metadata:
-  annotations:
-    nvidia.com/container.cuda-vector-add.gpu-memory.request: 8Gi
-    nvidia.com/container.cuda-vector-add.gpu-memory.limit: 16Gi
-```
-
-A pod can include annotations for more than one container by adding additional
-`nvidia.com/container.<name>.gpu-memory.{request,limit}` keys. Invalid target
-container-name syntax rejects container creation. If only request or limit is
-annotated for a container, the missing bound is deduced with the same value.
+In a cluster these are driven from the `GpuSharingConfig` CR
+(`spec.metricsAgent`) rather than set by hand.
 
 ## GPU Metrics
 
-When `metrics.enabled=true`, the plugin starts a Prometheus exporter on
-`metrics.address` and serves `metrics.path`. A background sweeper runs every
-`metrics.interval`, queries NVML process metrics, resolves each GPU process PID
-through `metrics.procRoot/<pid>/cgroup`, and uses NRI bookkeeping to enrich the
-sample with Kubernetes pod labels.
+When `--metrics-enabled` is set, metricsd starts a Prometheus exporter on
+`--metrics-address` and serves `--metrics-path` over plain HTTP. Every
+`--metrics-interval` it queries NVML process metrics, resolves each GPU process
+PID through `<proc-root>/<pid>/cgroup`, and matches it against the container
+mapping to attach pod identity.
 
-Exported metrics include:
+Exported metrics (labels `namespace`, `pod`, `pod_uuid`, `gpu_uuid`, `gpu`):
 
 - `gpu_sharing_gpu_memory_used_bytes`
 - `gpu_sharing_gpu_sm_utilization_percent`
 - `gpu_sharing_gpu_sm_utilization_percent_normalized` — SM utilization divided by
-  the pod's GPU fraction and capped at 100. The fraction is derived as the pod's
-  requested GPU memory ÷ the device's total memory (from NVML), where the
-  requested memory comes from the `nvidia.com/container.<name>.gpu-memory.{limit,request}`
-  annotation the sharingd plugin records (limit, else request); a pod using as
-  much of the GPU as it requested reports 100. When the request is unknown or the
+  the pod's GPU fraction and capped at 100. The fraction is the pod's requested
+  GPU memory ÷ the device's total memory (from NVML), where the requested memory
+  comes from the `nvidia.com/container.<name>.gpu-memory.{limit,request}`
+  annotation that sharingd records (limit, else request); a pod using as much of
+  the GPU as it requested reports 100. When the request is unknown or the
   device's total memory is unavailable it falls back to a fraction of 1, so the
   value equals the raw SM utilization.
 
-Metric names are configurable under `metrics.metricNames`.
-
-NVML returns process-level data. The plugin joins
-`nvmlDeviceGetProcessUtilization` with compute and graphics running-process
-queries, then aggregates matching processes by pod and GPU. GPU attachment is
-inferred from Linux device metadata in the NRI container spec, using NVIDIA
-major `195` and GPU minors `0` through `32`. For active annotated pods attached
-to a GPU, the exporter keeps publishing zero values when NVML has no process
-reading; deleted pods are pruned once their last tracked container is removed.
+NVML returns process-level data. metricsd joins `nvmlDeviceGetProcessUtilization`
+with the compute and graphics running-process queries, then aggregates matching
+processes by pod and GPU. For active annotated pods attached to a GPU, the
+exporter keeps publishing zero values when NVML has no process reading; deleted
+pods are pruned once their last tracked container is removed.
