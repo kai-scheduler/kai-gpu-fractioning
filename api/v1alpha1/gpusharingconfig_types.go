@@ -214,8 +214,7 @@ type GpuSharingConfigStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the latest available observations of the config's state.
-	// Known condition types: SharingdReady, MpsdReady, Ready,
-	// DriverUpgradeInProgress.
+	// Known condition types: SharingdReady, MpsdReady, Ready, DriverUpgradeInProgress.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
