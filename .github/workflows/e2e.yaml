@@ -153,7 +153,7 @@ jobs:
       # exit-0-when-irrelevant pattern so this stays cheap.
       - name: Detect e2e-relevant changes
         id: changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             e2e:
@@ -236,7 +236,7 @@ jobs:
       # pattern as the other jobs so this stays a cheap required check.
       - name: Detect e2e-relevant changes
         id: changes
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             e2e:

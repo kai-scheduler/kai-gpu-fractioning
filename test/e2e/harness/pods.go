@@ -23,14 +23,20 @@ func (h *Harness) ListComponentPods(ctx context.Context, t *testing.T, component
 	return list
 }
 
-// FirstComponentPod returns any one pod of a component (fatal if none).
+// FirstComponentPod returns any one pod of a component (fatal if none). It only
+// needs a single pod, so it caps the server-side list to one item rather than
+// fetching every pod of the component.
 func (h *Harness) FirstComponentPod(ctx context.Context, t *testing.T, component string) *corev1.Pod {
 	t.Helper()
-	list := h.ListComponentPods(ctx, t, component)
-	if len(list) == 0 {
-		t.Fatalf("no %s pods found (selector %q)", component, ComponentSelector(component))
+	sel := ComponentSelector(component)
+	pod, err := pods.FirstByLabel(ctx, h.Client(), h.NS(), sel)
+	if err != nil {
+		t.Fatalf("list %s pods: %v", component, err)
 	}
-	return &list[0]
+	if pod == nil {
+		t.Fatalf("no %s pods found (selector %q)", component, sel)
+	}
+	return pod
 }
 
 // PodOnNode returns the component pod scheduled on nodeName, if any.

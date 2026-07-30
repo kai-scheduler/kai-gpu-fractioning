@@ -102,11 +102,20 @@ func caseFailClosedBlocks(ctx context.Context, t *testing.T) {
 // FailOpenSkips — fail-open: with sharingAgent.failOpen=true a malformed
 // annotation is skipped, so the container runs but carries no injected env.
 func caseFailOpenSkips(ctx context.Context, t *testing.T) {
+	dsName := harness.DSName(harness.ComponentSharingd)
+	// Capture the sharingd DaemonSet generation before the patch. WaitRolledOut
+	// alone can match the already-converged pre-change DaemonSet in the window
+	// before the operator reconciles the failOpen change, so we'd apply the
+	// workload against the old (fail-closed) sharingd and flake. WaitRolledOutAfter
+	// waits for the *new* generation to roll out.
+	beforeGen := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation
+
 	patch := []byte(`{"spec":{"sharingAgent":{"failOpen":true}}}`)
 	revert := []byte(`{"spec":{"sharingAgent":{"failOpen":null}}}`)
 	h.WithCRConfig(ctx, t, patch, revert, func() {
-		// The failOpen change re-rolls the sharingd DaemonSet; wait for it.
-		if _, err := daemonset.WaitRolledOut(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentSharingd), h.RolloutTimeout(), h.PollInterval()); err != nil {
+		// The failOpen change re-rolls the sharingd DaemonSet; wait for the new
+		// generation to finish rolling out.
+		if _, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), dsName, beforeGen, h.RolloutTimeout(), h.PollInterval()); err != nil {
 			t.Fatalf("sharingd rollout after failOpen: %v", err)
 		}
 		pod := h.ApplyRunningWorkload(ctx, t, "d6-failopen", map[string]string{
