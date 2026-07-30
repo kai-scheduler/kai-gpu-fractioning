@@ -6,7 +6,13 @@ import (
 )
 
 type GPUDevice struct {
-	Index       int `json:"index"`
+	// Index is the Linux device minor number stored by sharingd versions prior to
+	// the MinorNumber field being introduced. New records leave this zero.
+	Index int `json:"index"`
+	// MinorNumber is the Linux character device minor number (major 195) for this
+	// GPU, as read from the container's device nodes by the NRI path. It differs
+	// from the NVML device index; the metrics engine resolves it via
+	// nvmlDeviceGetMinorNumber to obtain the canonical NVML index and UUID.
 	MinorNumber int `json:"minorNumber"`
 	// UUID is the GPU/MIG UUID as reported by the kubelet PodResources API. The
 	// production NRI path leaves it empty and identifies devices by Index; it is

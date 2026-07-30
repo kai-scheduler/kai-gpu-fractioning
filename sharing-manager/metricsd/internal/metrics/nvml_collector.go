@@ -107,6 +107,9 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 		deviceUUIDs[index] = uuid
 		if minorNumber, ret := device.GetMinorNumber(); errors.Is(ret, nvml.SUCCESS) {
 			deviceMinorToNVMLIndex[minorNumber] = index
+		} else {
+			// GetMinorNumber unavailable: assume minor == NVML index.
+			deviceMinorToNVMLIndex[index] = index
 		}
 
 		if total, err := deviceTotalMemoryBytes(device); err != nil {

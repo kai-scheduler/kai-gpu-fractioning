@@ -392,7 +392,23 @@ func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device stor
 		// minorToNVMLIndex is populated whenever the NVML collector runs, so it is
 		// non-empty on any node with a GPU driver. On fake-GPU nodes the noop
 		// collector leaves it empty and we fall through to the legacy branch below.
-		nvmlIdx := s.minorToNVMLIndex[device.MinorNumber]
+		//
+		// Two record formats exist depending on when sharingd was deployed:
+		//   New (MinorNumber set): {MinorNumber: N, Index: 0} — N is the Linux minor.
+		//   Old (Index set):       {MinorNumber: 0, Index: N} — N is also the Linux
+		//     minor, because the old realgpu path stored minor in the Index field.
+		minor := device.MinorNumber
+		if minor == 0 && device.Index != 0 {
+			minor = device.Index
+		}
+		nvmlIdx, ok := s.minorToNVMLIndex[minor]
+		if !ok {
+			// Minor not yet in the map — the first NVML collect hasn't completed yet.
+			// Skip rather than attribute to the wrong GPU; resolves on the next cycle.
+			s.log.Debug("GPU device minor not in minor→NVML map; skipping idle metric",
+				"minor", minor, "pod", container.Pod, "namespace", container.Namespace)
+			return podGPUKey{}
+		}
 		index = nvmlIdx
 		uuid = s.deviceUUIDs[nvmlIdx]
 	} else {
