@@ -93,7 +93,7 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 | `metricsAgent.enabled` | `true` | run the metricsd metrics sidecar |
 | `metricsAgent.runtimeClassName` | `nvidia` | RuntimeClass for metricsd (needs GPU/NVML access) |
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
-| `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (requires the Prometheus-Operator CRDs) |
+| `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
 | `nodeSelector` | `{}` | scheduling constraint for the **controller** Deployment |
 
 > The GPU **nodeSelector** for the DaemonSets is set on the `GpuSharingConfig` CR (`spec.nodeSelector`), not the chart-level `nodeSelector`.
@@ -153,7 +153,7 @@ metricsd exports per-pod GPU metrics (Prometheus, plain HTTP). Built-in metric n
 
 The controller also exports operational metrics (`gpu_sharing_daemon_ready_nodes`, `gpu_sharing_daemon_desired_nodes`, `gpu_sharing_nodes_ready`, `gpu_sharing_nodes_degraded`) plus the standard controller-runtime `controller_runtime_reconcile_*` series.
 
-With the Prometheus Operator installed, set `prometheus.enabled=true` to have the chart create a `ServiceMonitor` (controller) and a `PodMonitor` (metricsd, one scrape target per GPU node). Both scrape over plain HTTP; restrict access with a NetworkPolicy if needed. Metric names are overridable via `metricsAgent.metricNames` / `spec.metricsAgent.metricNames`.
+With the Prometheus Operator installed, set `prometheus.enabled=true` to have the chart create a `ServiceMonitor` (controller) and a `PodMonitor` (metricsd, one scrape target per GPU node). Both are gated on `metrics.enabled` as well, so setting `metrics.enabled=false` drops the metricsd `PodMonitor` too, not just the controller `ServiceMonitor`. Both scrape over plain HTTP; restrict access with a NetworkPolicy if needed. Metric names are overridable via `metricsAgent.metricNames` / `spec.metricsAgent.metricNames`.
 
 ## Repository structure
 
@@ -173,10 +173,12 @@ With the Prometheus Operator installed, set `prometheus.enabled=true` to have th
 ## Development
 
 ```sh
-make build      # build all binaries
+make build      # build the operator, mpsd and sharingd binaries
 make test       # run unit tests
 make validate   # format, vet, and lint
 ```
+
+metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-level `make build`; build it with `make -C sharing-manager/metricsd build`. `make test` and `make docker-build` do cover all four components.
 
 ## License
 
