@@ -498,7 +498,10 @@ func TestIdlePodGPUKeyResolvesMinorToNVMLIndex(t *testing.T) {
 	}
 
 	// Device with minor 0 → should resolve to GPU-BBB (NVML index 1).
-	key := s.idlePodGPUKey(container, store.GPUDevice{MinorNumber: 0})
+	key, ok := s.idlePodGPUKey(container, store.GPUDevice{MinorNumber: 0})
+	if !ok {
+		t.Fatalf("minor 0: expected ok=true, got false")
+	}
 	if key.GPUUUID != "GPU-BBB" {
 		t.Fatalf("minor 0: expected UUID GPU-BBB, got %s", key.GPUUUID)
 	}
@@ -507,7 +510,10 @@ func TestIdlePodGPUKeyResolvesMinorToNVMLIndex(t *testing.T) {
 	}
 
 	// Device with minor 1 → should resolve to GPU-AAA (NVML index 0).
-	key = s.idlePodGPUKey(container, store.GPUDevice{MinorNumber: 1})
+	key, ok = s.idlePodGPUKey(container, store.GPUDevice{MinorNumber: 1})
+	if !ok {
+		t.Fatalf("minor 1: expected ok=true, got false")
+	}
 	if key.GPUUUID != "GPU-AAA" {
 		t.Fatalf("minor 1: expected UUID GPU-AAA, got %s", key.GPUUUID)
 	}
@@ -630,7 +636,10 @@ func TestIdlePodGPUKeyFallsBackToIndexWhenNoMinorMapping(t *testing.T) {
 		Namespace: "default", Pod: "pod", PodUID: "pod-uid",
 	}
 
-	key := s.idlePodGPUKey(container, store.GPUDevice{Index: 1})
+	key, ok := s.idlePodGPUKey(container, store.GPUDevice{Index: 1})
+	if !ok {
+		t.Fatalf("expected ok=true for fake-GPU fallback, got false")
+	}
 	if key.GPUUUID != "GPU-1" {
 		t.Fatalf("expected GPU-1 via Index fallback, got %s", key.GPUUUID)
 	}

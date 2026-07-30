@@ -108,8 +108,7 @@ func (c *nvmlProcessCollector) collect(now time.Time) {
 		if minorNumber, ret := device.GetMinorNumber(); errors.Is(ret, nvml.SUCCESS) {
 			deviceMinorToNVMLIndex[minorNumber] = index
 		} else {
-			// GetMinorNumber unavailable: assume minor == NVML index.
-			deviceMinorToNVMLIndex[index] = index
+			errs = append(errs, fmt.Errorf("get minor number for GPU %s: %s", uuid, ret.Error()))
 		}
 
 		if total, err := deviceTotalMemoryBytes(device); err != nil {

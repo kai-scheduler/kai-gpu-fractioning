@@ -223,7 +223,10 @@ func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric
 
 	for _, container := range pods.ActiveContainers() {
 		for _, device := range container.GPUDevices {
-			key := s.idlePodGPUKey(container, device)
+			key, ok := s.idlePodGPUKey(container, device)
+			if !ok {
+				continue
+			}
 			recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMB)
 			if _, ok := byPodGPU[key]; ok {
 				continue
@@ -378,7 +381,7 @@ func (s *metricsEngine) rememberMinorToNVMLIndex(minorToNVML map[int]int) {
 	}
 }
 
-func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device store.GPUDevice) podGPUKey {
+func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device store.GPUDevice) (podGPUKey, bool) {
 	uuid := device.UUID
 	index := device.Index
 
@@ -403,11 +406,12 @@ func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device stor
 		}
 		nvmlIdx, ok := s.minorToNVMLIndex[minor]
 		if !ok {
-			// Minor not yet in the map — the first NVML collect hasn't completed yet.
-			// Skip rather than attribute to the wrong GPU; resolves on the next cycle.
+			// Minor not yet in the map — NVML couldn't enumerate this device yet.
+			// Return false so the caller skips this device entirely rather than
+			// writing an empty-label idle metric to byPodGPU.
 			s.log.Debug("GPU device minor not in minor→NVML map; skipping idle metric",
 				"minor", minor, "pod", container.Pod, "namespace", container.Namespace)
-			return podGPUKey{}
+			return podGPUKey{}, false
 		}
 		index = nvmlIdx
 		uuid = s.deviceUUIDs[nvmlIdx]
@@ -423,7 +427,7 @@ func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device stor
 		PodUID:    container.PodUID,
 		GPUUUID:   uuid,
 		GPUIndex:  index,
-	}
+	}, true
 }
 
 func (s *metricsEngine) indexForUUID(uuid string) (int, bool) {
