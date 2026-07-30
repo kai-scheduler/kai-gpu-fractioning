@@ -47,8 +47,26 @@ It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Sc
 
 - Kubernetes 1.28+
 - containerd 2.0+ with **NRI enabled**, or CRI-O with NRI support
-- [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer**, which delivers the **NVIDIA driver `r615` or newer / CUDA 13.4** and the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under
+- [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer**, which provides the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under
+- **NVIDIA driver `r615` or newer (CUDA 13.4)** on the GPU nodes — see below, this is *not* the GPU Operator default
 - A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler)
+
+### Selecting the r615 driver
+
+`r615` is a short-lived branch, so GPU Operator v26.7.1 does **not** install it by default. You have to ask for it explicitly when installing the GPU Operator:
+
+```sh
+helm install gpu-operator nvidia/gpu-operator \
+  --version v26.7.1 \
+  --namespace gpu-operator --create-namespace \
+  --set driver.version=615.<patch>   # any r615 release
+```
+
+The dependency check reads the `nvidia.com/cuda.driver-version.major` node label and requires major **≥ 615**, so any `r615` release satisfies it.
+
+Use v26.7.1 rather than v26.7.0: on v26.7.1 the bundled device-plugin and container-toolkit versions are already the ones GPU sharing needs, and the driver is the only thing you have to override. On v26.7.0 the device-plugin and toolkit had to be overridden as well.
+
+If a GPU node ends up on an older driver, the `GpuSharingConfig` `Ready` condition reports it (`GPUDriverVersionUnsupported`) and the node-level daemons are not rolled out there.
 
 ## Install
 
