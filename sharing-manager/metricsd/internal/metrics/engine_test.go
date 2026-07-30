@@ -489,8 +489,8 @@ func TestRememberDeviceTotalMemoryPersistsAcrossPartialUpdates(t *testing.T) {
 func TestIdlePodGPUKeyResolvesMinorToNVMLIndex(t *testing.T) {
 	// NVML index 0 = minor 1 = GPU-AAA; NVML index 1 = minor 0 = GPU-BBB.
 	s := &metricsEngine{
-		deviceUUIDs:      map[int]string{0: "GPU-AAA", 1: "GPU-BBB"},
-		minorToNVMLIndex: map[int]int{1: 0, 0: 1}, // minor 1→NVML 0, minor 0→NVML 1
+		deviceUUIDs:            map[int]string{0: "GPU-AAA", 1: "GPU-BBB"},
+		minorToNVMLIndex:       map[int]int{1: 0, 0: 1}, // minor 1→NVML 0, minor 0→NVML 1
 		deviceTotalMemoryBytes: map[int]uint64{},
 	}
 	container := store.ContainerInfo{
@@ -622,8 +622,8 @@ func TestRememberMinorToNVMLIndexPersistsAcrossPartialUpdates(t *testing.T) {
 // GPUDevice.Index is used directly as the NVML index (the fake detector sets it).
 func TestIdlePodGPUKeyFallsBackToIndexWhenNoMinorMapping(t *testing.T) {
 	s := &metricsEngine{
-		deviceUUIDs:      map[int]string{0: "GPU-0", 1: "GPU-1"},
-		minorToNVMLIndex: map[int]int{}, // empty = fake-GPU node
+		deviceUUIDs:            map[int]string{0: "GPU-0", 1: "GPU-1"},
+		minorToNVMLIndex:       map[int]int{}, // empty = fake-GPU node
 		deviceTotalMemoryBytes: map[int]uint64{},
 	}
 	container := store.ContainerInfo{
