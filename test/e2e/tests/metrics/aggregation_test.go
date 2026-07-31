@@ -127,18 +127,18 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	matchA := map[string]string{
 		"namespace": attributionTestNamespace,
 		"pod":       "tc-agg-pod-a",
-		"pod_uuid":   string(podA.UID),
+		"pod_uuid":  string(podA.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	matchB := map[string]string{
 		"namespace": attributionTestNamespace,
 		"pod":       "tc-agg-pod-b",
-		"pod_uuid":   string(podB.UID),
+		"pod_uuid":  string(podB.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 
 	// Expected aggregated SM values.
-	wantSMA := float64(smA1 + smA2)         // 50 (no clamping)
+	wantSMA := float64(smA1 + smA2)        // 50 (no clamping)
 	wantSMB := float64(smB1 + smB2 + smB3) // 45 (no clamping)
 
 	if _, err := waitForSeries(ctx, c, memMetricName, matchA); err != nil {
@@ -163,4 +163,3 @@ func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 		t.Errorf("%s pod-b: want %.0f (sum of 3 processes), got %.2f", smMetricName, wantSMB, got)
 	}
 }
-

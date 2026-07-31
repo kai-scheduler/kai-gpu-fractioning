@@ -1,0 +1,64 @@
+//go:build e2e
+
+package harness
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+)
+
+// GPUSelectorMap converts the configured GPU node selector into a nodeSelector
+// map for pinning workload pods to matching nodes.
+func (h *Harness) GPUSelectorMap(t *testing.T) map[string]string {
+	t.Helper()
+	m, err := labels.ConvertSelectorToLabelsMap(h.Client().Config.GPUNodeSelector)
+	if err != nil {
+		t.Fatalf("parse GPU node selector %q: %v", h.Client().Config.GPUNodeSelector, err)
+	}
+	return m
+}
+
+// AnnKey builds a per-container gpu-memory annotation key with the default prefix.
+func (h *Harness) AnnKey(container, suffix string) string {
+	return fmt.Sprintf("%s%s.gpu-memory.%s", AnnotationPrefix, container, suffix)
+}
+
+// DevicesAnnotationKey builds the per-container GPU device-assignment annotation
+// key (…gpus.devices) that the scheduler emits and sharingd promotes to
+// NVIDIA_VISIBLE_DEVICES.
+func (h *Harness) DevicesAnnotationKey(container string) string {
+	return fmt.Sprintf("%s%s.gpus.devices", AnnotationPrefix, container)
+}
+
+// DefaultWorkloadAnnotations returns the standard request+limit fractional-GPU
+// annotations for the shared workload container and memory values — the pair a
+// well-formed fractional pod carries.
+func (h *Harness) DefaultWorkloadAnnotations() map[string]string {
+	return workload.FractionalAnnotations(WorkloadContainer, MemRequestMiB, MemLimitMiB)
+}
+
+// ApplyRunningWorkload creates a busybox pod on a GPU node with the given
+// annotations (written verbatim; nil/empty ⇒ none) and waits for it to reach
+// Running, registering cleanup. Use DefaultWorkloadAnnotations for the standard
+// well-formed fractional pod.
+func (h *Harness) ApplyRunningWorkload(ctx context.Context, t *testing.T, name string, annotations map[string]string) *corev1.Pod {
+	t.Helper()
+	spec := workload.FractionalPod{
+		Namespace:     WorkloadNamespace,
+		Name:          name,
+		ContainerName: WorkloadContainer,
+		Annotations:   annotations,
+	}
+	pod, err := workload.Apply(ctx, h.Client(), spec)
+	if err != nil {
+		t.Fatalf("apply workload %s: %v", name, err)
+	}
+	t.Cleanup(func() { _ = workload.Delete(context.Background(), h.Client(), WorkloadNamespace, name) })
+	return pod
+}
