@@ -133,6 +133,17 @@ E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --cache-artifacts=false --verb
 
 e2e-deploy:
 	KUBECONFIG=$(E2E_KUBECONFIG) skaffold run -p e2e $(E2E_SKAFFOLD_FLAGS)
+	@# Skaffold loads the built images into k3d, but a node's containerd can
+	@# disk-pressure-evict one before its pod starts; under pullPolicy=Never that
+	@# never recovers (ErrImageNeverPull). Re-import each built image (idempotent,
+	@# reloaded from the host docker daemon since we build with push:false) right
+	@# before the rollout wait to close that eviction window.
+	@echo "Re-importing built images into k3d ($(E2E_CLUSTER_NAME)) to guard against containerd eviction under pullPolicy=Never..."
+	@for repo in gpu-sharing sharingd mpsd metricsd; do \
+		ref=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^$$repo:" | grep -v ':<none>' | head -1); \
+		if [ -n "$$ref" ]; then echo "  importing $$ref"; k3d image import "$$ref" -c $(E2E_CLUSTER_NAME) --mode direct || true; \
+		else echo "  WARNING: no local image found for repo '$$repo' — skipping"; fi; \
+	done
 	@echo "Waiting for the operator to create the sharingd DaemonSet..."
 	@for i in $$(seq 1 60); do KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) get ds gpu-sharing-sharingd >/dev/null 2>&1 && break; sleep 2; done
 	KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) rollout status ds/gpu-sharing-sharingd --timeout=180s
