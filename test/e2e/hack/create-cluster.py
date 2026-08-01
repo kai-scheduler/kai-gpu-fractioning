@@ -3,10 +3,14 @@
 
 Uses an env-driven pydantic-settings config, a typer CLI, and
 retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
-single fake-GPU node pool and fake-gpu-operator installed. The only other
-cluster-level tweak is repointing the "nvidia" RuntimeClass at the runc handler
-so the mpsd DaemonSet can run on the GPU-less fake cluster (see
-configure_nvidia_runtimeclass); no application components are deployed here.
+single fake-GPU node pool and fake-gpu-operator installed. It also stands up a
+k3d-managed local image registry (see create_registry) that Skaffold pushes the
+gpu-sharing component images to, so nodes pull them (pullPolicy IfNotPresent)
+and an image evicted from a node's containerd under disk pressure is re-pulled
+instead of wedging at ErrImageNeverPull. The only other cluster-level tweak is
+repointing the "nvidia" RuntimeClass at the runc handler so the mpsd DaemonSet
+can run on the GPU-less fake cluster (see configure_nvidia_runtimeclass); no
+application components are deployed here.
 
 Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
@@ -24,6 +28,7 @@ Environment variables (E2E_ prefix, see ClusterConfig):
     E2E_GPU_MEMORY_MIB             (default: 40960)
     E2E_MAX_RETRIES                (default: 3)
     E2E_KUBECONFIG                 (default: ~/.kube/<cluster_name>.yaml)
+    E2E_REGISTRY_PORT              (default: 5001)  # k3d local image registry
 
 The cluster's kubeconfig is written to E2E_KUBECONFIG (not ~/.kube/config) via
 docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
@@ -140,6 +145,11 @@ class ClusterConfig(BaseSettings):
     # default derived from cluster_name (see main). This file — not ~/.kube/config
     # — is what every downstream e2e step uses.
     kubeconfig: str = ""
+    # Port for the k3d-managed local image registry (see create_registry). The
+    # same value is used on the host (Skaffold pushes to localhost:PORT), inside
+    # the cluster (nodes pull via the registries.yaml mirror below), and in
+    # --registry-use. Default 5001 dodges macOS's AirPlay Receiver on 5000.
+    registry_port: int = Field(default=5001, ge=1, le=65535)
 
 
 def log(msg: str) -> None:
@@ -157,12 +167,59 @@ def delete_cluster(config: ClusterConfig) -> None:
     sh.k3d("cluster", "delete", config.cluster_name, _ok_code=[0, 1])
 
 
+def registry_name(config: ClusterConfig) -> tuple[str, str]:
+    """(base, full) k3d registry names. k3d prepends "k3d-" to everything it
+    creates, so we pass `base` to `k3d registry create`/`delete` but reference
+    `full` in --registry-use, the mirror endpoint and node-side pulls."""
+    base = f"{config.cluster_name}-registry"
+    return base, f"k3d-{base}"
+
+
+def write_registries_yaml(config: ClusterConfig) -> str:
+    """Write a containerd registries.yaml that mirrors localhost:PORT to the
+    in-cluster registry container. Skaffold pushes images tagged
+    localhost:PORT/<img> (which the host can reach via the published port), and
+    this mirror teaches every node to pull that same ref from the registry over
+    the k3d Docker network (where it's reachable as k3d-<cluster>-registry:PORT).
+    One ref works on both sides, so no /etc/hosts entry or *.localhost DNS is
+    needed — which keeps it portable across macOS and CI runners."""
+    _, full = registry_name(config)
+    content = (
+        "mirrors:\n"
+        f'  "localhost:{config.registry_port}":\n'
+        "    endpoint:\n"
+        f"      - http://{full}:{config.registry_port}\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+        f.write(content)
+        return f.name
+
+
+def create_registry(config: ClusterConfig) -> None:
+    """Create the k3d-managed local registry the e2e stack pushes to. Recreated
+    from scratch (delete-then-create) so a stale registry from a prior run can't
+    serve outdated image layers. --registry-use (in create_cluster) connects it
+    to the cluster network and generates the node registries.yaml."""
+    base, full = registry_name(config)
+    log(f"Creating k3d registry '{full}' on port {config.registry_port} (delete-then-create)...")
+    sh.k3d("registry", "delete", full, _ok_code=[0, 1])
+    sh.k3d("registry", "create", base, "--port", str(config.registry_port))
+
+
+def delete_registry(config: ClusterConfig) -> None:
+    _, full = registry_name(config)
+    log(f"Deleting k3d registry '{full}'...")
+    sh.k3d("registry", "delete", full, _ok_code=[0, 1])
+
+
 def create_cluster(config: ClusterConfig) -> bool:
     log("Cluster configuration:")
     for key, value in config.model_dump().items():
         log(f"  {key:26s}: {value}")
 
     nri_template_path = write_containerd_nri_template()
+    registries_yaml_path = write_registries_yaml(config)
+    _, registry_full = registry_name(config)
 
     # k3d indexes agents 0..(total-1). GPU agents come first and carry the
     # nvidia.com/gpu.present=true label; the remaining agents stay unlabeled
@@ -188,6 +245,11 @@ def create_cluster(config: ClusterConfig) -> bool:
                     "--image", config.k3s_image,
                     "--k3s-node-label", gpu_node_label,
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
+                    # Connect the local registry to the cluster network and add
+                    # the localhost:PORT mirror so nodes can pull images Skaffold
+                    # pushed there (see create_registry/write_registries_yaml).
+                    "--registry-use", f"{registry_full}:{config.registry_port}",
+                    "--registry-config", registries_yaml_path,
                     "--timeout", config.cluster_timeout,
                     "--wait",
                     # Don't touch the user's default kubeconfig. The NRI config.toml.tmpl
@@ -209,6 +271,7 @@ def create_cluster(config: ClusterConfig) -> bool:
         return False
     finally:
         Path(nri_template_path).unlink(missing_ok=True)
+        Path(registries_yaml_path).unlink(missing_ok=True)
 
 
 def write_kubeconfig(config: ClusterConfig) -> str:
@@ -468,8 +531,13 @@ def main(
 
     if delete:
         delete_cluster(config)
+        delete_registry(config)
         Path(config.kubeconfig).expanduser().unlink(missing_ok=True)
         return
+
+    # The registry must exist before the cluster: create_cluster's --registry-use
+    # connects it to the cluster network and generates the node registries.yaml.
+    create_registry(config)
 
     if not create_cluster(config):
         raise typer.Exit(1)
