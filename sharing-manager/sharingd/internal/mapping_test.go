@@ -52,8 +52,8 @@ func activeContainers(t *testing.T, p *Plugin, r *fsstore.Reader) []store.Contai
 }
 
 // gpuContainer builds a container the GPU detector recognizes: it carries NVIDIA
-// device nodes (major 195) for the given minors, which is what gpudevices reads
-// to derive GPUDevice{Index: n}.
+// device nodes (major 195) for the given minors — the only signal gpudevices
+// reads to derive GPUDevice{MinorNumber: n}.
 func gpuContainer(id, name, podSandboxID string, minors ...int64) *api.Container {
 	devices := make([]*api.LinuxDevice, 0, len(minors))
 	for _, minor := range minors {

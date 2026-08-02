@@ -6,7 +6,6 @@ cover.out
 testbin/
 .gomod-cache/
 .cache/
-.gocache/
 
 # Go build/test cache (workspace-local GOCACHE used by e2e runs)
 .gocache/
