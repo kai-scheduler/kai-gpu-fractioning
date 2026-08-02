@@ -8,16 +8,21 @@
 #
 # The default profile builds prod-style images. The `e2e` profile switches
 # metricsd to Dockerfile.e2e (bakes in the nvml-mock .so for fake-GPU clusters)
-# and forces pullPolicy=Never so nodes use the locally loaded images.
+# and pushes the images to the k3d-managed local registry (create-cluster.py)
+# with pullPolicy=IfNotPresent, so a node that evicts an image under disk
+# pressure re-pulls it instead of wedging at ErrImageNeverPull.
 apiVersion: skaffold/v4beta11
 kind: Config
 metadata:
   name: gpu-sharing
 
 build:
-  # push:false keeps images local; Skaffold auto-loads them into a k3d/kind
-  # cluster when the current kube-context is one. All Dockerfiles build from the
-  # repo root so their cross-module COPYs resolve.
+  # push:false (default profile) keeps images local; Skaffold auto-loads them
+  # into a k3d/kind cluster when the current kube-context is one. The e2e profile
+  # overrides this to push:true and, with --default-repo=localhost:<port>
+  # (test/e2e/e2e.mk), pushes into the k3d local registry instead — so evicted
+  # images can be re-pulled. All Dockerfiles build from the repo root so their
+  # cross-module COPYs resolve.
   #
   # useBuildkit: BuildKit populates the $TARGETPLATFORM/$BUILDPLATFORM build args
   # that every Dockerfile's `FROM --platform=...` relies on. The legacy docker
@@ -80,6 +85,13 @@ deploy:
 profiles:
   - name: e2e
     patches:
+      # Push into the k3d local registry (create-cluster.py) instead of
+      # auto-loading images once. Paired with --default-repo=localhost:<port>
+      # (test/e2e/e2e.mk) and pullPolicy=IfNotPresent below, this lets a node
+      # re-pull an image it evicted under disk pressure.
+      - op: replace
+        path: /build/local/push
+        value: true
       # mpsd: use the fake-mps image (hack/fake-mps) instead of the real
       # nvidia/cuda-based build. It bundles the REAL mpsd supervisor plus a fake
       # nvidia-cuda-mps-control that just creates the MPS control socket and idles,
@@ -99,14 +111,15 @@ profiles:
         path: /build/artifacts/3/docker/buildArgs
         value:
           TARGETARCH: "{{.E2E_ARCH}}"
-      # Locally loaded images have no registry to pull from.
+      # Pull from the k3d local registry on demand; IfNotPresent means a node
+      # that evicted an image re-pulls it (vs. Never, which wedges forever).
       - op: add
         path: /deploy/helm/releases/0/setValues
         value:
-          images.operator.pullPolicy: Never
-          images.sharingd.pullPolicy: Never
-          images.mpsd.pullPolicy: Never
-          images.metricsd.pullPolicy: Never
+          images.operator.pullPolicy: IfNotPresent
+          images.sharingd.pullPolicy: IfNotPresent
+          images.mpsd.pullPolicy: IfNotPresent
+          images.metricsd.pullPolicy: IfNotPresent
           metricsAgent.runtimeClassName: ""
       # k3d has no "nvidia" RuntimeClass; clear runtimeClassName via a values file
       # (skaffold drops empty-string setValues entries, so --set can't do this).
