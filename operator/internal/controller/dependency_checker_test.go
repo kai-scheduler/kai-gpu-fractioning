@@ -142,6 +142,40 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			expectedMessage: "26.3.3",
 		},
 		{
+			// Same boundary as the ClusterPolicy case above, over the OpenShift
+			// discovery path: 26.7.0 is one patch below the supported floor.
+			name:  "OpenShift ClusterServiceVersion one patch below the minimum blocks Ready",
+			input: falseReady,
+			objects: []client.Object{
+				clusterServiceVersionObject("gpu-operator-certified.v26.7.0", "26.7.0"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
+			expectedMessage: "26.7.0",
+		},
+		{
+			name:  "OpenShift ClusterServiceVersion without a version blocks Ready",
+			input: falseReady,
+			objects: []client.Object{
+				clusterServiceVersionObject("gpu-operator-certified.v26.7.1", ""),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
+			expectedMessage: "is missing",
+		},
+		{
+			// Only CSVs whose name carries the gpu-operator prefix are considered,
+			// so an unrelated operator's CSV must not satisfy the dependency.
+			name:  "non-gpu-operator ClusterServiceVersion is ignored",
+			input: falseReady,
+			objects: []client.Object{
+				clusterServiceVersionObject("some-other-operator.v26.7.1", "26.7.1"),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorNotReady,
+			expectedMessage: "no gpu-operator ClusterServiceVersion found",
+		},
+		{
 			name:  "ClusterPolicy takes precedence over OpenShift ClusterServiceVersion",
 			input: falseReady,
 			objects: []client.Object{
