@@ -144,18 +144,11 @@ E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --default-repo=localhost:$(E2E
 
 e2e-deploy:
 	KUBECONFIG=$(E2E_KUBECONFIG) skaffold run -p e2e $(E2E_SKAFFOLD_FLAGS)
-	@# Skaffold already pushed the images to the local registry and IfNotPresent
-	@# lets nodes (re-)pull them, so this is belt-and-suspenders: pre-seed each
-	@# node's containerd from the local docker copy so the first pod start doesn't
-	@# even wait on a registry pull. Best-effort — a failure just falls back to the
-	@# on-demand pull. Match both bare (push:false) and localhost:PORT/<repo>
-	@# (push:true) tags.
-	@echo "Pre-seeding built images into k3d ($(E2E_CLUSTER_NAME))..."
-	@for repo in gpu-sharing sharingd mpsd metricsd; do \
-		ref=$$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "(^|/)$$repo:" | grep -v ':<none>' | head -1); \
-		if [ -n "$$ref" ]; then echo "  importing $$ref"; k3d image import "$$ref" -c $(E2E_CLUSTER_NAME) --mode direct || true; \
-		else echo "  note: no local image found for repo '$$repo' — nodes will pull it from the registry"; fi; \
-	done
+	@# Skaffold pushed the images to the k3d local registry and pods pull them via
+	@# the registries.yaml mirror with pullPolicy=IfNotPresent, so no per-node
+	@# `k3d image import` pre-seed is needed. (It was also actively harmful:
+	@# importing a registry-tagged localhost:PORT/<repo> ref could hang for
+	@# minutes and blow the job timeout.)
 	@echo "Waiting for the operator to create the sharingd DaemonSet..."
 	@for i in $$(seq 1 60); do KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) get ds gpu-sharing-sharingd >/dev/null 2>&1 && break; sleep 2; done
 	KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) rollout status ds/gpu-sharing-sharingd --timeout=180s
