@@ -21,8 +21,11 @@ func TestFromContainerExtractsDistinctNVIDIAMinors(t *testing.T) {
 	if len(devices) != 2 {
 		t.Fatalf("expected two GPU devices, got %d: %#v", len(devices), devices)
 	}
-	if devices[0].Index != 0 || devices[1].Index != 1 {
-		t.Fatalf("unexpected GPU indexes: %#v", devices)
+	if devices[0].MinorNumber != 0 || devices[1].MinorNumber != 1 {
+		t.Fatalf("unexpected GPU minor numbers: %#v", devices)
+	}
+	if devices[0].Index != 0 || devices[1].Index != 0 {
+		t.Fatalf("Index should be zero (not set) for NRI-sourced devices: %#v", devices)
 	}
 }
 

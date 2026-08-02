@@ -14,10 +14,16 @@ type GPUProcessMetric struct {
 type GPUProcessSnapshot struct {
 	Processes   []GPUProcessMetric
 	DeviceUUIDs map[int]string
-	// DeviceTotalMemoryBytes is each GPU's total memory in bytes, keyed by device
-	// index. The controller divides a pod's requested memory by this to derive the
-	// GPU fraction used to normalize SM utilization. Empty for backends that do not
-	// report it (e.g. the noop collector on fake-GPU nodes).
+	// DeviceMinorToNVMLIndex maps each GPU's Linux device minor number to its NVML
+	// index. Populated by the NVML collector; empty on fake-GPU nodes where the noop
+	// collector is used. The engine uses this to resolve NRI-sourced GPUDevices
+	// (which carry the Linux minor number) to NVML indices so UUID lookup is correct
+	// even when minor ≠ NVML index.
+	DeviceMinorToNVMLIndex map[int]int
+	// DeviceTotalMemoryBytes is each GPU's total memory in bytes, keyed by NVML
+	// device index. The controller divides a pod's requested memory by this to
+	// derive the GPU fraction used to normalize SM utilization. Empty for backends
+	// that do not report it (e.g. the noop collector on fake-GPU nodes).
 	DeviceTotalMemoryBytes map[int]uint64
 	// DeviceErrors holds per-device collection failures. The snapshot is still
 	// usable (partial) when this is non-nil.

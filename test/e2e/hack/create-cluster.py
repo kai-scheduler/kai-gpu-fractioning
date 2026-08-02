@@ -3,10 +3,14 @@
 
 Uses an env-driven pydantic-settings config, a typer CLI, and
 retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
-single fake-GPU node pool and fake-gpu-operator installed. The only other
-cluster-level tweak is repointing the "nvidia" RuntimeClass at the runc handler
-so the mpsd DaemonSet can run on the GPU-less fake cluster (see
-configure_nvidia_runtimeclass); no application components are deployed here.
+single fake-GPU node pool and fake-gpu-operator installed. It also stands up a
+k3d-managed local image registry (see create_registry) that Skaffold pushes the
+gpu-sharing component images to, so nodes pull them (pullPolicy IfNotPresent)
+and an image evicted from a node's containerd under disk pressure is re-pulled
+instead of wedging at ErrImageNeverPull. The only other cluster-level tweak is
+repointing the "nvidia" RuntimeClass at the runc handler so the mpsd DaemonSet
+can run on the GPU-less fake cluster (see configure_nvidia_runtimeclass); no
+application components are deployed here.
 
 Dependencies: see requirements.txt (typer, pydantic-settings, sh — no docker
 SDK since this script never builds or pre-pulls images, no rich since plain
@@ -24,6 +28,7 @@ Environment variables (E2E_ prefix, see ClusterConfig):
     E2E_GPU_MEMORY_MIB             (default: 40960)
     E2E_MAX_RETRIES                (default: 3)
     E2E_KUBECONFIG                 (default: ~/.kube/<cluster_name>.yaml)
+    E2E_REGISTRY_PORT              (default: 5001)  # k3d local image registry
 
 The cluster's kubeconfig is written to E2E_KUBECONFIG (not ~/.kube/config) via
 docker, because the NRI config.toml.tmpl volume this script mounts breaks k3d's
@@ -39,7 +44,9 @@ Requires: k3d, kubectl, docker, helm (unless --skip-fake-gpu-operator).
 """
 
 import os
+import re
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -126,11 +133,24 @@ class ClusterConfig(BaseSettings):
     gpu_memory_mib: int = Field(default=40960, ge=1)
     fake_gpu_operator_version: str = ""
     cluster_timeout: str = "120s"
+    # Readiness wait for the fake-GPU cluster components (fake-gpu-operator's
+    # status-updater pod + device-plugin DaemonSet, and the nvml-mock DaemonSet).
+    # A fresh cluster has an empty containerd image cache, so the very first pull
+    # of these images dominates the wait; 120s/180s regularly time out on cold
+    # caches (local first run and CI runners alike) even though the pods come up
+    # fine given a little more time. Overridable via E2E_FAKE_GPU_OPERATOR_TIMEOUT.
+    fake_gpu_operator_timeout: str = "300s"
     max_retries: int = Field(default=3, ge=1, le=10)
     # Where to write the cluster's kubeconfig (E2E_KUBECONFIG). Empty -> a
     # default derived from cluster_name (see main). This file — not ~/.kube/config
     # — is what every downstream e2e step uses.
     kubeconfig: str = ""
+    # Host-published port for the k3d-managed local image registry (see
+    # create_registry). Skaffold pushes to localhost:PORT and image refs use it;
+    # the container itself always listens on 5000 internally (REGISTRY_INTERNAL_PORT),
+    # which is what the in-cluster mirror endpoint targets. Default 5001 dodges
+    # macOS's AirPlay Receiver on 5000.
+    registry_port: int = Field(default=5001, ge=1, le=65535)
 
 
 def log(msg: str) -> None:
@@ -148,12 +168,67 @@ def delete_cluster(config: ClusterConfig) -> None:
     sh.k3d("cluster", "delete", config.cluster_name, _ok_code=[0, 1])
 
 
+# Port the k3d registry container listens on inside the cluster network. k3d's
+# --port flag only remaps the host-published port; the container itself always
+# serves on 5000, so the in-cluster mirror endpoint must target this, not the
+# host port.
+REGISTRY_INTERNAL_PORT = 5000
+
+
+def registry_name(config: ClusterConfig) -> tuple[str, str]:
+    """(base, full) k3d registry names. k3d prepends "k3d-" to everything it
+    creates, so we pass `base` to `k3d registry create`/`delete` but reference
+    `full` in --registry-use, the mirror endpoint and node-side pulls."""
+    base = f"{config.cluster_name}-registry"
+    return base, f"k3d-{base}"
+
+
+def write_registries_yaml(config: ClusterConfig) -> str:
+    """Write a containerd registries.yaml that mirrors localhost:<host_port> to
+    the in-cluster registry container. Skaffold pushes images tagged
+    localhost:<host_port>/<img> (which the host reaches via the published port),
+    and this mirror teaches every node to pull that same ref from the registry
+    over the k3d Docker network — where it's reachable as
+    k3d-<cluster>-registry:<internal_port> (5000, NOT the host port). One image
+    ref works on both sides, so no /etc/hosts entry or *.localhost DNS is needed,
+    which keeps it portable across macOS and CI runners."""
+    _, full = registry_name(config)
+    content = (
+        "mirrors:\n"
+        f'  "localhost:{config.registry_port}":\n'
+        "    endpoint:\n"
+        f"      - http://{full}:{REGISTRY_INTERNAL_PORT}\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+        f.write(content)
+        return f.name
+
+
+def create_registry(config: ClusterConfig) -> None:
+    """Create the k3d-managed local registry the e2e stack pushes to. Recreated
+    from scratch (delete-then-create) so a stale registry from a prior run can't
+    serve outdated image layers. --registry-use (in create_cluster) connects it
+    to the cluster network and generates the node registries.yaml."""
+    base, full = registry_name(config)
+    log(f"Creating k3d registry '{full}' on port {config.registry_port} (delete-then-create)...")
+    sh.k3d("registry", "delete", full, _ok_code=[0, 1])
+    sh.k3d("registry", "create", base, "--port", str(config.registry_port))
+
+
+def delete_registry(config: ClusterConfig) -> None:
+    _, full = registry_name(config)
+    log(f"Deleting k3d registry '{full}'...")
+    sh.k3d("registry", "delete", full, _ok_code=[0, 1])
+
+
 def create_cluster(config: ClusterConfig) -> bool:
     log("Cluster configuration:")
     for key, value in config.model_dump().items():
         log(f"  {key:26s}: {value}")
 
     nri_template_path = write_containerd_nri_template()
+    registries_yaml_path = write_registries_yaml(config)
+    _, registry_full = registry_name(config)
 
     # k3d indexes agents 0..(total-1). GPU agents come first and carry the
     # nvidia.com/gpu.present=true label; the remaining agents stay unlabeled
@@ -179,6 +254,13 @@ def create_cluster(config: ClusterConfig) -> bool:
                     "--image", config.k3s_image,
                     "--k3s-node-label", gpu_node_label,
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
+                    # Connect the local registry to the cluster network (so its
+                    # name resolves inside nodes) and add the localhost mirror so
+                    # nodes can pull images Skaffold pushed there. No port on
+                    # --registry-use: k3d looks the registry up by name, and the
+                    # actual pull path is our mirror (see write_registries_yaml).
+                    "--registry-use", registry_full,
+                    "--registry-config", registries_yaml_path,
                     "--timeout", config.cluster_timeout,
                     "--wait",
                     # Don't touch the user's default kubeconfig. The NRI config.toml.tmpl
@@ -200,6 +282,7 @@ def create_cluster(config: ClusterConfig) -> bool:
         return False
     finally:
         Path(nri_template_path).unlink(missing_ok=True)
+        Path(registries_yaml_path).unlink(missing_ok=True)
 
 
 def write_kubeconfig(config: ClusterConfig) -> str:
@@ -257,6 +340,46 @@ def configure_nvidia_runtimeclass(config: ClusterConfig) -> None:
     sh.kubectl("create", "-f", "-", _in=NVIDIA_RUNTIME_CLASS_MANIFEST)
 
 
+_IMAGE_LINE_RE = re.compile(r"""^\s*image:\s*["']?([^"'\s]+)["']?\s*$""")
+
+
+def image_refs(manifest_text: str) -> list[str]:
+    """Extract the unique container image refs from rendered k8s manifests
+    (Helm template output or a static manifest)."""
+    return sorted({m.group(1) for m in map(_IMAGE_LINE_RE.match, manifest_text.splitlines()) if m})
+
+
+def prewarm_images(config: ClusterConfig, images: list[str]) -> None:
+    """Make each image available in the k3d cluster's containerd *before* the
+    workloads that need it are created, so pod startup never blocks on a pull.
+
+    The k3d nodes pull directly from the registry, and on a throttled network
+    ghcr.io pulls of even small (~60-100MB) images can take 10+ minutes and blow
+    the readiness waits. Instead we pull once into the host Docker (cached across
+    FRESH recreates, unlike the per-node containerd) and `k3d image import` it —
+    which is a fast local transfer. A warm Docker cache makes recreates instant;
+    CI (fast ghcr) is unaffected since a cache miss just falls back to a normal
+    fast pull here.
+    """
+    if not images:
+        return
+    log(f"Pre-warming {len(images)} image(s) into cluster '{config.cluster_name}':")
+    for img in images:
+        log(f"  - {img}")
+    for img in images:
+        try:
+            # Captured (not printed); success => already in the local Docker cache.
+            sh.docker("image", "inspect", img)
+            present = True
+        except sh.ErrorReturnCode:
+            present = False
+        if not present:
+            log(f"docker pull {img} (one-time; may be slow on a throttled network)...")
+            sh.docker("pull", img, _fg=True)
+        log(f"k3d image import {img} -> {config.cluster_name}...")
+        sh.k3d("image", "import", img, "-c", config.cluster_name, _fg=True)
+
+
 def install_fake_gpu_operator(config: ClusterConfig) -> None:
     log(f"Installing fake-gpu-operator {config.fake_gpu_operator_version}...")
 
@@ -303,6 +426,18 @@ topology:
         values_path = f.name
 
     try:
+        # Render the chart with these values so we know exactly which images the
+        # install will schedule, then pre-warm them into the cluster before the
+        # helm upgrade creates the pods (see prewarm_images).
+        rendered = str(sh.helm(
+            "template", "fake-gpu-operator",
+            FAKE_GPU_OPERATOR_CHART,
+            "--version", config.fake_gpu_operator_version,
+            "--namespace", "gpu-operator",
+            "-f", values_path,
+        ))
+        prewarm_images(config, image_refs(rendered))
+
         sh.helm(
             "upgrade", "-i", "fake-gpu-operator",
             FAKE_GPU_OPERATOR_CHART,
@@ -314,11 +449,11 @@ topology:
     finally:
         Path(values_path).unlink(missing_ok=True)
 
-    log("Waiting for status-updater to be ready...")
-    sh.kubectl("wait", "--for=condition=Ready", "pod", "-l", "app=status-updater", "-n", "gpu-operator", "--timeout=120s")
+    log(f"Waiting for status-updater to be ready (timeout {config.fake_gpu_operator_timeout})...")
+    sh.kubectl("wait", "--for=condition=Ready", "pod", "-l", "app=status-updater", "-n", "gpu-operator", f"--timeout={config.fake_gpu_operator_timeout}")
 
-    log("Waiting for device-plugin daemonset rollout...")
-    sh.kubectl("rollout", "status", "daemonset/device-plugin", "-n", "gpu-operator", "--timeout=180s")
+    log(f"Waiting for device-plugin daemonset rollout (timeout {config.fake_gpu_operator_timeout})...")
+    sh.kubectl("rollout", "status", "daemonset/device-plugin", "-n", "gpu-operator", f"--timeout={config.fake_gpu_operator_timeout}")
 
     wait_for_gpu_node_labels(config)
 
@@ -333,6 +468,11 @@ def install_nvml_mock(config: ClusterConfig) -> None:
     # both up-front so apply doesn't race. _ok_code tolerates AlreadyExists.
     sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
     sh.kubectl("create", "namespace", "gpu-sharing", _ok_code=[0, 1])
+
+    # Pre-warm the nvml-mock image so the DaemonSet rollout below doesn't block on
+    # a slow registry pull (see prewarm_images).
+    prewarm_images(config, image_refs(manifest.read_text()))
+
     sh.kubectl("apply", "-f", str(manifest))
 
     # Guard against a silent no-op: a DaemonSet whose nodeSelector matches zero
@@ -348,8 +488,8 @@ def install_nvml_mock(config: ClusterConfig) -> None:
             f"— check the DaemonSet nodeSelector matches the GPU nodes' labels.")
         raise typer.Exit(1)
 
-    log("Waiting for nvml-mock daemonset rollout...")
-    sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", "--timeout=180s")
+    log(f"Waiting for nvml-mock daemonset rollout (timeout {config.fake_gpu_operator_timeout})...")
+    sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", f"--timeout={config.fake_gpu_operator_timeout}")
 
     # Agents are pre-labeled nvidia.com/gpu.present=true at cluster creation and
     # nvml-mock's setup.sh re-applies it; confirm the label is present before the
@@ -402,8 +542,13 @@ def main(
 
     if delete:
         delete_cluster(config)
+        delete_registry(config)
         Path(config.kubeconfig).expanduser().unlink(missing_ok=True)
         return
+
+    # The registry must exist before the cluster: create_cluster's --registry-use
+    # connects it to the cluster network and generates the node registries.yaml.
+    create_registry(config)
 
     if not create_cluster(config):
         raise typer.Exit(1)

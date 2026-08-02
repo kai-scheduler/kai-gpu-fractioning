@@ -32,12 +32,11 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	targetNode := firstGPUNode(t, ctx, c)
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc1-single-fractional-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   "2048",
-		GPUMemoryRequestMiB: "2048",
-		NodeSelector:        map[string]string{"kubernetes.io/hostname": targetNode},
+		Namespace:     attributionTestNamespace,
+		Name:          "tc1-single-fractional-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", "2048", "2048"),
+		NodeSelector:  map[string]string{"kubernetes.io/hostname": targetNode},
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -75,7 +74,7 @@ func TestE2E_SingleFractionalPodAttribution(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	// Assert the pod is attributed on the GPU whose UUID we pinned in nvml-mock,
@@ -120,12 +119,11 @@ func TestE2E_UnmatchedNVMLProcessIsDropped(t *testing.T) {
 	// A fractional pod so the engine runs collect() — it is skipped when
 	// activeContainers == 0 and we would never exercise the unmatched path.
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc-unmatched-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   "1024",
-		GPUMemoryRequestMiB: "1024",
-		NodeSelector:        nodeSel,
+		Namespace:     attributionTestNamespace,
+		Name:          "tc-unmatched-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", "1024", "1024"),
+		NodeSelector:  nodeSel,
 	}
 	pod, err := workload.Apply(ctx, c, spec)
 	if err != nil {
@@ -165,7 +163,7 @@ func TestE2E_UnmatchedNVMLProcessIsDropped(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

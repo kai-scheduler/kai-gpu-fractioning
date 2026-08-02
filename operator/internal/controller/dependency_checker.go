@@ -39,7 +39,7 @@ import (
 
 const (
 	clusterPolicyVersionLabel   = "app.kubernetes.io/version"
-	minimumGPUOperatorVersion   = "v26.7.0"
+	minimumGPUOperatorVersion   = "v26.7.1"
 	clusterPolicyReadyState     = "ready"
 	clusterPolicyReadyCondition = "Ready"
 	clusterPolicyErrorCondition = "Error"

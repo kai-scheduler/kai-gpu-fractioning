@@ -45,9 +45,13 @@ type metricsEngine struct {
 	smUtilBuf map[podGPUKey][]float64
 	// log is the controller's logger.
 	log *slog.Logger
-	// deviceUUIDs maps GPU index -> UUID learned from NVML; fills UUID for NRI-sourced devices.
+	// deviceUUIDs maps NVML device index → UUID learned from NVML; fills UUID for NRI-sourced devices.
 	deviceUUIDs map[int]string
-	// deviceTotalMemoryBytes maps GPU index -> total memory (bytes) learned from NVML; the divisor for the GPU fraction.
+	// minorToNVMLIndex maps Linux device minor number → NVML device index, populated
+	// from each NVML collect. On fake-GPU nodes the noop collector leaves this empty,
+	// and idlePodGPUKey falls back to treating GPUDevice.Index as the NVML index.
+	minorToNVMLIndex map[int]int
+	// deviceTotalMemoryBytes maps NVML device index → total memory (bytes) learned from NVML; the divisor for the GPU fraction.
 	deviceTotalMemoryBytes map[int]uint64
 	// snapshot is the latest published snapshot, read by Snapshot().
 	snapshot Snapshot
@@ -80,6 +84,7 @@ func newMetricsControllerWithPodSource(collector GPUProcessCollector, pods podSo
 		smUtilBuf:              smUtilBuf,
 		log:                    logger,
 		deviceUUIDs:            map[int]string{},
+		minorToNVMLIndex:       map[int]int{},
 		deviceTotalMemoryBytes: map[int]uint64{},
 	}
 }
@@ -139,6 +144,7 @@ func (s *metricsEngine) collect(ctx context.Context) {
 		s.log.WarnContext(ctx, "publishing partial GPU metrics; some devices failed", "error", snapshot.DeviceErrors)
 	}
 	s.rememberDeviceUUIDs(snapshot.DeviceUUIDs)
+	s.rememberMinorToNVMLIndex(snapshot.DeviceMinorToNVMLIndex)
 	s.rememberDeviceTotalMemory(snapshot.DeviceTotalMemoryBytes)
 
 	metrics, unmatched := s.enrich(ctx, snapshot.Processes, pods)
@@ -217,7 +223,10 @@ func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric
 
 	for _, container := range pods.ActiveContainers() {
 		for _, device := range container.GPUDevices {
-			key := s.idlePodGPUKey(container, device)
+			key, ok := s.idlePodGPUKey(container, device)
+			if !ok {
+				continue
+			}
 			recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMB)
 			if _, ok := byPodGPU[key]; ok {
 				continue
@@ -366,24 +375,59 @@ func (s *metricsEngine) rememberDeviceUUIDs(deviceUUIDs map[int]string) {
 	}
 }
 
-func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device store.GPUDevice) podGPUKey {
-	// The NRI backend identifies a device by index and learns its UUID from the
-	// NVML collect; the PodResources backend supplies the UUID directly (and we
-	// recover the index from NVML when it is known) since it has no device index.
+func (s *metricsEngine) rememberMinorToNVMLIndex(minorToNVML map[int]int) {
+	for minor, nvmlIdx := range minorToNVML {
+		s.minorToNVMLIndex[minor] = nvmlIdx
+	}
+}
+
+func (s *metricsEngine) idlePodGPUKey(container store.ContainerInfo, device store.GPUDevice) (podGPUKey, bool) {
 	uuid := device.UUID
 	index := device.Index
-	if uuid == "" {
+
+	if uuid != "" {
+		// PodResources path: UUID known; recover the NVML index.
+		if resolved, ok := s.indexForUUID(uuid); ok {
+			index = resolved
+		}
+	} else if len(s.minorToNVMLIndex) > 0 {
+		// NRI path (real GPU node): resolve Linux device minor number → NVML index → UUID.
+		// minorToNVMLIndex is populated whenever the NVML collector runs, so it is
+		// non-empty on any node with a GPU driver. On fake-GPU nodes the noop
+		// collector leaves it empty and we fall through to the legacy branch below.
+		//
+		// Two record formats exist depending on when sharingd was deployed:
+		//   New (MinorNumber set): {MinorNumber: N, Index: 0} — N is the Linux minor.
+		//   Old (Index set):       {MinorNumber: 0, Index: N} — N is also the Linux
+		//     minor, because the old realgpu path stored minor in the Index field.
+		minor := device.MinorNumber
+		if minor == 0 && device.Index != 0 {
+			minor = device.Index
+		}
+		nvmlIdx, ok := s.minorToNVMLIndex[minor]
+		if !ok {
+			// Minor not yet in the map — NVML couldn't enumerate this device yet.
+			// Return false so the caller skips this device entirely rather than
+			// writing an empty-label idle metric to byPodGPU.
+			s.log.Debug("GPU device minor not in minor→NVML map; skipping idle metric",
+				"minor", minor, "pod", container.Pod, "namespace", container.Namespace)
+			return podGPUKey{}, false
+		}
+		index = nvmlIdx
+		uuid = s.deviceUUIDs[nvmlIdx]
+	} else {
+		// Fake-GPU / noop-collector path: no minor→NVML mapping available.
+		// Treat GPUDevice.Index as the NVML index directly (the fake detector sets it).
 		uuid = s.deviceUUIDs[device.Index]
-	} else if resolved, ok := s.indexForUUID(uuid); ok {
-		index = resolved
 	}
+
 	return podGPUKey{
 		Namespace: container.Namespace,
 		Pod:       container.Pod,
 		PodUID:    container.PodUID,
 		GPUUUID:   uuid,
 		GPUIndex:  index,
-	}
+	}, true
 }
 
 func (s *metricsEngine) indexForUUID(uuid string) (int, bool) {

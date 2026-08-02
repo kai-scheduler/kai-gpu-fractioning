@@ -144,6 +144,8 @@ cluster.
 | `make e2e-kubeconfig-unmerge` | remove that context from `~/.kube/config` (run automatically by `e2e-cluster-down`)                                                                                                                        |
 | `make test-e2e`               | run all Go suites (cluster deployed already)                                                                                                                                                               |
 | `make test-e2e-metrics`       | run only the metrics suite (`./tests/metrics/...`)                                                                                                                                                         |
+| `make test-e2e-operator`      | run only the operator/controller suite (`./tests/operator/...`)                                                                                                                                            |
+| `make test-e2e-sharingd`      | run only the sharingd NRI-injection suite (`./tests/sharingd/...`)                                                                                                                                         |
 | `make run-e2e`                | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created/deployed                                                                                      |
 
 `E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_OPERATOR_NAMESPACE`, `E2E_ARCH`,
@@ -192,5 +194,8 @@ live under `k8s/`; deployment is not a Go package — it's `helm` (see
 - `k8s/portforward/` — SPDY port-forward to a pod (like `kubectl port-forward`); depends on `cluster`
 - `metrics/` — scrape + parse Prometheus text format (no deps)
 - `suite/` — ties `config`+`cluster`+`nodes` together; used by `tests/*/main_test.go`
+- `harness/` — shared, importable (`//go:build e2e`) test support for the operator and sharingd suites: the FX-STEADY fixture machinery, workload/exec/pod/node/daemonset helpers, diagnostics, and the cross-suite constants. Because Go can't import another package's `_test.go` files, anything shared across suites lives here; each suite's `aliases_test.go` re-exports the bits it uses under short unqualified names.
 - `tests/metrics/` — the metrics suite: scrapes the metricsd sidecar `/metrics`
+- `tests/operator/` — the operator/controller suite: CR/CEL validation, DaemonSet deployment shape, CR status + node conditions, fault injection/recovery, config propagation, teardown
+- `tests/sharingd/` — the sharingd data-plane suite: sharingd's NRI injection (GPU-memory env + MPS pipe mount on annotated containers, fail-closed/fail-open)
 - `hack/` — `create-cluster.py` + `requirements.txt`, the k3d + fake-gpu-operator provisioning script (Python, not Go — see above for why)

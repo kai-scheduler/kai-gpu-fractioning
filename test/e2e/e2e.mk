@@ -26,6 +26,12 @@ E2E_NON_GPU_WORKER_NODES      ?= 1
 E2E_FAKE_GPU_OPERATOR_VERSION ?= 0.2.0
 PYTHON                        ?= python3
 
+# Port of the k3d-managed local image registry create-cluster.py stands up.
+# Skaffold pushes the component images to localhost:$(E2E_REGISTRY_PORT) (see
+# --default-repo in E2E_SKAFFOLD_FLAGS); nodes pull them back via the cluster's
+# registries.yaml mirror. Must match create-cluster.py's E2E_REGISTRY_PORT.
+E2E_REGISTRY_PORT             ?= 5001
+
 # Namespace the operator chart is installed into (must match skaffold.yaml's
 # release namespace). The Go suite reads this via E2E_OPERATOR_NAMESPACE.
 E2E_OPERATOR_NAMESPACE        ?= gpu-sharing
@@ -51,6 +57,7 @@ export E2E_GPU_WORKER_NODES
 export E2E_NON_GPU_WORKER_NODES
 export E2E_FAKE_GPU_OPERATOR_VERSION
 export E2E_ARCH
+export E2E_REGISTRY_PORT
 # create-cluster.py reads E2E_KUBECONFIG to decide where to write the kubeconfig;
 # the Go suite (config.go) reads it to connect. skaffold/helm/kubectl instead read
 # KUBECONFIG, so the deploy/undeploy recipes set it inline from E2E_KUBECONFIG.
@@ -58,7 +65,7 @@ export E2E_KUBECONFIG
 
 .PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps \
 	e2e-deploy e2e-undeploy e2e-kubeconfig-merge e2e-kubeconfig-unmerge \
-	test-e2e test-e2e-metrics run-e2e
+	test-e2e test-e2e-metrics test-e2e-operator test-e2e-sharingd run-e2e
 
 e2e: e2e-cluster-up e2e-deploy test-e2e
 
@@ -105,19 +112,23 @@ e2e-kubeconfig-unmerge:
 	@KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config delete-cluster "$(E2E_KUBE_CONTEXT)" >/dev/null 2>&1 || true
 	@KUBECONFIG="$(KUBECONFIG_DEFAULT)" kubectl config unset "users.$(E2E_KUBE_CONTEXT)" >/dev/null 2>&1 || true
 
-# e2e-deploy builds all four images, loads them into the (k3d) cluster, and helm
-# installs the operator chart — all via `skaffold run -p e2e` (skaffold.yaml).
-# Skaffold auto-loads images into a k3d/kind kube-context, so the current context
-# must point at the e2e cluster.
+# e2e-deploy builds all four images, pushes them to the k3d local registry, and
+# helm installs the operator chart — all via `skaffold run -p e2e`
+# (skaffold.yaml). The current kube-context must point at the e2e cluster.
 #
 # Flags:
 #   --platform pins the build to the host arch instead of letting Skaffold probe
 #     the cluster for its node platform: that probe fails (and passes an empty
 #     --platform to metricsd's `FROM --platform=$TARGETPLATFORM`) whenever the
 #     current kube-context is unreachable or non-k3d.
+#   --default-repo=localhost:$(E2E_REGISTRY_PORT) makes Skaffold tag/push the
+#     images into the k3d local registry (create-cluster.py). Combined with
+#     push:true + pullPolicy=IfNotPresent (skaffold.yaml e2e profile), a node
+#     that evicts an image under disk pressure re-pulls it from the registry
+#     instead of wedging at ErrImageNeverPull.
 #   --cache-artifacts=false skips Skaffold's registry-backed cache check, which
-#     otherwise shells out to a docker credential helper (e.g. gcloud) just to
-#     look up images we never push.
+#     otherwise shells out to a docker credential helper (e.g. gcloud) to look up
+#     the chart's default ghcr.io repos.
 #   --verbosity=error silences Skaffold's "image [sharingd|mpsd|metricsd] is not
 #     used" warnings: those images reach the pods indirectly (the chart passes
 #     their repo/tag to the operator, which creates the DaemonSets), so Skaffold's
@@ -129,10 +140,15 @@ e2e-kubeconfig-unmerge:
 # image (hack/fake-mps) on the runc-backed "nvidia" RuntimeClass, so mpsd does
 # reach Ready here — but the metrics suite doesn't depend on it, so we keep the
 # wait scoped to sharingd and let the operator E2E suite assert mpsd/CR Ready.
-E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --cache-artifacts=false --verbosity=error
+E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --default-repo=localhost:$(E2E_REGISTRY_PORT) --cache-artifacts=false --verbosity=error
 
 e2e-deploy:
 	KUBECONFIG=$(E2E_KUBECONFIG) skaffold run -p e2e $(E2E_SKAFFOLD_FLAGS)
+	@# Skaffold pushed the images to the k3d local registry and pods pull them via
+	@# the registries.yaml mirror with pullPolicy=IfNotPresent, so no per-node
+	@# `k3d image import` pre-seed is needed. (It was also actively harmful:
+	@# importing a registry-tagged localhost:PORT/<repo> ref could hang for
+	@# minutes and blow the job timeout.)
 	@echo "Waiting for the operator to create the sharingd DaemonSet..."
 	@for i in $$(seq 1 60); do KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) get ds gpu-sharing-sharingd >/dev/null 2>&1 && break; sleep 2; done
 	KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) rollout status ds/gpu-sharing-sharingd --timeout=180s
@@ -147,6 +163,22 @@ test-e2e:
 
 test-e2e-metrics:
 	$(E2E_GO_TEST) ./tests/metrics/...
+
+# The operator suite drives CR lifecycle, rollouts, fault injection and config
+# propagation, so it needs a longer timeout than the metrics suite (several
+# delete→recreate rollouts + fault-recovery windows). It does NOT need nvml-mock
+# (it asserts operator behavior, not GPU metrics). E2E_GPU_NODE_COUNT primes the
+# preflight.
+test-e2e-operator:
+	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 40m ./tests/operator/...
+
+# The sharingd suite exercises the sharingd NRI data plane (env/mount injection
+# on annotated workloads). Like the operator suite it asserts daemon behavior,
+# not GPU metrics, so it does NOT need nvml-mock. It creates a handful of
+# workload pods and does one CR re-roll (fail-open), so it's much shorter than
+# the operator suite — a 20m timeout clears it with margin, under the job limit.
+test-e2e-sharingd:
+	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 20m ./tests/sharingd/...
 
 # run-e2e runs the suite against whatever cluster the caller provides
 # (set E2E_KUBECONFIG=...). The suite never provisions a cluster, so this works

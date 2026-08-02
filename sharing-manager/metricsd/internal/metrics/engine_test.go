@@ -481,6 +481,173 @@ func TestRememberDeviceTotalMemoryPersistsAcrossPartialUpdates(t *testing.T) {
 	}
 }
 
+// TestIdlePodGPUKeyResolvesMinorToNVMLIndex verifies that on a real GPU node
+// (minorToNVMLIndex populated) the idle key is built from GPUDevice.MinorNumber
+// via the minor→NVML mapping, not from GPUDevice.Index. This is the fix for the
+// phantom metric bug: NVML index 0 → minor 1 → GPU-AAA, NVML index 1 → minor 0 → GPU-BBB.
+// A container exposed device minor 0 must resolve to GPU-BBB / NVML index 1.
+func TestIdlePodGPUKeyResolvesMinorToNVMLIndex(t *testing.T) {
+	// NVML index 0 = minor 1 = GPU-AAA; NVML index 1 = minor 0 = GPU-BBB.
+	s := &metricsEngine{
+		deviceUUIDs:            map[int]string{0: "GPU-AAA", 1: "GPU-BBB"},
+		minorToNVMLIndex:       map[int]int{1: 0, 0: 1}, // minor 1→NVML 0, minor 0→NVML 1
+		deviceTotalMemoryBytes: map[int]uint64{},
+	}
+	container := store.ContainerInfo{
+		Namespace: "default", Pod: "pod", PodUID: "pod-uid",
+	}
+
+	// Device with minor 0 → should resolve to GPU-BBB (NVML index 1).
+	key, ok := s.idlePodGPUKey(container, store.GPUDevice{MinorNumber: 0})
+	if !ok {
+		t.Fatalf("minor 0: expected ok=true, got false")
+	}
+	if key.GPUUUID != "GPU-BBB" {
+		t.Fatalf("minor 0: expected UUID GPU-BBB, got %s", key.GPUUUID)
+	}
+	if key.GPUIndex != 1 {
+		t.Fatalf("minor 0: expected NVML index 1, got %d", key.GPUIndex)
+	}
+
+	// Device with minor 1 → should resolve to GPU-AAA (NVML index 0).
+	key, ok = s.idlePodGPUKey(container, store.GPUDevice{MinorNumber: 1})
+	if !ok {
+		t.Fatalf("minor 1: expected ok=true, got false")
+	}
+	if key.GPUUUID != "GPU-AAA" {
+		t.Fatalf("minor 1: expected UUID GPU-AAA, got %s", key.GPUUUID)
+	}
+	if key.GPUIndex != 0 {
+		t.Fatalf("minor 1: expected NVML index 0, got %d", key.GPUIndex)
+	}
+}
+
+// TestPhantomMetricSuppressedWhenMinorDiffersFromNVMLIndex is the end-to-end
+// regression test for the original bug: a pod on GPU-BBB (minor 0, NVML index 1)
+// must not produce a phantom idle metric for GPU-AAA (minor 1, NVML index 0).
+func TestPhantomMetricSuppressedWhenMinorDiffersFromNVMLIndex(t *testing.T) {
+	// NVML index 0 → minor 1 → GPU-AAA; NVML index 1 → minor 0 → GPU-BBB.
+	// The pod is assigned GPU-BBB, so its container exposes device minor 0.
+	containerStore := store.FakeStore{Containers: []store.ContainerInfo{{
+		ContainerID: "ctr",
+		Pod:         "pod",
+		Namespace:   "default",
+		PodUID:      "pod-uid",
+		CgroupPath:  "/kubepods/pod.scope/ctr.scope",
+		GPUDevices:  []store.GPUDevice{{MinorNumber: 0}},
+	}}}
+
+	controller := newMetricsController(nil, fakeCgroupResolver{
+		1001: []string{"/kubepods/pod.scope/ctr.scope/deeper"},
+	}, containerStore, 0, 0, slog.Default())
+
+	// Teach the engine the minor→NVML mapping and UUID table.
+	controller.rememberDeviceUUIDs(map[int]string{0: "GPU-AAA", 1: "GPU-BBB"})
+	controller.rememberMinorToNVMLIndex(map[int]int{1: 0, 0: 1})
+
+	// Process: PID 1001 is running on GPU-BBB (NVML index 1).
+	metrics, unmatched := controller.enrich(context.Background(), []GPUProcessMetric{
+		{PID: 1001, GPUUUID: "GPU-BBB", GPUIndex: 1, UsedGPUMemoryBytes: 512, SMUtilizationPercent: 80},
+	}, controller.pods.Snapshot())
+
+	if unmatched != 0 {
+		t.Fatalf("expected no unmatched processes, got %d", unmatched)
+	}
+	// Must be exactly one metric series — the real one for GPU-BBB.
+	// Before the fix a phantom idle metric for GPU-AAA would also appear.
+	if len(metrics) != 1 {
+		t.Fatalf("expected 1 metric (GPU-BBB active), got %d: %#v", len(metrics), metrics)
+	}
+	m := metrics[0]
+	if m.GPUUUID != "GPU-BBB" || m.GPUIndex != 1 {
+		t.Fatalf("expected metric for GPU-BBB / NVML index 1, got %+v", m)
+	}
+	if m.SMUtilizationPercent != 80 {
+		t.Fatalf("expected SM util 80, got %g", m.SMUtilizationPercent)
+	}
+}
+
+// TestIdleMetricCorrectForIdlePodWithMismatchedMinor verifies that a truly idle
+// pod (no running processes) on a GPU with minor ≠ NVML index gets the correct
+// UUID and NVML index in its idle metric, not the GPU at NVML index 0.
+func TestIdleMetricCorrectForIdlePodWithMismatchedMinor(t *testing.T) {
+	// NVML index 0 → minor 1 → GPU-AAA; NVML index 1 → minor 0 → GPU-BBB.
+	// Pod is assigned GPU-BBB (minor 0, NVML index 1) but is idle.
+	containerStore := store.FakeStore{Containers: []store.ContainerInfo{{
+		ContainerID: "ctr",
+		Pod:         "pod",
+		Namespace:   "default",
+		PodUID:      "pod-uid",
+		GPUDevices:  []store.GPUDevice{{MinorNumber: 0}},
+	}}}
+
+	controller := newMetricsController(nil, fakeCgroupResolver{}, containerStore, 0, 0, slog.Default())
+	controller.rememberDeviceUUIDs(map[int]string{0: "GPU-AAA", 1: "GPU-BBB"})
+	controller.rememberMinorToNVMLIndex(map[int]int{1: 0, 0: 1})
+
+	metrics, unmatched := controller.enrich(context.Background(), nil, controller.pods.Snapshot())
+
+	if unmatched != 0 {
+		t.Fatalf("expected no unmatched processes, got %d", unmatched)
+	}
+	if len(metrics) != 1 {
+		t.Fatalf("expected 1 idle metric, got %d: %#v", len(metrics), metrics)
+	}
+	m := metrics[0]
+	if m.GPUUUID != "GPU-BBB" {
+		t.Fatalf("idle metric UUID: expected GPU-BBB, got %s", m.GPUUUID)
+	}
+	if m.GPUIndex != 1 {
+		t.Fatalf("idle metric GPUIndex: expected 1 (NVML index), got %d", m.GPUIndex)
+	}
+	if m.SMUtilizationPercent != 0 || m.MemoryBytes != 0 {
+		t.Fatalf("expected idle zeros, got %+v", m)
+	}
+}
+
+// TestRememberMinorToNVMLIndexPersistsAcrossPartialUpdates mirrors the device
+// total memory persistence test: a mapping learned on one cycle must survive a
+// later cycle that omits it (transient NVML error on that device).
+func TestRememberMinorToNVMLIndexPersistsAcrossPartialUpdates(t *testing.T) {
+	s := &metricsEngine{minorToNVMLIndex: map[int]int{}}
+
+	s.rememberMinorToNVMLIndex(map[int]int{0: 1, 1: 0})
+	// Next cycle: only minor 0 reported; minor 1 absent (transient error).
+	s.rememberMinorToNVMLIndex(map[int]int{0: 1})
+
+	if s.minorToNVMLIndex[0] != 1 {
+		t.Fatalf("expected minor 0 → NVML 1, got %d", s.minorToNVMLIndex[0])
+	}
+	if s.minorToNVMLIndex[1] != 0 {
+		t.Fatalf("expected minor 1 → NVML 0 to persist, got %d", s.minorToNVMLIndex[1])
+	}
+}
+
+// TestIdlePodGPUKeyFallsBackToIndexWhenNoMinorMapping covers the fake-GPU /
+// noop-collector path where minorToNVMLIndex is empty. In that case
+// GPUDevice.Index is used directly as the NVML index (the fake detector sets it).
+func TestIdlePodGPUKeyFallsBackToIndexWhenNoMinorMapping(t *testing.T) {
+	s := &metricsEngine{
+		deviceUUIDs:            map[int]string{0: "GPU-0", 1: "GPU-1"},
+		minorToNVMLIndex:       map[int]int{}, // empty = fake-GPU node
+		deviceTotalMemoryBytes: map[int]uint64{},
+	}
+	container := store.ContainerInfo{
+		Namespace: "default", Pod: "pod", PodUID: "pod-uid",
+	}
+
+	key, ok := s.idlePodGPUKey(container, store.GPUDevice{Index: 1})
+	if !ok {
+		t.Fatalf("expected ok=true for fake-GPU fallback, got false")
+	}
+	if key.GPUUUID != "GPU-1" {
+		t.Fatalf("expected GPU-1 via Index fallback, got %s", key.GPUUUID)
+	}
+	if key.GPUIndex != 1 {
+		t.Fatalf("expected GPUIndex 1, got %d", key.GPUIndex)
+	}
+}
+
 // TestRecordAndSumRequestedMemory verifies per-container dedup (a container with
 // multiple GPU processes counts once) and that empty/zero entries are ignored.
 func TestRecordAndSumRequestedMemory(t *testing.T) {

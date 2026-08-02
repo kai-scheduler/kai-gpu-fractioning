@@ -33,11 +33,10 @@ func TestE2E_SharingdRestartPreservesAttribution(t *testing.T) {
 	c := s.Client
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc-sharingd-restart-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   "2048",
-		GPUMemoryRequestMiB: "2048",
+		Namespace:     attributionTestNamespace,
+		Name:          "tc-sharingd-restart-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", "2048", "2048"),
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -64,7 +63,7 @@ func TestE2E_SharingdRestartPreservesAttribution(t *testing.T) {
 	match := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 	}
 
 	// Confirm attribution before the restart.
@@ -110,11 +109,10 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	}
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc9-delete-mid-collection-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   "2048",
-		GPUMemoryRequestMiB: "2048",
+		Namespace:     attributionTestNamespace,
+		Name:          "tc9-delete-mid-collection-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", "2048", "2048"),
 	}
 
 	// Remove any pod left behind by a previous failed run; workload.Delete is
@@ -149,7 +147,7 @@ func TestE2E_PodDeletionMidCollectionDoesNotBreakExporter(t *testing.T) {
 	match := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 	}
 	if _, err := waitForSeries(ctx, c, memMetricName, match); err != nil {
 		t.Fatalf("series never appeared before deletion: %v", err)

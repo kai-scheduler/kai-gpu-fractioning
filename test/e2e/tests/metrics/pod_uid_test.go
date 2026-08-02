@@ -41,12 +41,11 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 	createAndWait := func(genLabel string) string {
 		t.Helper()
 		spec := workload.FractionalPod{
-			Namespace:           attributionTestNamespace,
-			Name:                podName,
-			ContainerName:       "trainer",
-			GPUMemoryLimitMiB:   "2048",
-			GPUMemoryRequestMiB: "2048",
-			NodeSelector:        nodeSel,
+			Namespace:     attributionTestNamespace,
+			Name:          podName,
+			ContainerName: "trainer",
+			Annotations:   workload.FractionalAnnotations("trainer", "2048", "2048"),
+			NodeSelector:  nodeSel,
 		}
 		_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
 		pod, err := workload.Apply(ctx, c, spec)
@@ -67,7 +66,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 		matchLabels := map[string]string{
 			"namespace": spec.Namespace,
 			"pod":       spec.Name,
-			"pod_uuid":   string(pod.UID),
+			"pod_uuid":  string(pod.UID),
 			"gpu_uuid":  gpuUUID,
 		}
 		if _, err := waitForSeries(ctx, c, memMetricName, matchLabels); err != nil {
@@ -96,7 +95,7 @@ func TestE2E_StaleSeriesPrunedAfterPodRestart(t *testing.T) {
 
 	oldMatch := map[string]string{
 		"namespace": attributionTestNamespace,
-		"pod_uuid":   oldUID,
+		"pod_uuid":  oldUID,
 	}
 	for _, metricName := range allMetricNames {
 		if err := waitForAbsence(ctx, c, metricName, oldMatch); err != nil {

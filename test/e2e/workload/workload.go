@@ -33,18 +33,11 @@ type FractionalPod struct {
 	Name          string
 	ContainerName string
 
-	// GPUMemoryLimitMiB/RequestMiB are written verbatim into the derived
-	// nvidia.com/container.<name>.gpu-memory.{limit,request} annotation
-	// values (e.g. "2048"). Ignored when Annotations is non-nil.
-	GPUMemoryLimitMiB   string
-	GPUMemoryRequestMiB string
-
-	// Annotations, when non-nil, replaces the derived fractional-GPU
-	// annotations entirely. Use an empty (non-nil) map for a full-GPU pod
-	// with no fractional annotation at all (full-GPU pod exclusion test), or a
-	// map containing a deliberately malformed key to test that the plugin ignores
-	// it rather than tracking or crashing on it. Leave nil for the normal,
-	// well-formed fractional case.
+	// Annotations are written verbatim onto the pod. Nil or empty means the pod
+	// carries no annotations at all (e.g. the full-GPU exclusion test). Build the
+	// standard fractional-GPU request/limit pair with FractionalAnnotations, or
+	// pass a map with a deliberately malformed key to exercise the plugin's
+	// ignore / fail-closed paths.
 	Annotations map[string]string
 
 	// NodeSelector defaults to the cluster's configured GPU node selector
@@ -57,6 +50,26 @@ type FractionalPod struct {
 	// /proc/<pid>/cmdline inside the nvml-mock pod (which runs hostPID: true).
 	// Defaults to DefaultMarker(Namespace, Name) when empty.
 	Marker string
+}
+
+// AnnotationKey builds a per-container gpu-memory annotation key using
+// sharingd's default annotation prefix
+// (configuration.DefaultAnnotationPrefix = "nvidia.com/container."):
+//
+//	nvidia.com/container.<container>.gpu-memory.<suffix>
+func AnnotationKey(container, suffix string) string {
+	return fmt.Sprintf("nvidia.com/container.%s.gpu-memory.%s", container, suffix)
+}
+
+// FractionalAnnotations builds the standard request+limit fractional-GPU
+// annotation pair for a container. Values are MiB and get the "Mi" suffix:
+// sharingd parses them as k8s resource.Quantity, so a bare "2048" would be read
+// as 2048 bytes (→ 0 MB) and rejected.
+func FractionalAnnotations(container, requestMiB, limitMiB string) map[string]string {
+	return map[string]string{
+		AnnotationKey(container, "request"): requestMiB + "Mi",
+		AnnotationKey(container, "limit"):   limitMiB + "Mi",
+	}
 }
 
 // DefaultMarker is the process-name token Apply embeds in a pod's command line
@@ -88,20 +101,6 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 		nodeSelector = sel
 	}
 
-	annotations := spec.Annotations
-	if annotations == nil {
-		// Key format must match sharingd's default annotation prefix
-		// (configuration.DefaultAnnotationPrefix = "nvidia.com/container."):
-		//   nvidia.com/container.<container>.gpu-memory.{limit,request}
-		// The value is parsed by sharingd as a k8s resource.Quantity, so it needs
-		// a unit — the fields are MiB, so append the "Mi" suffix (a bare "2048"
-		// would be read as 2048 bytes → 0 MB and rejected).
-		annotations = map[string]string{
-			fmt.Sprintf("nvidia.com/container.%s.gpu-memory.limit", spec.ContainerName):   spec.GPUMemoryLimitMiB + "Mi",
-			fmt.Sprintf("nvidia.com/container.%s.gpu-memory.request", spec.ContainerName): spec.GPUMemoryRequestMiB + "Mi",
-		}
-	}
-
 	marker := spec.Marker
 	if marker == "" {
 		marker = DefaultMarker(spec.Namespace, spec.Name)
@@ -111,7 +110,7 @@ func Apply(ctx context.Context, c *cluster.Client, spec FractionalPod) (*corev1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        spec.Name,
 			Namespace:   spec.Namespace,
-			Annotations: annotations,
+			Annotations: spec.Annotations,
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,

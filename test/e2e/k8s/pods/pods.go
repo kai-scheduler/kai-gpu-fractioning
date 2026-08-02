@@ -31,6 +31,25 @@ func ListByLabel(ctx context.Context, c *cluster.Client, namespace, labelSelecto
 	return list.Items, nil
 }
 
+// FirstByLabel returns one pod in namespace matching labelSelector, capping the
+// server-side list to a single item (for callers that just need any one pod, not
+// the full set). Returns (nil, nil) when none match.
+func FirstByLabel(ctx context.Context, c *cluster.Client, namespace, labelSelector string) (*corev1.Pod, error) {
+	sel, err := labels.Parse(labelSelector)
+	if err != nil {
+		return nil, fmt.Errorf("parse label selector %q: %w", labelSelector, err)
+	}
+
+	var list corev1.PodList
+	if err := c.Ctrl.List(ctx, &list, ctrlclient.InNamespace(namespace), ctrlclient.MatchingLabelsSelector{Selector: sel}, ctrlclient.Limit(1)); err != nil {
+		return nil, fmt.Errorf("list pods matching %q in namespace %s: %w", labelSelector, namespace, err)
+	}
+	if len(list.Items) == 0 {
+		return nil, nil
+	}
+	return &list.Items[0], nil
+}
+
 // Exec runs command inside container of the named pod and returns its
 // stdout, equivalent to `kubectl exec <pod> -c <container> -- <command>`.
 // Used by attribution tests to read env vars (e.g.

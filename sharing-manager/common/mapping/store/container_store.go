@@ -6,10 +6,17 @@ import (
 )
 
 type GPUDevice struct {
+	// Index is the Linux device minor number stored by sharingd versions prior to
+	// the MinorNumber field being introduced. New records leave this zero.
 	Index int `json:"index"`
-	// UUID is the GPU/MIG UUID. The NRI mapper identifies devices by Index (read
-	// from the container's NVIDIA device nodes) and leaves this empty; the field
-	// is retained in the schema for consumers that key devices by UUID.
+	// MinorNumber is the Linux character device minor number (major 195) for this
+	// GPU, as read from the container's device nodes by the NRI path. It differs
+	// from the NVML device index; the metrics engine resolves it via
+	// nvmlDeviceGetMinorNumber to obtain the canonical NVML index and UUID.
+	MinorNumber int `json:"minorNumber"`
+	// UUID is the GPU/MIG UUID. The NRI path identifies devices by MinorNumber and
+	// leaves this empty; the field is retained in the schema for consumers that
+	// key devices by UUID.
 	UUID string `json:"uuid,omitempty"`
 }
 
