@@ -62,6 +62,12 @@ type Config struct {
 	// utilization injection require nvml-mock and skip when this is
 	// false. Set E2E_NVML_MOCK=1 for nvml-mock clusters.
 	NVMLMock bool
+
+	// RolloutTimeout bounds DaemonSet-rollout / CR-Ready waits in the operator
+	// suite (a spec change re-rolls a DaemonSet). CondTimeout bounds the shorter
+	// condition-transition waits (fault injection flipping a node/CR condition).
+	RolloutTimeout time.Duration
+	CondTimeout    time.Duration
 }
 
 const (
@@ -75,15 +81,19 @@ const (
 	envPodReadyTimeout       = "E2E_POD_READY_TIMEOUT"
 	envPollInterval          = "E2E_POLL_INTERVAL"
 	envDaemonSetReadyTimeout = "E2E_DAEMONSET_READY_TIMEOUT"
+	envRolloutTimeout        = "E2E_ROLLOUT_TIMEOUT"
+	envCondTimeout           = "E2E_COND_TIMEOUT"
 
-	defaultOperatorNamespace    = "gpu-sharing"
-	defaultGPUNodeSelector      = "nvidia.com/gpu.present=true"
-	defaultGPUNodeCount         = 0
-	defaultGPUMemoryMiB         = 40960
-	defaultGPUCountPerNode      = 1
-	defaultPodReadyTimeout      = 2 * time.Minute
-	defaultPollInterval         = 2 * time.Second
+	defaultOperatorNamespace     = "gpu-sharing"
+	defaultGPUNodeSelector       = "nvidia.com/gpu.present=true"
+	defaultGPUNodeCount          = 0
+	defaultGPUMemoryMiB          = 40960
+	defaultGPUCountPerNode       = 1
+	defaultPodReadyTimeout       = 2 * time.Minute
+	defaultPollInterval          = 2 * time.Second
 	defaultDaemonSetReadyTimeout = 3 * time.Minute
+	defaultRolloutTimeout        = 3 * time.Minute
+	defaultCondTimeout           = 2 * time.Minute
 )
 
 // Load builds a Config from environment variables.
@@ -99,6 +109,8 @@ func Load() Config {
 		PodReadyTimeout:       env.Duration(envPodReadyTimeout, defaultPodReadyTimeout),
 		PollInterval:          env.Duration(envPollInterval, defaultPollInterval),
 		DaemonSetReadyTimeout: env.Duration(envDaemonSetReadyTimeout, defaultDaemonSetReadyTimeout),
+		RolloutTimeout:        env.Duration(envRolloutTimeout, defaultRolloutTimeout),
+		CondTimeout:           env.Duration(envCondTimeout, defaultCondTimeout),
 	}
 }
 

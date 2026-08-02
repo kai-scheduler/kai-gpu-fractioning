@@ -40,12 +40,11 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 	)
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "norm-capped-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   halfMemMiB,
-		GPUMemoryRequestMiB: halfMemMiB,
-		NodeSelector:        map[string]string{"kubernetes.io/hostname": targetNode},
+		Namespace:     attributionTestNamespace,
+		Name:          "norm-capped-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", halfMemMiB, halfMemMiB),
+		NodeSelector:  map[string]string{"kubernetes.io/hostname": targetNode},
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -74,7 +73,7 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 
@@ -120,12 +119,11 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	)
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "norm-proportional-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   halfMemMiB,
-		GPUMemoryRequestMiB: halfMemMiB,
-		NodeSelector:        map[string]string{"kubernetes.io/hostname": targetNode},
+		Namespace:     attributionTestNamespace,
+		Name:          "norm-proportional-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", halfMemMiB, halfMemMiB),
+		NodeSelector:  map[string]string{"kubernetes.io/hostname": targetNode},
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -154,7 +152,7 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	matchLabels := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

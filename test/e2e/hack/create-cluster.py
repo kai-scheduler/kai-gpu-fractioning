@@ -39,7 +39,9 @@ Requires: k3d, kubectl, docker, helm (unless --skip-fake-gpu-operator).
 """
 
 import os
+import re
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -126,6 +128,13 @@ class ClusterConfig(BaseSettings):
     gpu_memory_mib: int = Field(default=40960, ge=1)
     fake_gpu_operator_version: str = ""
     cluster_timeout: str = "120s"
+    # Readiness wait for the fake-GPU cluster components (fake-gpu-operator's
+    # status-updater pod + device-plugin DaemonSet, and the nvml-mock DaemonSet).
+    # A fresh cluster has an empty containerd image cache, so the very first pull
+    # of these images dominates the wait; 120s/180s regularly time out on cold
+    # caches (local first run and CI runners alike) even though the pods come up
+    # fine given a little more time. Overridable via E2E_FAKE_GPU_OPERATOR_TIMEOUT.
+    fake_gpu_operator_timeout: str = "300s"
     max_retries: int = Field(default=3, ge=1, le=10)
     # Where to write the cluster's kubeconfig (E2E_KUBECONFIG). Empty -> a
     # default derived from cluster_name (see main). This file — not ~/.kube/config
@@ -257,6 +266,46 @@ def configure_nvidia_runtimeclass(config: ClusterConfig) -> None:
     sh.kubectl("create", "-f", "-", _in=NVIDIA_RUNTIME_CLASS_MANIFEST)
 
 
+_IMAGE_LINE_RE = re.compile(r"""^\s*image:\s*["']?([^"'\s]+)["']?\s*$""")
+
+
+def image_refs(manifest_text: str) -> list[str]:
+    """Extract the unique container image refs from rendered k8s manifests
+    (Helm template output or a static manifest)."""
+    return sorted({m.group(1) for m in map(_IMAGE_LINE_RE.match, manifest_text.splitlines()) if m})
+
+
+def prewarm_images(config: ClusterConfig, images: list[str]) -> None:
+    """Make each image available in the k3d cluster's containerd *before* the
+    workloads that need it are created, so pod startup never blocks on a pull.
+
+    The k3d nodes pull directly from the registry, and on a throttled network
+    ghcr.io pulls of even small (~60-100MB) images can take 10+ minutes and blow
+    the readiness waits. Instead we pull once into the host Docker (cached across
+    FRESH recreates, unlike the per-node containerd) and `k3d image import` it —
+    which is a fast local transfer. A warm Docker cache makes recreates instant;
+    CI (fast ghcr) is unaffected since a cache miss just falls back to a normal
+    fast pull here.
+    """
+    if not images:
+        return
+    log(f"Pre-warming {len(images)} image(s) into cluster '{config.cluster_name}':")
+    for img in images:
+        log(f"  - {img}")
+    for img in images:
+        try:
+            # Captured (not printed); success => already in the local Docker cache.
+            sh.docker("image", "inspect", img)
+            present = True
+        except sh.ErrorReturnCode:
+            present = False
+        if not present:
+            log(f"docker pull {img} (one-time; may be slow on a throttled network)...")
+            sh.docker("pull", img, _fg=True)
+        log(f"k3d image import {img} -> {config.cluster_name}...")
+        sh.k3d("image", "import", img, "-c", config.cluster_name, _fg=True)
+
+
 def install_fake_gpu_operator(config: ClusterConfig) -> None:
     log(f"Installing fake-gpu-operator {config.fake_gpu_operator_version}...")
 
@@ -303,6 +352,18 @@ topology:
         values_path = f.name
 
     try:
+        # Render the chart with these values so we know exactly which images the
+        # install will schedule, then pre-warm them into the cluster before the
+        # helm upgrade creates the pods (see prewarm_images).
+        rendered = str(sh.helm(
+            "template", "fake-gpu-operator",
+            FAKE_GPU_OPERATOR_CHART,
+            "--version", config.fake_gpu_operator_version,
+            "--namespace", "gpu-operator",
+            "-f", values_path,
+        ))
+        prewarm_images(config, image_refs(rendered))
+
         sh.helm(
             "upgrade", "-i", "fake-gpu-operator",
             FAKE_GPU_OPERATOR_CHART,
@@ -314,11 +375,11 @@ topology:
     finally:
         Path(values_path).unlink(missing_ok=True)
 
-    log("Waiting for status-updater to be ready...")
-    sh.kubectl("wait", "--for=condition=Ready", "pod", "-l", "app=status-updater", "-n", "gpu-operator", "--timeout=120s")
+    log(f"Waiting for status-updater to be ready (timeout {config.fake_gpu_operator_timeout})...")
+    sh.kubectl("wait", "--for=condition=Ready", "pod", "-l", "app=status-updater", "-n", "gpu-operator", f"--timeout={config.fake_gpu_operator_timeout}")
 
-    log("Waiting for device-plugin daemonset rollout...")
-    sh.kubectl("rollout", "status", "daemonset/device-plugin", "-n", "gpu-operator", "--timeout=180s")
+    log(f"Waiting for device-plugin daemonset rollout (timeout {config.fake_gpu_operator_timeout})...")
+    sh.kubectl("rollout", "status", "daemonset/device-plugin", "-n", "gpu-operator", f"--timeout={config.fake_gpu_operator_timeout}")
 
     wait_for_gpu_node_labels(config)
 
@@ -333,6 +394,11 @@ def install_nvml_mock(config: ClusterConfig) -> None:
     # both up-front so apply doesn't race. _ok_code tolerates AlreadyExists.
     sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
     sh.kubectl("create", "namespace", "gpu-sharing", _ok_code=[0, 1])
+
+    # Pre-warm the nvml-mock image so the DaemonSet rollout below doesn't block on
+    # a slow registry pull (see prewarm_images).
+    prewarm_images(config, image_refs(manifest.read_text()))
+
     sh.kubectl("apply", "-f", str(manifest))
 
     # Guard against a silent no-op: a DaemonSet whose nodeSelector matches zero
@@ -348,8 +414,8 @@ def install_nvml_mock(config: ClusterConfig) -> None:
             f"— check the DaemonSet nodeSelector matches the GPU nodes' labels.")
         raise typer.Exit(1)
 
-    log("Waiting for nvml-mock daemonset rollout...")
-    sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", "--timeout=180s")
+    log(f"Waiting for nvml-mock daemonset rollout (timeout {config.fake_gpu_operator_timeout})...")
+    sh.kubectl("rollout", "status", "daemonset/nvml-mock", "-n", "gpu-operator", f"--timeout={config.fake_gpu_operator_timeout}")
 
     # Agents are pre-labeled nvidia.com/gpu.present=true at cluster creation and
     # nvml-mock's setup.sh re-applies it; confirm the label is present before the

@@ -55,20 +55,18 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	nodeSel := map[string]string{"kubernetes.io/hostname": targetNode}
 
 	specA := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc2-pod-a",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   halfMemMiB,
-		GPUMemoryRequestMiB: halfMemMiB,
-		NodeSelector:        nodeSel,
+		Namespace:     attributionTestNamespace,
+		Name:          "tc2-pod-a",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", halfMemMiB, halfMemMiB),
+		NodeSelector:  nodeSel,
 	}
 	specB := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc2-pod-b",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   halfMemMiB,
-		GPUMemoryRequestMiB: halfMemMiB,
-		NodeSelector:        nodeSel,
+		Namespace:     attributionTestNamespace,
+		Name:          "tc2-pod-b",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", halfMemMiB, halfMemMiB),
+		NodeSelector:  nodeSel,
 	}
 
 	podA, err := workload.Apply(ctx, c, specA)
@@ -119,13 +117,13 @@ func TestE2E_TwoFractionalPodsShareOneGPU(t *testing.T) {
 	matchA := map[string]string{
 		"namespace": specA.Namespace,
 		"pod":       specA.Name,
-		"pod_uuid":   string(podA.UID),
+		"pod_uuid":  string(podA.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	matchB := map[string]string{
 		"namespace": specB.Namespace,
 		"pod":       specB.Name,
-		"pod_uuid":   string(podB.UID),
+		"pod_uuid":  string(podB.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 

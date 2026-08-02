@@ -47,11 +47,10 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	}
 
 	spec := workload.FractionalPod{
-		Namespace:           attributionTestNamespace,
-		Name:                "tc6-lifecycle-pod",
-		ContainerName:       "trainer",
-		GPUMemoryLimitMiB:   "2048",
-		GPUMemoryRequestMiB: "2048",
+		Namespace:     attributionTestNamespace,
+		Name:          "tc6-lifecycle-pod",
+		ContainerName: "trainer",
+		Annotations:   workload.FractionalAnnotations("trainer", "2048", "2048"),
 	}
 
 	_ = workload.Delete(ctx, c, spec.Namespace, spec.Name)
@@ -80,13 +79,13 @@ func TestE2E_IdleThenActiveThenGoneLifecycle(t *testing.T) {
 	matchActive := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 		"gpu_uuid":  gpuUUID,
 	}
 	matchPod := map[string]string{
 		"namespace": spec.Namespace,
 		"pod":       spec.Name,
-		"pod_uuid":   string(pod.UID),
+		"pod_uuid":  string(pod.UID),
 	}
 
 	// ── Phase 1: idle ─────────────────────────────────────────────────────────

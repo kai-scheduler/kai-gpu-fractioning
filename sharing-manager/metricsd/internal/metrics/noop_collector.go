@@ -9,6 +9,10 @@ type NoopCollector struct{}
 
 func (n *NoopCollector) Run(_ context.Context) {}
 func (n *NoopCollector) Snapshot() GPUProcessSnapshot {
-	return GPUProcessSnapshot{DeviceUUIDs: map[int]string{}, DeviceTotalMemoryBytes: map[int]uint64{}}
+	return GPUProcessSnapshot{
+		DeviceUUIDs:            map[int]string{},
+		DeviceMinorToNVMLIndex: map[int]int{},
+		DeviceTotalMemoryBytes: map[int]uint64{},
+	}
 }
 func (n *NoopCollector) Close() error { return nil }
