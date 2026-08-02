@@ -1,4 +1,4 @@
-package realgpu
+package gpudevices
 
 import (
 	"testing"
@@ -6,8 +6,8 @@ import (
 	"github.com/containerd/nri/pkg/api"
 )
 
-func TestGPUDevicesExtractsDistinctNVIDIAMinors(t *testing.T) {
-	devices := GPUDevices(&api.Container{
+func TestFromContainerExtractsDistinctNVIDIAMinors(t *testing.T) {
+	devices := FromContainer(&api.Container{
 		Linux: &api.LinuxContainer{
 			Devices: []*api.LinuxDevice{
 				{Path: "/dev/renamed0", Major: 195, Minor: 0},
@@ -29,10 +29,10 @@ func TestGPUDevicesExtractsDistinctNVIDIAMinors(t *testing.T) {
 	}
 }
 
-func TestGPUDevicesIgnoresEnvWithNoDeviceNodes(t *testing.T) {
-	// NVIDIA_VISIBLE_DEVICES is not in the NRI container spec at creation time;
-	// the production detector only reads device nodes.
-	devices := GPUDevices(&api.Container{
+func TestFromContainerIgnoresEnvWithNoDeviceNodes(t *testing.T) {
+	// NVIDIA_VISIBLE_DEVICES is not authoritative for device identity; the
+	// detector only reads device nodes, never environment variables.
+	devices := FromContainer(&api.Container{
 		Env: []string{"NVIDIA_VISIBLE_DEVICES=GPU-from-env,1"},
 	})
 	if len(devices) != 0 {
@@ -40,8 +40,8 @@ func TestGPUDevicesIgnoresEnvWithNoDeviceNodes(t *testing.T) {
 	}
 }
 
-func TestGPUDevicesNilWithoutLinux(t *testing.T) {
-	if devices := GPUDevices(&api.Container{}); len(devices) != 0 {
+func TestFromContainerNilWithoutLinux(t *testing.T) {
+	if devices := FromContainer(&api.Container{}); len(devices) != 0 {
 		t.Fatalf("expected no devices without Linux metadata, got %#v", devices)
 	}
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
@@ -53,25 +51,19 @@ func activeContainers(t *testing.T, p *Plugin, r *fsstore.Reader) []store.Contai
 	return r.ActiveContainers()
 }
 
-// gpuContainer builds a container any GPU detector recognizes, so plugin-level
-// tests are independent of the build-selected detector. It carries both NVIDIA
-// device nodes (major 195) for the given minors — what the production realgpu
-// detector reads — and a matching NVIDIA_VISIBLE_DEVICES env listing the same
-// minors — what the e2e fakegpu detector reads. Because numeric env tokens map to
-// GPUDevice{Index: n}, both detectors yield the same devices.
+// gpuContainer builds a container the GPU detector recognizes: it carries NVIDIA
+// device nodes (major 195) for the given minors — the only signal gpudevices
+// reads to derive GPUDevice{MinorNumber: n}.
 func gpuContainer(id, name, podSandboxID string, minors ...int64) *api.Container {
 	devices := make([]*api.LinuxDevice, 0, len(minors))
-	visible := make([]string, 0, len(minors))
 	for _, minor := range minors {
 		devices = append(devices, &api.LinuxDevice{Major: 195, Minor: minor})
-		visible = append(visible, strconv.FormatInt(minor, 10))
 	}
 	return &api.Container{
 		Id:           id,
 		Name:         name,
 		PodSandboxId: podSandboxID,
 		Linux:        &api.LinuxContainer{Devices: devices},
-		Env:          []string{"NVIDIA_VISIBLE_DEVICES=" + strings.Join(visible, ",")},
 	}
 }
 

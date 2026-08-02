@@ -5,6 +5,7 @@ import (
 
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/common/mapping/store"
 	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/annotations"
+	"github.com/kai-scheduler/gpu-sharing/sharing-manager/sharingd/internal/gpudevices"
 
 	"github.com/containerd/nri/pkg/api"
 )
@@ -69,7 +70,7 @@ func (a adapter) container(pod *api.PodSandbox, container *api.Container) (store
 		Pod:               pod.GetName(),
 		Namespace:         pod.GetNamespace(),
 		PodUID:            pod.GetUid(),
-		GPUDevices:        gpuDevices(container),
+		GPUDevices:        gpudevices.FromContainer(container),
 		RequestedMemoryMB: cfg.EffectiveMemoryMB(),
 	}
 	if linux := container.GetLinux(); linux != nil {

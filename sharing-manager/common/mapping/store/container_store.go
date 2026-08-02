@@ -14,10 +14,9 @@ type GPUDevice struct {
 	// from the NVML device index; the metrics engine resolves it via
 	// nvmlDeviceGetMinorNumber to obtain the canonical NVML index and UUID.
 	MinorNumber int `json:"minorNumber"`
-	// UUID is the GPU/MIG UUID as reported by the kubelet PodResources API. The
-	// production NRI path leaves it empty and identifies devices by Index; it is
-	// populated by the PodResources metrics backend, and by the fake-GPU (e2e)
-	// detector when it reads a UUID from MOCK_NVIDIA_VISIBLE_DEVICES.
+	// UUID is the GPU/MIG UUID. The NRI path identifies devices by MinorNumber and
+	// leaves this empty; the field is retained in the schema for consumers that
+	// key devices by UUID.
 	UUID string `json:"uuid,omitempty"`
 }
 
