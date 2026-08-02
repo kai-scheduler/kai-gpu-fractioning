@@ -145,10 +145,11 @@ class ClusterConfig(BaseSettings):
     # default derived from cluster_name (see main). This file — not ~/.kube/config
     # — is what every downstream e2e step uses.
     kubeconfig: str = ""
-    # Port for the k3d-managed local image registry (see create_registry). The
-    # same value is used on the host (Skaffold pushes to localhost:PORT), inside
-    # the cluster (nodes pull via the registries.yaml mirror below), and in
-    # --registry-use. Default 5001 dodges macOS's AirPlay Receiver on 5000.
+    # Host-published port for the k3d-managed local image registry (see
+    # create_registry). Skaffold pushes to localhost:PORT and image refs use it;
+    # the container itself always listens on 5000 internally (REGISTRY_INTERNAL_PORT),
+    # which is what the in-cluster mirror endpoint targets. Default 5001 dodges
+    # macOS's AirPlay Receiver on 5000.
     registry_port: int = Field(default=5001, ge=1, le=65535)
 
 
@@ -167,6 +168,13 @@ def delete_cluster(config: ClusterConfig) -> None:
     sh.k3d("cluster", "delete", config.cluster_name, _ok_code=[0, 1])
 
 
+# Port the k3d registry container listens on inside the cluster network. k3d's
+# --port flag only remaps the host-published port; the container itself always
+# serves on 5000, so the in-cluster mirror endpoint must target this, not the
+# host port.
+REGISTRY_INTERNAL_PORT = 5000
+
+
 def registry_name(config: ClusterConfig) -> tuple[str, str]:
     """(base, full) k3d registry names. k3d prepends "k3d-" to everything it
     creates, so we pass `base` to `k3d registry create`/`delete` but reference
@@ -176,19 +184,20 @@ def registry_name(config: ClusterConfig) -> tuple[str, str]:
 
 
 def write_registries_yaml(config: ClusterConfig) -> str:
-    """Write a containerd registries.yaml that mirrors localhost:PORT to the
-    in-cluster registry container. Skaffold pushes images tagged
-    localhost:PORT/<img> (which the host can reach via the published port), and
-    this mirror teaches every node to pull that same ref from the registry over
-    the k3d Docker network (where it's reachable as k3d-<cluster>-registry:PORT).
-    One ref works on both sides, so no /etc/hosts entry or *.localhost DNS is
-    needed — which keeps it portable across macOS and CI runners."""
+    """Write a containerd registries.yaml that mirrors localhost:<host_port> to
+    the in-cluster registry container. Skaffold pushes images tagged
+    localhost:<host_port>/<img> (which the host reaches via the published port),
+    and this mirror teaches every node to pull that same ref from the registry
+    over the k3d Docker network — where it's reachable as
+    k3d-<cluster>-registry:<internal_port> (5000, NOT the host port). One image
+    ref works on both sides, so no /etc/hosts entry or *.localhost DNS is needed,
+    which keeps it portable across macOS and CI runners."""
     _, full = registry_name(config)
     content = (
         "mirrors:\n"
         f'  "localhost:{config.registry_port}":\n'
         "    endpoint:\n"
-        f"      - http://{full}:{config.registry_port}\n"
+        f"      - http://{full}:{REGISTRY_INTERNAL_PORT}\n"
     )
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         f.write(content)
@@ -245,10 +254,12 @@ def create_cluster(config: ClusterConfig) -> bool:
                     "--image", config.k3s_image,
                     "--k3s-node-label", gpu_node_label,
                     "--volume", f"{nri_template_path}:/var/lib/rancher/k3s/agent/etc/containerd/config.toml.tmpl@server:0;agent:*",
-                    # Connect the local registry to the cluster network and add
-                    # the localhost:PORT mirror so nodes can pull images Skaffold
-                    # pushed there (see create_registry/write_registries_yaml).
-                    "--registry-use", f"{registry_full}:{config.registry_port}",
+                    # Connect the local registry to the cluster network (so its
+                    # name resolves inside nodes) and add the localhost mirror so
+                    # nodes can pull images Skaffold pushed there. No port on
+                    # --registry-use: k3d looks the registry up by name, and the
+                    # actual pull path is our mirror (see write_registries_yaml).
+                    "--registry-use", registry_full,
                     "--registry-config", registries_yaml_path,
                     "--timeout", config.cluster_timeout,
                     "--wait",
