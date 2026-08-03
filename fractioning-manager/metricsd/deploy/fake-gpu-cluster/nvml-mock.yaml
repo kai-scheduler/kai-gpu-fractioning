@@ -6,7 +6,8 @@
 # MOCK_NVML_CONFIG:
 #   - nvml-mock DaemonSet binary: reads gpu-operator/nvml-mock-config (below)
 #   - metricsd sidecar: reads gpu-fractioning/nvml-mock-config (also below),
-#     mounted via metricsAgent.nvmlMockConfigMap in the GPUFractioningConfig CRD.
+#     mounted at /etc/nvml-mock via metricsAgent.volumes / metricsAgent.volumeMounts
+#     on the GpuFractioningConfig CR (see operator/charts/e2e-values.yaml).
 #     Tests call nvmlmock.SetProcesses() to update that ConfigMap and restart the
 #     metricsd pod, causing nvmlInit to re-read the new process list.
 #

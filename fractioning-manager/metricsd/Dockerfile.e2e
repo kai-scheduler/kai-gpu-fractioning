@@ -57,8 +57,10 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 # Point the dynamic loader at the baked-in mock library.
 ENV LD_LIBRARY_PATH=/usr/lib/nvml-mock
-# Default MOCK_NVML_CONFIG path; overridden at runtime by the ConfigMap mount
-# injected via metricsAgent.nvmlMockConfigMap in the GPUFractioningConfig CRD.
+# Default MOCK_NVML_CONFIG path. The file itself is supplied at runtime by a
+# ConfigMap mounted at /etc/nvml-mock via metricsAgent.volumes /
+# metricsAgent.volumeMounts on the GpuFractioningConfig CR (see
+# operator/charts/e2e-values.yaml).
 ENV MOCK_NVML_CONFIG=/etc/nvml-mock/config.yaml
 
 COPY --from=build /out/metricsd /usr/local/bin/metricsd
