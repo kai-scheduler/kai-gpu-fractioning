@@ -11,8 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/cluster"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/waiter"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/cluster"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/waiter"
 )
 
 // ListGPUNodes returns all nodes matching c.Config.GPUNodeSelector.
@@ -94,7 +94,7 @@ func Get(ctx context.Context, c *cluster.Client, name string) (*corev1.Node, err
 
 // Condition returns the named status condition on a node and whether it is
 // present. The type is a string so callers can pass the operator's custom
-// condition type (gpu-sharing.nvidia.com/Ready).
+// condition type (gpu-fractioning.nvidia.com/Ready).
 func Condition(node *corev1.Node, condType string) (corev1.NodeCondition, bool) {
 	for _, cond := range node.Status.Conditions {
 		if string(cond.Type) == condType {

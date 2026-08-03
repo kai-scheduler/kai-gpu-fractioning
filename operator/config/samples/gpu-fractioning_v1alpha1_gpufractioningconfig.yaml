@@ -1,0 +1,5 @@
+apiVersion: gpu-fractioning.kai.scheduler/v1alpha1
+kind: GpuFractioningConfig
+metadata:
+  name: default
+spec: {}

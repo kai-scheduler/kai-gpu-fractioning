@@ -17,7 +17,7 @@ inputs:
   cluster-name:
     description: "k3d cluster name."
     required: false
-    default: "gpu-sharing-e2e"
+    default: "gpu-fractioning-e2e"
   fake-gpu-operator-version:
     description: "fake-gpu-operator chart version to install."
     required: true

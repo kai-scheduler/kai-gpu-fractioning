@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/pods"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/pods"
 )
 
 func (h *Harness) ListComponentPods(ctx context.Context, t *testing.T, component string) []corev1.Pod {
@@ -100,7 +100,7 @@ func (h *Harness) Exec(ctx context.Context, pod *corev1.Pod, container string, c
 
 // GetPodEnv dumps the container's environment (via the `env` command) into a
 // map. Used to
-// assert presence/absence/values of sharingd-injected vars without depending on
+// assert presence/absence/values of fractiond-injected vars without depending on
 // a command's exit code.
 func (h *Harness) GetPodEnv(ctx context.Context, t *testing.T, pod *corev1.Pod, container string) map[string]string {
 	t.Helper()

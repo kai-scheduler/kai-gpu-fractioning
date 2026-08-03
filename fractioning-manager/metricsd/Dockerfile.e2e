@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1.7
+#
+# E2E-only Dockerfile — extends the production metricsd build with the
+# nvml-mock library baked in so NVML resolves on fake-GPU k3d clusters
+# without hostPath volume injection from the operator.
+#
+# NEVER use this image in production.
+#
+# Build with repo root as context (same as the production Dockerfile):
+#   docker build -f fractioning-manager/metricsd/Dockerfile.e2e .
+
+FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
+# metricsd has no build-tag-gated production code; the e2e distinction is
+# the baked-in nvml-mock .so, not a compile flag. GO_TAGS is wired here so
+# callers can still pass extra tags (e.g. for future conditional code) without
+# changing this file.
+ARG GO_TAGS=
+
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+COPY pkg/ pkg/
+COPY fractioning-manager/ fractioning-manager/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd fractioning-manager/metricsd && \
+    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath -tags="${GO_TAGS}" \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+    -o /out/metricsd ./cmd
+
+# Extract libnvidia-ml.so from the nvml-mock image. The nvml-mock DaemonSet
+# copies it to the host at runtime; here we capture it at its pre-copy location
+# inside the image so it can be baked into the metricsd container directly.
+FROM ghcr.io/nvidia/nvml-mock:latest AS nvml-mock
+# The image ships both libnvidia-ml.so.1 (14 MiB ELF) and .h header files
+# whose names also match "libnvidia-ml.so*". Copying by exact soname path
+# avoids find|head-1 picking a .h file by inode order (which is an invalid
+# ELF and makes dlopen fail with "invalid ELF header").
+# The library is stored 644 in the image; chmod 755 so glibc's dl-load.c
+# EPERM check (requires at least one execute bit) lets dlopen succeed.
+RUN cp /usr/local/lib/libnvidia-ml.so.1 /libnvidia-ml.so.1 && \
+    chmod 755 /libnvidia-ml.so.1 && \
+    test -x /libnvidia-ml.so.1
+
+FROM gcr.io/distroless/base-debian12
+
+USER 0:0
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+# Point the dynamic loader at the baked-in mock library.
+ENV LD_LIBRARY_PATH=/usr/lib/nvml-mock
+# Default MOCK_NVML_CONFIG path; overridden at runtime by the ConfigMap mount
+# injected via metricsAgent.nvmlMockConfigMap in the GPUFractioningConfig CRD.
+ENV MOCK_NVML_CONFIG=/etc/nvml-mock/config.yaml
+
+COPY --from=build /out/metricsd /usr/local/bin/metricsd
+COPY --from=nvml-mock /libnvidia-ml.so.1 /usr/lib/nvml-mock/libnvidia-ml.so.1
+
+ENTRYPOINT ["/usr/local/bin/metricsd"]

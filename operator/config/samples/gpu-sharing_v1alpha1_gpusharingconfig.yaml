@@ -1,5 +1,0 @@
-apiVersion: gpu-sharing.kai.scheduler/v1alpha1
-kind: GpuSharingConfig
-metadata:
-  name: default
-spec: {}

@@ -22,7 +22,7 @@ permissions:
 # go.work is for local dev; CI builds via module-scoped make/skaffold targets.
 env:
   GOWORK: "off"
-  E2E_CLUSTER_NAME: gpu-sharing-e2e
+  E2E_CLUSTER_NAME: gpu-fractioning-e2e
   E2E_GPU_WORKER_NODES: 2          # GPU worker nodes
   E2E_NON_GPU_WORKER_NODES: 1  # plain (no-GPU) worker nodes, for a mixed topology
   # Pin to a known-good fake-gpu-operator release. Bump deliberately.
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # Decide whether this change actually needs the e2e suite. The suite tests
-      # the daemon runtime (metricsd/mpsd/sharingd) via the e2e harness + skaffold
+      # the daemon runtime (metricsd/mpsd/fractiond) via the e2e harness + skaffold
       # build, so only those paths make it "needed". Everything below is gated on
       # this — when false, the job is a fast, green no-op.
       - name: Detect e2e-relevant changes
@@ -54,9 +54,9 @@ jobs:
               # the exit-0 path below without spinning up the full e2e cluster.
               # The suite exercises the daemon runtime, so only the daemon
               # modules, the e2e harness, and its build/setup inputs are relevant.
-              - 'sharing-manager/metricsd/**'
-              - 'sharing-manager/mpsd/**'
-              - 'sharing-manager/sharingd/**'
+              - 'fractioning-manager/metricsd/**'
+              - 'fractioning-manager/mpsd/**'
+              - 'fractioning-manager/fractiond/**'
               - 'test/e2e/**'
               - 'skaffold.yaml'
               - '.github/workflows/e2e.yaml'
@@ -83,7 +83,7 @@ jobs:
           echo "after:"; df -h /
 
       # Suite-agnostic infra: toolchain + k3d/fake-gpu-operator cluster.
-      # Reused as-is by future e2e suites (mpsd/sharingd).
+      # Reused as-is by future e2e suites (mpsd/fractiond).
       - name: Set up e2e cluster
         if: ${{ steps.changes.outputs.e2e == 'true' }}
         uses: ./.github/actions/e2e-setup
@@ -94,8 +94,8 @@ jobs:
           fake-gpu-operator-version: ${{ env.E2E_FAKE_GPU_OPERATOR_VERSION }}
 
       # Skaffold builds the four images, loads them into k3d, and helm-installs
-      # the operator chart; the operator then creates the sharingd DaemonSet
-      # (with the metricsd sidecar under test). Waits on the sharingd DaemonSet
+      # the operator chart; the operator then creates the fractiond DaemonSet
+      # (with the metricsd sidecar under test). Waits on the fractiond DaemonSet
       # rollout, not the operator's aggregate Ready (mpsd can't schedule on k3d —
       # no "nvidia" RuntimeClass — and is out of scope).
       - name: Build, load and deploy the stack (skaffold + helm)
@@ -119,10 +119,10 @@ jobs:
           kubectl describe nodes | grep -iE 'Name:|DiskPressure|MemoryPressure|Taints|Non-terminated' || true; echo "::endgroup::"
           echo "::group::pods"; kubectl get pods -A -o wide || true; echo "::endgroup::"
           echo "::group::events"; kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true; echo "::endgroup::"
-          kubectl -n gpu-sharing get gpusharingconfig -o yaml || true
-          kubectl -n gpu-sharing describe pods || true
-          kubectl -n gpu-sharing logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
-          kubectl -n gpu-sharing logs deploy/gso-gpu-sharing --tail=200 || true
+          kubectl -n gpu-fractioning get gpufractioningconfig -o yaml || true
+          kubectl -n gpu-fractioning describe pods || true
+          kubectl -n gpu-fractioning logs -l app.kubernetes.io/component=fractiond --all-containers --tail=200 || true
+          kubectl -n gpu-fractioning logs deploy/gso-gpu-fractioning --tail=200 || true
           kubectl -n gpu-operator logs -l app=status-updater --tail=200 || true
 
       - name: Delete e2e cluster
@@ -141,12 +141,12 @@ jobs:
       - uses: actions/checkout@v7
 
       # The operator suite exercises the controller itself, so operator/** and the
-      # chart/API are e2e-relevant here. sharing-manager/sharingd/** is
-      # intentionally NOT listed: a sharingd-only change can't affect what this
-      # suite asserts — the sharingd pod spec it checks is rendered by the operator
-      # + chart, not by sharingd's source. (If sharingd ever needs a new mount/env,
+      # chart/API are e2e-relevant here. fractioning-manager/fractiond/** is
+      # intentionally NOT listed: a fractiond-only change can't affect what this
+      # suite asserts — the fractiond pod spec it checks is rendered by the operator
+      # + chart, not by fractiond's source. (If fractiond ever needs a new mount/env,
       # that's an operator/chart change, already covered by operator/**.) Such a
-      # change is validated by the dedicated sharingd job (below), which redeploys
+      # change is validated by the dedicated fractiond job (below), which redeploys
       # the full stack and re-asserts steady state, so running this ~long job too
       # would be redundant. mpsd stays (this suite asserts the mpsd pod spec +
       # fault/recovery); metricsd is covered by the metrics job. Same
@@ -159,7 +159,7 @@ jobs:
             e2e:
               - 'operator/**'
               - 'api/**'
-              - 'sharing-manager/mpsd/**'
+              - 'fractioning-manager/mpsd/**'
               - 'test/e2e/**'
               - 'skaffold.yaml'
               - '.github/workflows/e2e.yaml'
@@ -205,21 +205,21 @@ jobs:
           export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
           echo "::group::disk"; df -h / || true; echo "::endgroup::"
           echo "::group::nodes"; kubectl get nodes -o wide || true
-          kubectl describe nodes | grep -iE 'Name:|gpu-sharing.nvidia.com/Ready|Taints|Non-terminated' || true; echo "::endgroup::"
+          kubectl describe nodes | grep -iE 'Name:|gpu-fractioning.nvidia.com/Ready|Taints|Non-terminated' || true; echo "::endgroup::"
           echo "::group::pods"; kubectl get pods -A -o wide || true; echo "::endgroup::"
           echo "::group::events"; kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true; echo "::endgroup::"
-          kubectl get gpusharingconfig default -o yaml || true
-          kubectl -n gpu-sharing describe pods || true
-          kubectl -n gpu-sharing logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
-          kubectl -n gpu-sharing logs -l app.kubernetes.io/component=mpsd --tail=200 || true
-          kubectl -n gpu-sharing logs deploy/gso-gpu-sharing --tail=200 || true
+          kubectl get gpufractioningconfig default -o yaml || true
+          kubectl -n gpu-fractioning describe pods || true
+          kubectl -n gpu-fractioning logs -l app.kubernetes.io/component=fractiond --all-containers --tail=200 || true
+          kubectl -n gpu-fractioning logs -l app.kubernetes.io/component=mpsd --tail=200 || true
+          kubectl -n gpu-fractioning logs deploy/gso-gpu-fractioning --tail=200 || true
 
       - name: Delete e2e cluster
         if: ${{ always() && steps.changes.outputs.e2e == 'true' }}
         run: make e2e-cluster-down
 
-  sharingd:
-    name: Sharingd e2e
+  fractiond:
+    name: Fractiond e2e
     runs-on: ubuntu-latest
     # ~8 min build+deploy + a short suite (a few annotated workload pods + one
     # fail-open CR re-roll). The suite's own `go test` timeout is 20m; keep the
@@ -229,8 +229,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The sharingd suite exercises the sharingd NRI data plane, so only the
-      # sharingd module, the API it shares, and the e2e harness/build inputs are
+      # The fractiond suite exercises the fractiond NRI data plane, so only the
+      # fractiond module, the API it shares, and the e2e harness/build inputs are
       # relevant. operator/**, mpsd/** and metricsd/** are covered by the other
       # jobs; a change there shouldn't force this one. Same exit-0-when-irrelevant
       # pattern as the other jobs so this stays a cheap required check.
@@ -240,7 +240,7 @@ jobs:
         with:
           filters: |
             e2e:
-              - 'sharing-manager/sharingd/**'
+              - 'fractioning-manager/fractiond/**'
               - 'api/**'
               - 'test/e2e/**'
               - 'skaffold.yaml'
@@ -249,7 +249,7 @@ jobs:
 
       - name: No e2e-relevant changes — skipping suite
         if: ${{ steps.changes.outputs.e2e != 'true' }}
-        run: echo "No changes under e2e-relevant paths; the sharingd suite is not required for this change. Passing."
+        run: echo "No changes under e2e-relevant paths; the fractiond suite is not required for this change. Passing."
 
       - name: Free disk space
         if: ${{ steps.changes.outputs.e2e == 'true' }}
@@ -271,15 +271,15 @@ jobs:
           fake-gpu-operator-version: ${{ env.E2E_FAKE_GPU_OPERATOR_VERSION }}
 
       # Same deploy as the other jobs (skaffold builds all four images + helm
-      # installs the chart). The sharingd suite waits FX-STEADY, then exercises
-      # sharingd's injection against annotated workloads.
+      # installs the chart). The fractiond suite waits FX-STEADY, then exercises
+      # fractiond's injection against annotated workloads.
       - name: Build, load and deploy the stack (skaffold + helm)
         if: ${{ steps.changes.outputs.e2e == 'true' }}
         run: make e2e-deploy
 
-      - name: Run sharingd e2e tests
+      - name: Run fractiond e2e tests
         if: ${{ steps.changes.outputs.e2e == 'true' }}
-        run: make test-e2e-sharingd
+        run: make test-e2e-fractiond
 
       - name: Collect diagnostics
         if: ${{ (failure() || cancelled()) && steps.changes.outputs.e2e == 'true' }}
@@ -287,14 +287,14 @@ jobs:
           export KUBECONFIG="$HOME/.kube/${E2E_CLUSTER_NAME}.yaml"
           echo "::group::disk"; df -h / || true; echo "::endgroup::"
           echo "::group::nodes"; kubectl get nodes -o wide || true
-          kubectl describe nodes | grep -iE 'Name:|gpu-sharing.nvidia.com/Ready|Taints|Non-terminated' || true; echo "::endgroup::"
+          kubectl describe nodes | grep -iE 'Name:|gpu-fractioning.nvidia.com/Ready|Taints|Non-terminated' || true; echo "::endgroup::"
           echo "::group::pods"; kubectl get pods -A -o wide || true; echo "::endgroup::"
           echo "::group::events"; kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true; echo "::endgroup::"
-          kubectl get gpusharingconfig default -o yaml || true
+          kubectl get gpufractioningconfig default -o yaml || true
           kubectl -n operator-e2e describe pods || true
-          kubectl -n gpu-sharing describe pods || true
-          kubectl -n gpu-sharing logs -l app.kubernetes.io/component=sharingd --all-containers --tail=200 || true
-          kubectl -n gpu-sharing logs deploy/gso-gpu-sharing --tail=200 || true
+          kubectl -n gpu-fractioning describe pods || true
+          kubectl -n gpu-fractioning logs -l app.kubernetes.io/component=fractiond --all-containers --tail=200 || true
+          kubectl -n gpu-fractioning logs deploy/gso-gpu-fractioning --tail=200 || true
 
       - name: Delete e2e cluster
         if: ${{ always() && steps.changes.outputs.e2e == 'true' }}

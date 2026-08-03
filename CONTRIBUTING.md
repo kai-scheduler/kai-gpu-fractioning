@@ -8,7 +8,7 @@ Format: `type(scope): description`
 
 Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `perf`
 
-Scopes: `operator`, `mpsd`, `sharingd`, `sharing-manager`, `deps`
+Scopes: `operator`, `mpsd`, `fractiond`, `fractioning-manager`, `deps`
 
 ## Pull Requests
 

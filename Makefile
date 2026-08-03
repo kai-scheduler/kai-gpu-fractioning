@@ -1,7 +1,7 @@
-# gpu-sharing
+# kai-gpu-fractioning
 # -----------------------------------------------------------
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/gpu-sharing
+DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/kai-gpu-fractioning
 # Target platform for image builds. GPU clusters are amd64; override for others.
 # buildkit emulates (qemu) when the host arch differs.
 PLATFORM ?= linux/amd64
@@ -10,38 +10,38 @@ PLATFORM ?= linux/amd64
 # Build
 # -----------------------------------------------------------
 
-.PHONY: build build-operator build-mpsd build-sharingd
+.PHONY: build build-operator build-mpsd build-fractiond
 
-build: build-operator build-mpsd build-sharingd
+build: build-operator build-mpsd build-fractiond
 
 build-operator:
 	$(MAKE) -C operator build
 
 build-mpsd:
-	go build -o bin/mpsd ./sharing-manager/mpsd/cmd
+	go build -o bin/mpsd ./fractioning-manager/mpsd/cmd
 
-build-sharingd:
-	go build -o bin/sharingd ./sharing-manager/sharingd/cmd
+build-fractiond:
+	go build -o bin/fractiond ./fractioning-manager/fractiond/cmd
 
 # -----------------------------------------------------------
 # Test
 # -----------------------------------------------------------
 
-.PHONY: test test-operator test-sharing-manager test-metricsd
+.PHONY: test test-operator test-fractioning-manager test-metricsd
 
-test: test-operator test-sharing-manager test-metricsd
+test: test-operator test-fractioning-manager test-metricsd
 
 test-operator:
 	$(MAKE) -C operator test
 
-test-sharing-manager:
-	go test ./sharing-manager/... -race -count=1
+test-fractioning-manager:
+	go test ./fractioning-manager/... -race -count=1
 
-# metricsd is a separate Go module (own go.mod), so `go test ./sharing-manager/...`
+# metricsd is a separate Go module (own go.mod), so `go test ./fractioning-manager/...`
 # above does not descend into it. Delegate to its own Makefile, which handles the
 # cgo/NVML build the metrics collector needs.
 test-metricsd:
-	$(MAKE) -C sharing-manager/metricsd test
+	$(MAKE) -C fractioning-manager/metricsd test
 
 # -----------------------------------------------------------
 # E2E — see test/e2e/e2e.mk (targets: e2e, e2e-cluster-up/down,
@@ -58,21 +58,21 @@ include test/e2e/e2e.mk
 
 fmt:
 	$(MAKE) -C operator fmt
-	go fmt ./sharing-manager/...
+	go fmt ./fractioning-manager/...
 
 vet:
 	$(MAKE) -C operator vet
-	go vet ./sharing-manager/...
+	go vet ./fractioning-manager/...
 
 lint:
 	$(MAKE) -C operator lint
-	golangci-lint run ./sharing-manager/...
+	golangci-lint run ./fractioning-manager/...
 
 validate:
 	$(MAKE) -C operator validate
-	go fmt ./sharing-manager/...
-	go vet ./sharing-manager/...
-	golangci-lint run ./sharing-manager/...
+	go fmt ./fractioning-manager/...
+	go vet ./fractioning-manager/...
+	golangci-lint run ./fractioning-manager/...
 
 fix-boilerplate:
 	$(MAKE) -C operator fix-boilerplate
@@ -110,27 +110,27 @@ deploy:
 # Docker
 # -----------------------------------------------------------
 
-.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-sharingd docker-build-metricsd
-.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-sharingd docker-push-metricsd
+.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-fractiond docker-build-metricsd
+.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-fractiond docker-push-metricsd
 
-docker-build: docker-build-operator docker-build-mpsd docker-build-sharingd docker-build-metricsd
+docker-build: docker-build-operator docker-build-mpsd docker-build-fractiond docker-build-metricsd
 
 docker-build-operator:
 	$(MAKE) -C operator docker-build IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION) PLATFORM=$(PLATFORM)
 
 docker-build-mpsd:
-	docker build --platform $(PLATFORM) -f sharing-manager/mpsd/build/Dockerfile -t $(DOCKER_REPO_BASE)/mpsd:$(VERSION) .
+	docker build --platform $(PLATFORM) -f fractioning-manager/mpsd/build/Dockerfile -t $(DOCKER_REPO_BASE)/mpsd:$(VERSION) .
 
-docker-build-sharingd:
-	docker build --platform $(PLATFORM) -f sharing-manager/sharingd/build/Dockerfile -t $(DOCKER_REPO_BASE)/sharingd:$(VERSION) .
+docker-build-fractiond:
+	docker build --platform $(PLATFORM) -f fractioning-manager/fractiond/build/Dockerfile -t $(DOCKER_REPO_BASE)/fractiond:$(VERSION) .
 
 # metricsd links NVML (cgo) and is built from the repo root so its replace of the
-# shared sharingd module resolves. The build stage runs as the target platform so
+# shared fractiond module resolves. The build stage runs as the target platform so
 # cgo uses a native toolchain. GO_TAGS=e2e builds the fake-GPU test image.
 docker-build-metricsd:
-	docker build --platform $(PLATFORM) -f sharing-manager/metricsd/Dockerfile -t $(DOCKER_REPO_BASE)/metricsd:$(VERSION) .
+	docker build --platform $(PLATFORM) -f fractioning-manager/metricsd/Dockerfile -t $(DOCKER_REPO_BASE)/metricsd:$(VERSION) .
 
-docker-push: docker-push-operator docker-push-mpsd docker-push-sharingd docker-push-metricsd
+docker-push: docker-push-operator docker-push-mpsd docker-push-fractiond docker-push-metricsd
 
 docker-push-operator:
 	$(MAKE) -C operator docker-push IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION)
@@ -141,8 +141,8 @@ docker-push-mpsd:
 docker-push-metricsd:
 	docker push $(DOCKER_REPO_BASE)/metricsd:$(VERSION)
 
-docker-push-sharingd:
-	docker push $(DOCKER_REPO_BASE)/sharingd:$(VERSION)
+docker-push-fractiond:
+	docker push $(DOCKER_REPO_BASE)/fractiond:$(VERSION)
 
 # -----------------------------------------------------------
 # Multi-arch image build/push (release)
@@ -158,7 +158,7 @@ docker-push-sharingd:
 #   make docker-buildx-operator DOCKER_BUILDX_OUTPUT=--load \
 #     DOCKER_BUILD_PLATFORM=linux/amd64                         # single-arch, local
 #
-# NOTE: operator/mpsd/sharingd are CGO_ENABLED=0 and cross-compile natively on the
+# NOTE: operator/mpsd/fractiond are CGO_ENABLED=0 and cross-compile natively on the
 # build host; metricsd links NVML via cgo, so its non-native arch is built under
 # qemu emulation (slower).
 
@@ -175,7 +175,7 @@ DOCKER_BUILDX_ARGS    ?=
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: docker-buildx docker-buildx-operator docker-buildx-mpsd docker-buildx-sharingd docker-buildx-metricsd
+.PHONY: docker-buildx docker-buildx-operator docker-buildx-mpsd docker-buildx-fractiond docker-buildx-metricsd
 
 # $(1)=Dockerfile path, $(2)=image name, $(3)=optional extra build args.
 # Build context is always the repo root.
@@ -184,21 +184,21 @@ docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) 
 	-f $(1) -t $(DOCKER_REPO_BASE)/$(2):$(VERSION) .
 endef
 
-docker-buildx: docker-buildx-operator docker-buildx-mpsd docker-buildx-sharingd docker-buildx-metricsd
+docker-buildx: docker-buildx-operator docker-buildx-mpsd docker-buildx-fractiond docker-buildx-metricsd
 
 docker-buildx-operator:
 	$(call buildx-image,operator/Dockerfile,operator)
 
 docker-buildx-mpsd:
-	$(call buildx-image,sharing-manager/mpsd/build/Dockerfile,mpsd)
+	$(call buildx-image,fractioning-manager/mpsd/build/Dockerfile,mpsd)
 
-docker-buildx-sharingd:
-	$(call buildx-image,sharing-manager/sharingd/build/Dockerfile,sharingd)
+docker-buildx-fractiond:
+	$(call buildx-image,fractioning-manager/fractiond/build/Dockerfile,fractiond)
 
 # metricsd bakes version metadata into the binary via ldflags (ARG VERSION/COMMIT/DATE
 # in its Dockerfile), so pass them through — otherwise a release image reports version=dev.
 docker-buildx-metricsd:
-	$(call buildx-image,sharing-manager/metricsd/Dockerfile,metricsd,--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(GIT_COMMIT) --build-arg DATE=$(BUILD_DATE))
+	$(call buildx-image,fractioning-manager/metricsd/Dockerfile,metricsd,--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(GIT_COMMIT) --build-arg DATE=$(BUILD_DATE))
 
 # -----------------------------------------------------------
 # Clean

@@ -8,33 +8,33 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/plugin"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/plugin"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
-// TestE2E_SharingdRestartPreservesAttribution verifies that restarting the
-// sharingd DaemonSet pods (NRI plugin + metricsd sidecar) does not lose metric
+// TestE2E_FractiondRestartPreservesAttribution verifies that restarting the
+// fractiond DaemonSet pods (NRI plugin + metricsd sidecar) does not lose metric
 // attribution for workloads that were already running before the restart.
 //
 // On reconnect, containerd delivers a non-empty NRI Synchronize with all
 // existing containers. The plugin rebuilds the fsstore from that snapshot and
 // metricsd resumes attribution from the same nvml-mock ConfigMap. This test
 // confirms the full reconnect flow is correct end-to-end.
-func TestE2E_SharingdRestartPreservesAttribution(t *testing.T) {
+func TestE2E_FractiondRestartPreservesAttribution(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
 		t.Skip(skipNoNVMLMock)
 	}
 	// One SetProcesses cycle (pod restart + nvml-mock config) plus one explicit
-	// sharingd restart plus two metric-series poll windows.
-	ctx, cancel := context.WithTimeout(context.Background(), sharingdRestartTestTimeout)
+	// fractiond restart plus two metric-series poll windows.
+	ctx, cancel := context.WithTimeout(context.Background(), fractiondRestartTestTimeout)
 	defer cancel()
 
 	c := s.Client
 
 	spec := workload.FractionalPod{
 		Namespace:     attributionTestNamespace,
-		Name:          "tc-sharingd-restart-pod",
+		Name:          "tc-fractiond-restart-pod",
 		ContainerName: "trainer",
 		Annotations:   workload.FractionalAnnotations("trainer", "2048", "2048"),
 	}
@@ -71,16 +71,16 @@ func TestE2E_SharingdRestartPreservesAttribution(t *testing.T) {
 		t.Fatalf("pre-restart: %s series never appeared: %v", memMetricName, err)
 	}
 
-	// Restart all sharingd pods. The nvml-mock ConfigMap is unchanged, so the
+	// Restart all fractiond pods. The nvml-mock ConfigMap is unchanged, so the
 	// new metricsd containers read the same process list at nvmlInit time.
 	// The NRI plugin receives a Synchronize from containerd with the running
 	// workload's containers and rewrites the fsstore.
-	restartSharingdPods(ctx, t, c)
+	restartFractiondPods(ctx, t, c)
 
 	// All metric series must still be attributed to the same pod after the restart.
 	for _, metricName := range allMetricNames {
 		if _, err := waitForSeries(ctx, c, metricName, match); err != nil {
-			t.Errorf("post-restart: %s series lost after sharingd restart: %v", metricName, err)
+			t.Errorf("post-restart: %s series lost after fractiond restart: %v", metricName, err)
 		}
 	}
 }

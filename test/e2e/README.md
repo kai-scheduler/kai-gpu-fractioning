@@ -1,13 +1,13 @@
-# gpu-sharing e2e tests
+# gpu-fractioning e2e tests
 
 Stage 1: metrics-only e2e tests for the metricsd metrics endpoint, running
 against a real k3d cluster with
 [fake-gpu-operator](https://github.com/run-ai/fake-gpu-operator) installed. The
-gpu-sharing stack is built and installed the way it ships — [Skaffold](https://skaffold.dev)
+gpu-fractioning stack is built and installed the way it ships — [Skaffold](https://skaffold.dev)
 (`skaffold.yaml`) builds the four component images and `helm install`s the
 operator Helm chart (`operator/charts`) — and the operator creates the
-`sharingd` DaemonSet, which hosts the **metricsd sidecar** under test. (metricsd
-is no longer a standalone DaemonSet; it runs as a container in the sharingd
+`fractiond` DaemonSet, which hosts the **metricsd sidecar** under test. (metricsd
+is no longer a standalone DaemonSet; it runs as a container in the fractiond
 pods.)
 
 ## Quick start
@@ -18,7 +18,7 @@ make e2e
 ```
 
 This creates a k3d cluster, installs fake-gpu-operator, then runs
-`skaffold run -p e2e` to build the four images (operator, sharingd, metricsd,
+`skaffold run -p e2e` to build the four images (operator, fractiond, metricsd,
 mpsd), load them into the cluster, and install the operator chart pointing at
 them — and finally runs the test suite. Tear the cluster down afterwards with:
 
@@ -35,7 +35,7 @@ concerns — the suite only connects and asserts, it deploys nothing:
 |---|---|---|
 | Create k3d cluster (N worker nodes, NRI enabled) | `test/e2e/hack/create-cluster.py` | `k3d cluster create` with retry-on-failure |
 | Install fake-gpu-operator | `test/e2e/hack/create-cluster.py` | `helm upgrade -i` with per-pool GPU count/product/memory |
-| Build + load images + install operator | `make e2e-deploy` (`skaffold run -p e2e`) | Skaffold builds the 4 images, loads them into k3d, and helm-installs `operator/charts`; the operator then reconciles the CR and creates the sharingd (+ metricsd sidecar) and mpsd DaemonSets |
+| Build + load images + install operator | `make e2e-deploy` (`skaffold run -p e2e`) | Skaffold builds the 4 images, loads them into k3d, and helm-installs `operator/charts`; the operator then reconciles the CR and creates the fractiond (+ metricsd sidecar) and mpsd DaemonSets |
 | Verify GPU nodes | `test/e2e/suite` (`nodes.VerifyGPUNodes`) | precondition check, no mutation |
 | Run test assertions | `test/e2e/tests` | scrape the metricsd sidecar `/metrics`, assert |
 
@@ -43,7 +43,7 @@ concerns — the suite only connects and asserts, it deploys nothing:
 > pods set `runtimeClassName: nvidia`, which a plain k3d cluster has no runtime
 > for — so mpsd stays unschedulable and the operator's aggregate `Ready`
 > condition is `False`. That's expected and out of scope for the metrics suite:
-> `e2e-deploy` waits on the **sharingd DaemonSet** rollout, not the CR's
+> `e2e-deploy` waits on the **fractiond DaemonSet** rollout, not the CR's
 > aggregate readiness.
 
 ## Build + deploy (`skaffold.yaml`)
@@ -68,7 +68,7 @@ skaffold dev   -p e2e     # same, rebuild/redeploy on changes
 skaffold delete -p e2e    # uninstall (what make e2e-undeploy runs)
 ```
 
-> Skaffold would otherwise log `image [sharingd|mpsd|metricsd] is not used` during
+> Skaffold would otherwise log `image [fractiond|mpsd|metricsd] is not used` during
 > deploy: those images are referenced indirectly (the chart passes their repo/tag
 > to the operator, which then creates the pods), so Skaffold's rendered-manifest
 > scan doesn't see them. They're false positives (the operator wires them in at
@@ -91,7 +91,7 @@ All configurable via `E2E_*` environment variables:
 
 | Variable                        | Default                    | Purpose                                                                                                     |
 |---------------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------|
-| `E2E_CLUSTER_NAME`              | `gpu-sharing-e2e`          | k3d cluster name                                                                                            |
+| `E2E_CLUSTER_NAME`              | `gpu-fractioning-e2e`          | k3d cluster name                                                                                            |
 | `E2E_GPU_WORKER_NODES`          | `2`                        | number of agent nodes, each labeled into the fake-GPU node pool                                             |
 | `E2E_K3S_IMAGE`                 | `rancher/k3s:v1.31.5-k3s1` | k3s node image                                                                                              |
 | `E2E_GPU_NODE_POOL`             | `default`                  | fake-gpu-operator node pool name                                                                            |
@@ -103,7 +103,7 @@ All configurable via `E2E_*` environment variables:
 | `E2E_KUBECONFIG`                | `~/.kube/<cluster>.yaml`   | where the cluster's kubeconfig is written (see note below)                                                  |
 
 > **Kubeconfig handling.** The NRI `config.toml.tmpl` volume this script mounts
-> (to let sharingd's NRI plugin run) breaks `k3d kubeconfig get/merge` — so the
+> (to let fractiond's NRI plugin run) breaks `k3d kubeconfig get/merge` — so the
 > script does **not** touch `~/.kube/config`. Instead it extracts the kubeconfig
 > from the server container via `docker`, rewrites the API URL to the published
 > port and the context name to `k3d-<cluster>` (so Skaffold auto-loads images
@@ -125,7 +125,7 @@ and Python 3.9+ on PATH.
 **Not installed by this script:** `nvml-mock` (NVIDIA's real-NVML simulator).
 Without it, `metricsd`'s NVML calls report zero memory/SM
 utilization. If a later test needs real-looking values, install
-`sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml` manually and
+`fractioning-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml` manually and
 set `LD_LIBRARY_PATH` per its comments; this adds privileged host mounts and
 hardcoded PID matching, so it's opt-in rather than part of the default e2e
 cluster.
@@ -138,14 +138,14 @@ cluster.
 | `make e2e-cluster-up`         | create the k3d cluster + install fake-gpu-operator                                                                                                                                                         |
 | `make e2e-cluster-down`       | delete the k3d cluster                                                                                                                                                                                     |
 | `make e2e-cluster-deps`       | `pip install -r test/e2e/hack/requirements.txt`                                                                                                                                                            |
-| `make e2e-deploy`             | `skaffold run -p e2e` (build 4 images + load + helm install), then wait for the sharingd DaemonSet rollout                                                                                                 |
+| `make e2e-deploy`             | `skaffold run -p e2e` (build 4 images + load + helm install), then wait for the fractiond DaemonSet rollout                                                                                                 |
 | `make e2e-undeploy`           | `skaffold delete -p e2e` (helm uninstall)                                                                                                                                                                  |
 | `make e2e-kubeconfig-merge`   | opt-in: add the cluster to `~/.kube/config` as context `k3d-<cluster>` (current-context preserved, prior file backed up), so `kubectl config use-context k3d-<cluster>` works without setting `KUBECONFIG` |
 | `make e2e-kubeconfig-unmerge` | remove that context from `~/.kube/config` (run automatically by `e2e-cluster-down`)                                                                                                                        |
 | `make test-e2e`               | run all Go suites (cluster deployed already)                                                                                                                                                               |
 | `make test-e2e-metrics`       | run only the metrics suite (`./tests/metrics/...`)                                                                                                                                                         |
 | `make test-e2e-operator`      | run only the operator/controller suite (`./tests/operator/...`)                                                                                                                                            |
-| `make test-e2e-sharingd`      | run only the sharingd NRI-injection suite (`./tests/sharingd/...`)                                                                                                                                         |
+| `make test-e2e-fractiond`      | run only the fractiond NRI-injection suite (`./tests/fractiond/...`)                                                                                                                                         |
 | `make run-e2e`                | alias for `make test-e2e` — run against any cluster (`E2E_KUBECONFIG=...`), regardless of how it was created/deployed                                                                                      |
 
 `E2E_CLUSTER_NAME`, `E2E_GPU_WORKER_NODES`, `E2E_OPERATOR_NAMESPACE`, `E2E_ARCH`,
@@ -158,25 +158,25 @@ managed by `skaffold.yaml`, not `make` variables.
 | Variable                        | Default                       | Purpose                                                                                      |
 |---------------------------------|-------------------------------|----------------------------------------------------------------------------------------------|
 | `E2E_KUBECONFIG` / `KUBECONFIG` | `~/.kube/<cluster>.yaml`      | cluster to connect to (written by `create-cluster.py`; the make targets set it for you)      |
-| `E2E_OPERATOR_NAMESPACE`        | `gpu-sharing`        | namespace the operator is installed into (and where it creates the sharingd/mpsd DaemonSets) |
+| `E2E_OPERATOR_NAMESPACE`        | `gpu-fractioning`        | namespace the operator is installed into (and where it creates the fractiond/mpsd DaemonSets) |
 | `E2E_GPU_NODE_SELECTOR`         | `nvidia.com/gpu.present=true` | label selector used to verify GPU nodes                                                      |
 | `E2E_GPU_NODE_COUNT`            | `0` (unchecked)               | exact GPU node count to assert, if > 0 — set to `E2E_GPU_WORKER_NODES`                       |
 
 ## What's covered
 
-- `TestE2E_GPUSharingPluginMetricsEndpointHealthy` — smoke test: the metricsd
-  sidecar's `/metrics` endpoint (port 2112) in the operator-created sharingd
+- `TestE2E_GPUFractioningPluginMetricsEndpointHealthy` — smoke test: the metricsd
+  sidecar's `/metrics` endpoint (port 2112) in the operator-created fractiond
   pods is reachable and returns valid Prometheus output.
 
 ## CI
 
 `.github/workflows/e2e.yaml` runs the pipeline on PRs touching
-`sharing-manager/**` or `test/e2e/**`: it installs `k3d` (official install
+`fractioning-manager/**` or `test/e2e/**`: it installs `k3d` (official install
 script), Helm, and Skaffold via the `e2e-setup` composite action, then runs
 `make e2e-deploy` (`skaffold run -p e2e` builds+loads+helm-installs the operator,
 as grove deployed its operator in-workflow) → `make test-e2e-metrics`, and tears
 the cluster down in an `if: always()` step. On failure it dumps node/pod state,
-the `GpuSharingConfig` status, and sharingd/operator/status-updater logs before
+the `GpuFractioningConfig` status, and fractiond/operator/status-updater logs before
 tearing down.
 
 ## Package layout
@@ -194,8 +194,8 @@ live under `k8s/`; deployment is not a Go package — it's `helm` (see
 - `k8s/portforward/` — SPDY port-forward to a pod (like `kubectl port-forward`); depends on `cluster`
 - `metrics/` — scrape + parse Prometheus text format (no deps)
 - `suite/` — ties `config`+`cluster`+`nodes` together; used by `tests/*/main_test.go`
-- `harness/` — shared, importable (`//go:build e2e`) test support for the operator and sharingd suites: the FX-STEADY fixture machinery, workload/exec/pod/node/daemonset helpers, diagnostics, and the cross-suite constants. Because Go can't import another package's `_test.go` files, anything shared across suites lives here; each suite's `aliases_test.go` re-exports the bits it uses under short unqualified names.
+- `harness/` — shared, importable (`//go:build e2e`) test support for the operator and fractiond suites: the FX-STEADY fixture machinery, workload/exec/pod/node/daemonset helpers, diagnostics, and the cross-suite constants. Because Go can't import another package's `_test.go` files, anything shared across suites lives here; each suite's `aliases_test.go` re-exports the bits it uses under short unqualified names.
 - `tests/metrics/` — the metrics suite: scrapes the metricsd sidecar `/metrics`
 - `tests/operator/` — the operator/controller suite: CR/CEL validation, DaemonSet deployment shape, CR status + node conditions, fault injection/recovery, config propagation, teardown
-- `tests/sharingd/` — the sharingd data-plane suite: sharingd's NRI injection (GPU-memory env + MPS pipe mount on annotated containers, fail-closed/fail-open)
+- `tests/fractiond/` — the fractiond data-plane suite: fractiond's NRI injection (GPU-memory env + MPS pipe mount on annotated containers, fail-closed/fail-open)
 - `hack/` — `create-cluster.py` + `requirements.txt`, the k3d + fake-gpu-operator provisioning script (Python, not Go — see above for why)

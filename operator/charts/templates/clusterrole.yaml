@@ -1,17 +1,17 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "gpu-sharing.fullname" . }}
+  name: {{ include "gpu-fractioning.fullname" . }}
   labels:
-    {{- include "gpu-sharing.labels" . | nindent 4 }}
+    {{- include "gpu-fractioning.labels" . | nindent 4 }}
 rules:
-  # Watch for GpuSharingConfig changes, read the resource, and update it to
+  # Watch for GpuFractioningConfig changes, read the resource, and update it to
   # add/remove the node-condition cleanup finalizer (metadata.finalizers is
   # modified through the main resource, not the finalizers subresource).
   - apiGroups:
-      - gpu-sharing.kai.scheduler
+      - gpu-fractioning.kai.scheduler
     resources:
-      - gpusharingconfigs
+      - gpufractioningconfigs
     verbs:
       - get
       - list
@@ -20,17 +20,17 @@ rules:
   # Update finalizers on the CR so the controller can register cleanup
   # logic that runs before the resource is deleted.
   - apiGroups:
-      - gpu-sharing.kai.scheduler
+      - gpu-fractioning.kai.scheduler
     resources:
-      - gpusharingconfigs/finalizers
+      - gpufractioningconfigs/finalizers
     verbs:
       - update
   # Write to the status subresource to report observedGeneration
   # and conditions back to the user.
   - apiGroups:
-      - gpu-sharing.kai.scheduler
+      - gpu-fractioning.kai.scheduler
     resources:
-      - gpusharingconfigs/status
+      - gpufractioningconfigs/status
     verbs:
       - get
       - patch
@@ -48,7 +48,7 @@ rules:
       - update
       - watch
   # Manage DaemonSets created by the controller for each managed daemon
-  # (sharingd, mpsd).
+  # (fractiond, mpsd).
   - apiGroups:
       - apps
     resources:
@@ -72,7 +72,7 @@ rules:
     verbs:
       - get
       - list
-  # Patch the gpu-sharing.nvidia.com/Ready condition on GPU nodes.
+  # Patch the gpu-fractioning.nvidia.com/Ready condition on GPU nodes.
   - apiGroups:
       - ""
     resources:
@@ -108,7 +108,7 @@ rules:
     verbs:
       - list
   # Emit Kubernetes Events to surface reconciliation activity
-  # (e.g. "GpuSharingConfig reconciled successfully").
+  # (e.g. "GpuFractioningConfig reconciled successfully").
   - apiGroups:
       - ""
     resources:

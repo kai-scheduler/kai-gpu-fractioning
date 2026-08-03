@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/metrics"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/metrics"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // TestE2E_MultipleGPUsOnOneNodeAreIsolated verifies that two fractional pods

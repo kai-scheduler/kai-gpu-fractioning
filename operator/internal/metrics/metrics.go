@@ -15,7 +15,7 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
-const namespace = "gpu_sharing"
+const namespace = "gpu_fractioning"
 
 var (
 	daemonReadyNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -33,13 +33,13 @@ var (
 	nodesReady = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "nodes_ready",
-		Help:      "GPU nodes whose gpu-sharing.nvidia.com/Ready condition was True at the last node-condition evaluation.",
+		Help:      "GPU nodes whose gpu-fractioning.nvidia.com/Ready condition was True at the last node-condition evaluation.",
 	})
 
 	nodesDegraded = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "nodes_degraded",
-		Help:      "GPU nodes whose gpu-sharing.nvidia.com/Ready condition was False at the last node-condition evaluation.",
+		Help:      "GPU nodes whose gpu-fractioning.nvidia.com/Ready condition was False at the last node-condition evaluation.",
 	})
 )
 

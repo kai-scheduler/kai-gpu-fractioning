@@ -1,31 +1,31 @@
-# GPU Sharing Operator
+# GPU Fractioning Operator
 
 A Kubernetes operator that enables **multiple pods to safely share a single GPU with enforced memory boundaries**.
 
-The operator manages the full lifecycle of GPU sharing on a cluster: it deploys an [NRI](https://github.com/containerd/nri) plugin that injects per-container GPU memory limits at container creation time — before the container process starts — and runs [NVIDIA MPS](https://docs.nvidia.com/deploy/mps/index.html) with GPU memory accounting enabled on every shared GPU.
+The operator manages the full lifecycle of GPU fractioning on a cluster: it deploys an [NRI](https://github.com/containerd/nri) plugin that injects per-container GPU memory limits at container creation time — before the container process starts — and runs [NVIDIA MPS](https://docs.nvidia.com/deploy/mps/index.html) with GPU memory accounting enabled on every shared GPU.
 
-It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler): KAI Scheduler decides *which* fraction of *which* GPU a workload gets, and gpu-sharing enforces that memory boundary on the node and exports per-pod metrics for the resulting fractional GPUs.
+It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler): KAI Scheduler decides *which* fraction of *which* GPU a workload gets, and kai-gpu-fractioning enforces that memory boundary on the node and exports per-pod metrics for the resulting fractional GPUs.
 
 ## How It Works
 
-1. A cluster admin installs the operator and a `GpuSharingConfig` custom resource is created (the Helm chart ships a default one).
+1. A cluster admin installs the operator and a `GpuFractioningConfig` custom resource is created (the Helm chart ships a default one).
 2. The **operator** (controller) reconciles the CR and rolls out the node-level components as DaemonSets to the selected GPU nodes.
 3. **mpsd** runs an NVIDIA MPS control daemon on each node with per-process GPU memory accounting (`memacct`) enabled and context-share disabled.
-4. **sharingd** registers as an NRI plugin with the container runtime. When a pod carrying GPU-memory annotations is created, sharingd injects `NVIDIA_GPU_MEMORY_REQUESTS` / `NVIDIA_GPU_MEMORY_LIMITS` (and the MPS pipe mount) into the container **before it starts**.
+4. **fractiond** registers as an NRI plugin with the container runtime. When a pod carrying GPU-memory annotations is created, fractiond injects `NVIDIA_GPU_MEMORY_REQUESTS` / `NVIDIA_GPU_MEMORY_LIMITS` (and the MPS pipe mount) into the container **before it starts**.
 5. The NVIDIA driver enforces `NVIDIA_GPU_MEMORY_LIMITS` as a hard cap, so a container cannot allocate beyond its share and impact its neighbors on the same GPU. A container that exceeds its limit is terminated (out-of-memory), the same way a container exceeding its Kubernetes memory limit is.
-6. **metricsd** (a sidecar alongside sharingd) exports per-pod GPU memory and utilization metrics for the shared GPUs.
+6. **metricsd** (a sidecar alongside fractiond) exports per-pod GPU memory and utilization metrics for the shared GPUs.
 
 ## Architecture
 
 ```
 ┌───────────────────────────────────────────────────────────┐
 │  Controller (Deployment)                                  │
-│  Reconciles GpuSharingConfig CR → manages the DaemonSets  │
+│  Reconciles GpuFractioningConfig CR → manages the DaemonSets  │
 └───────────────┬───────────────────────────┬───────────────┘
                 │                           │
                 ▼                           ▼
 ┌───────────────────────┐   ┌───────────────────────────────┐
-│  mpsd (DaemonSet)     │   │  sharingd (DaemonSet)         │
+│  mpsd (DaemonSet)     │   │  fractiond (DaemonSet)         │
 │  Per-node MPS control │   │  NRI plugin — injects GPU     │
 │  daemon; GPU memory   │   │  memory limits into containers│
 │  accounting/enforce   │   │  at creation time             │
@@ -38,9 +38,9 @@ It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Sc
 
 | Component | Description |
 |-----------|-------------|
-| **operator** | Kubernetes controller that reconciles `GpuSharingConfig` and manages the node-level DaemonSets |
+| **operator** | Kubernetes controller that reconciles `GpuFractioningConfig` and manages the node-level DaemonSets |
 | **mpsd** | Runs and supervises the NVIDIA MPS control daemon on each GPU node |
-| **sharingd** | NRI plugin that enforces per-container GPU memory limits at container creation |
+| **fractiond** | NRI plugin that enforces per-container GPU memory limits at container creation |
 | **metricsd** | Sidecar that exports per-pod GPU memory/utilization metrics for shared GPUs |
 
 ## Prerequisites
@@ -64,26 +64,26 @@ helm install gpu-operator nvidia/gpu-operator \
 
 The dependency check reads the `nvidia.com/cuda.driver-version.major` node label and requires major **≥ 615**, so any `r615` release satisfies it.
 
-Use v26.7.1 rather than v26.7.0: on v26.7.1 the bundled device-plugin and container-toolkit versions are already the ones GPU sharing needs, and the driver is the only thing you have to override. On v26.7.0 the device-plugin and toolkit had to be overridden as well.
+Use v26.7.1 rather than v26.7.0: on v26.7.1 the bundled device-plugin and container-toolkit versions are already the ones GPU fractioning needs, and the driver is the only thing you have to override. On v26.7.0 the device-plugin and toolkit had to be overridden as well.
 
-If a GPU node ends up on an older driver, the `GpuSharingConfig` `Ready` condition reports it (`GPUDriverVersionUnsupported`) and the node-level daemons are not rolled out there.
+If a GPU node ends up on an older driver, the `GpuFractioningConfig` `Ready` condition reports it (`GPUDriverVersionUnsupported`) and the node-level daemons are not rolled out there.
 
 ## Install
 
 The operator and its Helm chart are published as OCI artifacts to GitHub Container Registry.
 
 ```sh
-helm install gpu-sharing \
-  oci://ghcr.io/kai-scheduler/gpu-sharing/gpu-sharing \
+helm install gpu-fractioning \
+  oci://ghcr.io/kai-scheduler/kai-gpu-fractioning/gpu-fractioning \
   --version <VERSION> \
-  --namespace gpu-sharing --create-namespace
+  --namespace gpu-fractioning --create-namespace
 ```
 
-The chart installs the CRD, the controller, and a default `GpuSharingConfig` targeting nodes labelled `nvidia.com/gpu.present=true`. Verify the rollout:
+The chart installs the CRD, the controller, and a default `GpuFractioningConfig` targeting nodes labelled `nvidia.com/gpu.present=true`. Verify the rollout:
 
 ```sh
-kubectl -n gpu-sharing get pods
-kubectl get gpusharingconfig default -o yaml   # check .status.conditions → Ready
+kubectl -n gpu-fractioning get pods
+kubectl get gpufractioningconfig default -o yaml   # check .status.conditions → Ready
 ```
 
 Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.yaml) for the full list):
@@ -96,11 +96,11 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
 | `nodeSelector` | `{}` | scheduling constraint for the **controller** Deployment |
 
-> The GPU **nodeSelector** for the DaemonSets is set on the `GpuSharingConfig` CR (`spec.nodeSelector`), not the chart-level `nodeSelector`.
+> The GPU **nodeSelector** for the DaemonSets is set on the `GpuFractioningConfig` CR (`spec.nodeSelector`), not the chart-level `nodeSelector`.
 
 ## Requesting a fractional GPU
 
-A workload opts into GPU sharing with **per-container** pod annotations that declare its GPU-memory request and limit:
+A workload opts into GPU fractioning with **per-container** pod annotations that declare its GPU-memory request and limit:
 
 ```yaml
 apiVersion: v1
@@ -122,47 +122,47 @@ spec:
 - The container name in the annotation key selects which container the limits apply to; a pod may carry annotations for several containers.
 - **Both `request` and `limit` are optional**, but at least one must be present for the container to be treated as a shared-GPU container. If only one is set, the other defaults to it — so a request-only container is capped at its request rather than left unbounded, and a limit-only container gets its request populated for accounting.
 - **limit** is the hard memory cap the driver enforces. **request** is the workload's declared share; the GPU fraction used to normalize SM-utilization metrics is derived from the limit, falling back to the request.
-- Values are Kubernetes quantities (`8Gi`, `512Mi`, …) and must resolve to at least 1 MB. A malformed value fails container creation unless sharingd is running fail-open.
-- The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); sharingd injects `NVIDIA_VISIBLE_DEVICES` from it.
+- Values are Kubernetes quantities (`8Gi`, `512Mi`, …) and must resolve to at least 1 MB. A malformed value fails container creation unless fractiond is running fail-open.
+- The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); fractiond injects `NVIDIA_VISIBLE_DEVICES` from it.
 
-## `GpuSharingConfig` reference
+## `GpuFractioningConfig` reference
 
-A single cluster-scoped CR configures the whole stack. Field docs are authoritative in [`api/v1alpha1/gpusharingconfig_types.go`](api/v1alpha1/gpusharingconfig_types.go).
+A single cluster-scoped CR configures the whole stack. Field docs are authoritative in [`api/v1alpha1/gpufractioningconfig_types.go`](api/v1alpha1/gpufractioningconfig_types.go).
 
 | Field | Description |
 |-------|-------------|
-| `spec.nodeSelector` *(required)* | Which nodes the sharingd/mpsd DaemonSets target. **Immutable** — set once at creation. |
-| `spec.sharingAgent` | sharingd options (annotation prefix, log level, fail-open, retroactive enforcement). |
+| `spec.nodeSelector` *(required)* | Which nodes the fractiond/mpsd DaemonSets target. **Immutable** — set once at creation. |
+| `spec.fractioningAgent` | fractiond options (annotation prefix, log level, fail-open, retroactive enforcement). |
 | `spec.metricsAgent` | metricsd options (`enabled`, `runtimeClassName`, metric-name overrides). |
 | `spec.mpsDaemon` | mpsd supervisor options (e.g. `gracefulStopDelay`). |
 
 Status is surfaced as conditions on the CR:
-- **`SharingdReady`** / **`MpsdReady`** — per-daemon rollout health (ready vs desired nodes).
+- **`FractiondReady`** / **`MpsdReady`** — per-daemon rollout health (ready vs desired nodes).
 - **`Ready`** — aggregate health of the managed daemons. When not ready, it is refined with NVIDIA GPU Operator dependency failures (e.g. the GPU Operator is missing or below the required version) to explain why.
 - **`DriverUpgradeInProgress`** — `True` while a targeted GPU node is undergoing an NVIDIA driver upgrade; the daemons are automatically drained from that node (so MPS shuts down cleanly before the driver unloads) and rescheduled when it completes.
 
-Per-node health is also published as a `gpu-sharing.nvidia.com/Ready` **node condition** (refined with the CUDA driver version when a node is unhealthy).
+Per-node health is also published as a `gpu-fractioning.nvidia.com/Ready` **node condition** (refined with the CUDA driver version when a node is unhealthy).
 
 ## Observability
 
 metricsd exports per-pod GPU metrics (Prometheus, plain HTTP). Built-in metric names (labels: `namespace`, `pod`, `pod_uuid`, `gpu_uuid`, `gpu`):
 
-- `gpu_sharing_gpu_memory_used_bytes`
-- `gpu_sharing_gpu_sm_utilization_percent`
-- `gpu_sharing_gpu_sm_utilization_percent_normalized` — SM utilization divided by the pod's GPU fraction, capped at 100.
+- `gpu_fractioning_gpu_memory_used_bytes`
+- `gpu_fractioning_gpu_sm_utilization_percent`
+- `gpu_fractioning_gpu_sm_utilization_percent_normalized` — SM utilization divided by the pod's GPU fraction, capped at 100.
 
-The controller also exports operational metrics (`gpu_sharing_daemon_ready_nodes`, `gpu_sharing_daemon_desired_nodes`, `gpu_sharing_nodes_ready`, `gpu_sharing_nodes_degraded`) plus the standard controller-runtime `controller_runtime_reconcile_*` series.
+The controller also exports operational metrics (`gpu_fractioning_daemon_ready_nodes`, `gpu_fractioning_daemon_desired_nodes`, `gpu_fractioning_nodes_ready`, `gpu_fractioning_nodes_degraded`) plus the standard controller-runtime `controller_runtime_reconcile_*` series.
 
 With the Prometheus Operator installed, set `prometheus.enabled=true` to have the chart create a `ServiceMonitor` (controller) and a `PodMonitor` (metricsd, one scrape target per GPU node). Both are gated on `metrics.enabled` as well, so setting `metrics.enabled=false` drops the metricsd `PodMonitor` too, not just the controller `ServiceMonitor`. Both scrape over plain HTTP; restrict access with a NetworkPolicy if needed. Metric names are overridable via `metricsAgent.metricNames` / `spec.metricsAgent.metricNames`.
 
 ## Repository structure
 
 ```
-├── api/               # GpuSharingConfig CRD types (v1alpha1)
+├── api/               # GpuFractioningConfig CRD types (v1alpha1)
 ├── operator/          # Controller (reconciler) + Helm chart (operator/charts/)
-├── sharing-manager/   # Node-level components
+├── fractioning-manager/   # Node-level components
 │   ├── mpsd/          #   MPS control daemon supervisor
-│   ├── sharingd/      #   NRI plugin (memory-limit injection)
+│   ├── fractiond/      #   NRI plugin (memory-limit injection)
 │   ├── metricsd/      #   per-pod GPU metrics sidecar
 │   └── common/        #   shared packages
 ├── pkg/               # Shared libraries
@@ -173,12 +173,12 @@ With the Prometheus Operator installed, set `prometheus.enabled=true` to have th
 ## Development
 
 ```sh
-make build      # build the operator, mpsd and sharingd binaries
+make build      # build the operator, mpsd and fractiond binaries
 make test       # run unit tests
 make validate   # format, vet, and lint
 ```
 
-metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-level `make build`; build it with `make -C sharing-manager/metricsd build`. `make test` and `make docker-build` do cover all four components.
+metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-level `make build`; build it with `make -C fractioning-manager/metricsd build`. `make test` and `make docker-build` do cover all four components.
 
 ## License
 

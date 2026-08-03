@@ -31,11 +31,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
-	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
-	"github.com/kai-scheduler/gpu-sharing/operator/internal/config"
-	"github.com/kai-scheduler/gpu-sharing/operator/internal/controller"
-	"github.com/kai-scheduler/gpu-sharing/pkg/env"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
+	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/config"
+	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/controller"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/env"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -90,7 +90,7 @@ func main() {
 	// We do not configure a Pod (or Node) cache. The controller reads Pods and
 	// Nodes only in the rare unhealthy/recovery path (node-condition patching)
 	// and does so via the manager's uncached API reader, so it never maintains
-	// cluster-scale Pod/Node informers. Reconciles are driven by GpuSharingConfig
+	// cluster-scale Pod/Node informers. Reconciles are driven by GpuFractioningConfig
 	// and DaemonSet events, not pod events. Only DaemonSets and the CR — small,
 	// bounded object sets — are served from the default cache.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -98,7 +98,7 @@ func main() {
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: cfg.ProbeAddr,
 		LeaderElection:         cfg.EnableLeaderElect,
-		LeaderElectionID:       "gpu-sharing.kai.scheduler",
+		LeaderElectionID:       "gpu-fractioning.kai.scheduler",
 	})
 	if err != nil {
 		setupLog.Error(err, "Failed to start manager")
@@ -106,21 +106,21 @@ func main() {
 	}
 
 	// ── Component images (from Helm-injected env vars) ──────────────────
-	sharingdImage := controller.ReadImageFromEnv("SHARINGD_IMAGE")
+	fractiondImage := controller.ReadImageFromEnv("FRACTIOND_IMAGE")
 	metricsdImage := controller.ReadImageFromEnv("METRICSD_IMAGE")
 	mpsdImage := controller.ReadImageFromEnv("MPSD_IMAGE")
 
 	for name, img := range map[string]daemonmgr.ImageSpec{
-		"sharingd": sharingdImage,
-		"metricsd": metricsdImage,
-		"mpsd":     mpsdImage,
+		"fractiond": fractiondImage,
+		"metricsd":  metricsdImage,
+		"mpsd":      mpsdImage,
 	} {
 		if img.FullImage() == "" {
 			setupLog.Error(nil, "component image is not configured; set the corresponding Helm value", "component", name)
 			os.Exit(1)
 		}
 	}
-	setupLog.Info("sharingd default image", "image", sharingdImage.FullImage())
+	setupLog.Info("fractiond default image", "image", fractiondImage.FullImage())
 	setupLog.Info("metricsd default image", "image", metricsdImage.FullImage())
 	setupLog.Info("mpsd default image", "image", mpsdImage.FullImage())
 
@@ -129,21 +129,21 @@ func main() {
 	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
 
 	// ── Register controllers ─────────────────────────────────────────────
-	if err := controller.NewGpuSharingConfigReconciler(
+	if err := controller.NewGpuFractioningConfigReconciler(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
 		//nolint:staticcheck // record.EventRecorder is still supported; migrating the reconciler to the new events API is tracked separately.
-		mgr.GetEventRecorderFor("gpusharingconfig-controller"),
+		mgr.GetEventRecorderFor("gpufractioningconfig-controller"),
 		podNamespace,
 		map[string]daemonmgr.ImageSpec{
-			"sharingd": sharingdImage,
-			"metricsd": metricsdImage,
-			"mpsd":     mpsdImage,
+			"fractiond": fractiondImage,
+			"metricsd":  metricsdImage,
+			"mpsd":      mpsdImage,
 		},
 		mpsdAuditLog,
 	).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "gpusharingconfig")
+		setupLog.Error(err, "Failed to create controller", "controller", "gpufractioningconfig")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

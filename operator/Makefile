@@ -132,11 +132,11 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 
 .PHONY: deploy
 deploy: manifests ## Deploy controller via Helm to the K8s cluster specified in ~/.kube/config.
-	helm upgrade --install gpu-sharing charts/ --set images.operator.repository=$${IMG%:*} --set images.operator.tag=$${IMG##*:}
+	helm upgrade --install gpu-fractioning charts/ --set images.operator.repository=$${IMG%:*} --set images.operator.tag=$${IMG##*:}
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
-	helm uninstall gpu-sharing
+	helm uninstall gpu-fractioning
 
 ##@ Dependencies
 

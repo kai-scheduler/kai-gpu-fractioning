@@ -6,7 +6,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 )
 
 func TestDaemonHealthToCondition(t *testing.T) {
@@ -23,40 +23,40 @@ func TestDaemonHealthToCondition(t *testing.T) {
 	}{
 		{
 			name:           "all pods ready",
-			daemonName:     "sharingd",
+			daemonName:     "fractiond",
 			health:         DaemonHealth{DesiredNodes: 3, ReadyNodes: 3},
 			generation:     1,
-			expectedType:   "SharingdReady",
+			expectedType:   "FractiondReady",
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: ReasonAllPodsReady,
 			expectedMsg:    "3 of 3 pods ready",
 		},
 		{
 			name:           "no target nodes",
-			daemonName:     "sharingd",
+			daemonName:     "fractiond",
 			health:         DaemonHealth{DesiredNodes: 0, ReadyNodes: 0},
 			generation:     1,
-			expectedType:   "SharingdReady",
+			expectedType:   "FractiondReady",
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: ReasonNoTargetNodes,
 			expectedMsg:    MessageNoTargetNodes,
 		},
 		{
 			name:           "partially available",
-			daemonName:     "sharingd",
+			daemonName:     "fractiond",
 			health:         DaemonHealth{DesiredNodes: 5, ReadyNodes: 3},
 			generation:     2,
-			expectedType:   "SharingdReady",
+			expectedType:   "FractiondReady",
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: ReasonPartiallyAvailable,
 			expectedMsg:    "3 of 5 pods ready",
 		},
 		{
 			name:           "rollout in progress (zero ready)",
-			daemonName:     "sharingd",
+			daemonName:     "fractiond",
 			health:         DaemonHealth{DesiredNodes: 5, ReadyNodes: 0},
 			generation:     1,
-			expectedType:   "SharingdReady",
+			expectedType:   "FractiondReady",
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: ReasonRolloutInProgress,
 			expectedMsg:    "0 of 5 pods ready",
@@ -73,11 +73,11 @@ func TestDaemonHealthToCondition(t *testing.T) {
 		},
 		{
 			name:           "reconcile error",
-			daemonName:     "sharingd",
+			daemonName:     "fractiond",
 			health:         DaemonHealth{},
 			reconcileErr:   fmt.Errorf("create-or-update failed"),
 			generation:     1,
-			expectedType:   "SharingdReady",
+			expectedType:   "FractiondReady",
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: ReasonReconcileError,
 			expectedMsg:    "create-or-update failed",
@@ -125,7 +125,7 @@ func TestAggregateReadyCondition(t *testing.T) {
 		{
 			name: "all components true",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionTrue},
+				{Type: "FractiondReady", Status: metav1.ConditionTrue},
 			},
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: ReasonAllComponentsReady,
@@ -134,7 +134,7 @@ func TestAggregateReadyCondition(t *testing.T) {
 		{
 			name: "one false takes priority",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionTrue},
+				{Type: "FractiondReady", Status: metav1.ConditionTrue},
 				{Type: "MpsdReady", Status: metav1.ConditionFalse},
 			},
 			expectedStatus: metav1.ConditionFalse,
@@ -144,17 +144,17 @@ func TestAggregateReadyCondition(t *testing.T) {
 		{
 			name: "multiple false lists all",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionFalse},
+				{Type: "FractiondReady", Status: metav1.ConditionFalse},
 				{Type: "MpsdReady", Status: metav1.ConditionFalse},
 			},
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: ReasonComponentNotReady,
-			expectedMsg:    "not ready: SharingdReady, MpsdReady",
+			expectedMsg:    "not ready: FractiondReady, MpsdReady",
 		},
 		{
 			name: "unknown when no false present",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionTrue},
+				{Type: "FractiondReady", Status: metav1.ConditionTrue},
 				{Type: "MpsdReady", Status: metav1.ConditionUnknown},
 			},
 			expectedStatus: metav1.ConditionUnknown,
@@ -164,7 +164,7 @@ func TestAggregateReadyCondition(t *testing.T) {
 		{
 			name: "false wins over unknown - unknown components are masked",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionUnknown},
+				{Type: "FractiondReady", Status: metav1.ConditionUnknown},
 				{Type: "MpsdReady", Status: metav1.ConditionFalse},
 			},
 			expectedStatus: metav1.ConditionFalse,
@@ -174,23 +174,23 @@ func TestAggregateReadyCondition(t *testing.T) {
 		{
 			name: "multiple unknown lists all",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionUnknown},
+				{Type: "FractiondReady", Status: metav1.ConditionUnknown},
 				{Type: "MpsdReady", Status: metav1.ConditionUnknown},
 			},
 			expectedStatus: metav1.ConditionUnknown,
 			expectedReason: ReasonComponentUnknown,
-			expectedMsg:    "unknown: SharingdReady, MpsdReady",
+			expectedMsg:    "unknown: FractiondReady, MpsdReady",
 		},
 		{
 			name: "multiple false and unknown - only false reported",
 			conditions: []metav1.Condition{
-				{Type: "SharingdReady", Status: metav1.ConditionFalse},
+				{Type: "FractiondReady", Status: metav1.ConditionFalse},
 				{Type: "MpsdReady", Status: metav1.ConditionUnknown},
 				{Type: "MetricsdReady", Status: metav1.ConditionFalse},
 			},
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: ReasonComponentNotReady,
-			expectedMsg:    "not ready: SharingdReady, MetricsdReady",
+			expectedMsg:    "not ready: FractiondReady, MetricsdReady",
 		},
 	}
 
@@ -212,10 +212,10 @@ func TestAggregateReadyCondition(t *testing.T) {
 }
 
 func TestSetCondition_Upsert(t *testing.T) {
-	status := &v1alpha1.GpuSharingConfigStatus{}
+	status := &v1alpha1.GpuFractioningConfigStatus{}
 
 	cond1 := metav1.Condition{
-		Type:               "SharingdReady",
+		Type:               "FractiondReady",
 		Status:             metav1.ConditionFalse,
 		Reason:             ReasonRolloutInProgress,
 		LastTransitionTime: metav1.Now(),
@@ -229,7 +229,7 @@ func TestSetCondition_Upsert(t *testing.T) {
 	// Update same type, same status — lastTransitionTime should be preserved.
 	originalTime := status.Conditions[0].LastTransitionTime
 	cond2 := metav1.Condition{
-		Type:               "SharingdReady",
+		Type:               "FractiondReady",
 		Status:             metav1.ConditionFalse,
 		Reason:             ReasonPartiallyAvailable,
 		LastTransitionTime: metav1.Now(),
@@ -248,7 +248,7 @@ func TestSetCondition_Upsert(t *testing.T) {
 
 	// Change status — lastTransitionTime should update.
 	cond3 := metav1.Condition{
-		Type:               "SharingdReady",
+		Type:               "FractiondReady",
 		Status:             metav1.ConditionTrue,
 		Reason:             ReasonAllPodsReady,
 		LastTransitionTime: metav1.Now(),
@@ -261,9 +261,9 @@ func TestSetCondition_Upsert(t *testing.T) {
 }
 
 func TestSetCondition_AddsNew(t *testing.T) {
-	status := &v1alpha1.GpuSharingConfigStatus{
+	status := &v1alpha1.GpuFractioningConfigStatus{
 		Conditions: []metav1.Condition{
-			{Type: "SharingdReady", Status: metav1.ConditionTrue},
+			{Type: "FractiondReady", Status: metav1.ConditionTrue},
 		},
 	}
 
@@ -281,7 +281,7 @@ func TestCapitalize(t *testing.T) {
 	tests := []struct {
 		input, expected string
 	}{
-		{"sharingd", "Sharingd"},
+		{"fractiond", "Fractiond"},
 		{"mpsd", "Mpsd"},
 		{"Already", "Already"},
 		{"", ""},

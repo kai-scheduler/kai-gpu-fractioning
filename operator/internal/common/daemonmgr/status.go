@@ -7,13 +7,13 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 )
 
 const (
 	// NodeConditionType is the condition type set on GPU nodes to indicate
-	// whether all gpu-sharing daemons are healthy on that node.
-	NodeConditionType = "gpu-sharing.nvidia.com/Ready"
+	// whether all gpu-fractioning daemons are healthy on that node.
+	NodeConditionType = "gpu-fractioning.nvidia.com/Ready"
 
 	ConditionReady = "Ready"
 
@@ -39,7 +39,7 @@ const (
 	MessageComponentUnknown   = "one or more components have unknown status"
 	MessageAllComponentsReady = "all components are healthy"
 	MessageNoComponents       = "no components have been evaluated"
-	MessageAllDaemonsReady    = "all gpu-sharing daemons are running"
+	MessageAllDaemonsReady    = "all gpu-fractioning daemons are running"
 )
 
 // DaemonHealthToCondition maps a DaemonHealth to a metav1.Condition for the CR.
@@ -164,7 +164,7 @@ func AggregateReadyCondition(conditions []metav1.Condition, generation int64) me
 
 // SetCondition upserts a condition into the status. If a condition with the same
 // type already exists with the same status, the lastTransitionTime is preserved.
-func SetCondition(status *v1alpha1.GpuSharingConfigStatus, cond metav1.Condition) {
+func SetCondition(status *v1alpha1.GpuFractioningConfigStatus, cond metav1.Condition) {
 	for i, existing := range status.Conditions {
 		if existing.Type == cond.Type {
 			// Per Kubernetes API conventions, LastTransitionTime is only updated

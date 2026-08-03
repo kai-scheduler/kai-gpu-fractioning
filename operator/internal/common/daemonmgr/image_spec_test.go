@@ -10,13 +10,13 @@ func TestImageSpec_FullImage(t *testing.T) {
 	}{
 		{
 			name: "repository and tag",
-			spec: ImageSpec{Repository: "fake.io/org/sharingd", Tag: "v0.1.0"},
-			want: "fake.io/org/sharingd:v0.1.0",
+			spec: ImageSpec{Repository: "fake.io/org/fractiond", Tag: "v0.1.0"},
+			want: "fake.io/org/fractiond:v0.1.0",
 		},
 		{
 			name: "no tag returns repository only",
-			spec: ImageSpec{Repository: "fake.io/org/sharingd"},
-			want: "fake.io/org/sharingd",
+			spec: ImageSpec{Repository: "fake.io/org/fractiond"},
+			want: "fake.io/org/fractiond",
 		},
 		{
 			name: "empty repository returns empty string",

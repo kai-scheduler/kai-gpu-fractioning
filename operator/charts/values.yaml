@@ -3,19 +3,19 @@ leaderElect: true
 
 images:
   operator:
-    repository: ghcr.io/kai-scheduler/gpu-sharing/operator
+    repository: ghcr.io/kai-scheduler/kai-gpu-fractioning/operator
     tag: ""
     pullPolicy: IfNotPresent
-  sharingd:
-    repository: ghcr.io/kai-scheduler/gpu-sharing/sharingd
+  fractiond:
+    repository: ghcr.io/kai-scheduler/kai-gpu-fractioning/fractiond
     tag: ""
     pullPolicy: IfNotPresent
   metricsd:
-    repository: ghcr.io/kai-scheduler/gpu-sharing/metricsd
+    repository: ghcr.io/kai-scheduler/kai-gpu-fractioning/metricsd
     tag: ""
     pullPolicy: IfNotPresent
   mpsd:
-    repository: ghcr.io/kai-scheduler/gpu-sharing/mpsd
+    repository: ghcr.io/kai-scheduler/kai-gpu-fractioning/mpsd
     tag: ""
     pullPolicy: IfNotPresent
 
@@ -34,7 +34,7 @@ metricsAgent:
   enabled: true
   runtimeClassName: "nvidia"
   # metricNames overrides the exported Prometheus metric names. Leave empty to
-  # keep the built-in gpu_sharing_* names. Set them to integrate with a consumer
+  # keep the built-in gpu_fractioning_* names. Set them to integrate with a consumer
   # that expects specific names. Labels are fixed: namespace, pod, pod_uuid,
   # gpu_uuid, gpu.
   metricNames: {}

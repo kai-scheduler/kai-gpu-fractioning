@@ -10,8 +10,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
-	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
+	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
 func upgradeTestNode(name string, labels map[string]string) *corev1.Node {
@@ -19,7 +19,7 @@ func upgradeTestNode(name string, labels map[string]string) *corev1.Node {
 }
 
 // TestEvaluateDriverUpgradeClearsStaleReady verifies that an actively-upgrading
-// node whose daemons were drained does not keep advertising a stale gpu-sharing
+// node whose daemons were drained does not keep advertising a stale gpu-fractioning
 // Ready condition (patchNodeConditions is pod-driven and would never revisit it).
 func TestEvaluateDriverUpgradeClearsStaleReady(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -41,9 +41,9 @@ func TestEvaluateDriverUpgradeClearsStaleReady(t *testing.T) {
 		WithStatusSubresource(&corev1.Node{}).
 		WithObjects(node).
 		Build()
-	r := &GpuSharingConfigReconciler{APIReader: fc, Client: fc}
-	cfg := &v1alpha1.GpuSharingConfig{
-		Spec: v1alpha1.GpuSharingConfigSpec{
+	r := &GpuFractioningConfigReconciler{APIReader: fc, Client: fc}
+	cfg := &v1alpha1.GpuFractioningConfig{
+		Spec: v1alpha1.GpuFractioningConfigSpec{
 			NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
 		},
 	}
@@ -61,7 +61,7 @@ func TestEvaluateDriverUpgradeClearsStaleReady(t *testing.T) {
 		t.Fatalf("get node: %v", err)
 	}
 	if _, found := daemonmgr.FindNodeCondition(&got); found {
-		t.Errorf("stale gpu-sharing Ready condition was not removed: %+v", got.Status.Conditions)
+		t.Errorf("stale gpu-fractioning Ready condition was not removed: %+v", got.Status.Conditions)
 	}
 }
 
@@ -115,9 +115,9 @@ func TestEvaluateDriverUpgrade(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.nodes...).Build()
-			r := &GpuSharingConfigReconciler{APIReader: fc, Client: fc}
-			cfg := &v1alpha1.GpuSharingConfig{
-				Spec: v1alpha1.GpuSharingConfigSpec{
+			r := &GpuFractioningConfigReconciler{APIReader: fc, Client: fc}
+			cfg := &v1alpha1.GpuFractioningConfig{
+				Spec: v1alpha1.GpuFractioningConfigSpec{
 					NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
 				},
 			}

@@ -31,7 +31,7 @@ jobs:
           - api
           - operator
           - pkg
-          - sharing-manager/metricsd
+          - fractioning-manager/metricsd
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -69,5 +69,5 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: sharing-manager/metricsd/go.mod
-      - run: make -C sharing-manager/metricsd smoke-nvml
+          go-version-file: fractioning-manager/metricsd/go.mod
+      - run: make -C fractioning-manager/metricsd smoke-nvml

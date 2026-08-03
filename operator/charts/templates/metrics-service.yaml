@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "gpu-sharing.fullname" . }}-metrics
+  name: {{ include "gpu-fractioning.fullname" . }}-metrics
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gpu-sharing.labels" . | nindent 4 }}
+    {{- include "gpu-fractioning.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
-    {{- include "gpu-sharing.selectorLabels" . | nindent 4 }}
+    {{- include "gpu-fractioning.selectorLabels" . | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.metrics.port }}

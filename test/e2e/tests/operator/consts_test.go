@@ -25,7 +25,7 @@ const (
 	nvidiaRuntimeClass = "nvidia"
 
 	// DaemonSet pod-template container names.
-	containerSharingd = "sharingd"
-	containerMetricsd = "metricsd"
-	containerMpsd     = "mpsd"
+	containerFractiond = "fractiond"
+	containerMetricsd  = "metricsd"
+	containerMpsd      = "mpsd"
 )

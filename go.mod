@@ -1,16 +1,16 @@
-module github.com/kai-scheduler/gpu-sharing
+module github.com/kai-scheduler/kai-gpu-fractioning
 
 go 1.26.4
 
 require (
 	github.com/containerd/nri v0.12.1
-	github.com/kai-scheduler/gpu-sharing/pkg v0.0.0
+	github.com/kai-scheduler/kai-gpu-fractioning/pkg v0.0.0
 	google.golang.org/grpc v1.83.0
 	k8s.io/apimachinery v0.36.3
 	k8s.io/cri-api v0.36.3
 )
 
-replace github.com/kai-scheduler/gpu-sharing/pkg => ./pkg
+replace github.com/kai-scheduler/kai-gpu-fractioning/pkg => ./pkg
 
 require (
 	github.com/containerd/log v0.1.0 // indirect

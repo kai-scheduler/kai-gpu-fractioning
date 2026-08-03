@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // GPUSelectorMap converts the configured GPU node selector into a nodeSelector
@@ -30,7 +30,7 @@ func (h *Harness) AnnKey(container, suffix string) string {
 }
 
 // DevicesAnnotationKey builds the per-container GPU device-assignment annotation
-// key (…gpus.devices) that the scheduler emits and sharingd promotes to
+// key (…gpus.devices) that the scheduler emits and fractiond promotes to
 // NVIDIA_VISIBLE_DEVICES.
 func (h *Harness) DevicesAnnotationKey(container string) string {
 	return fmt.Sprintf("%s%s.gpus.devices", AnnotationPrefix, container)

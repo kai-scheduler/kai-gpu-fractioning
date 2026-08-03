@@ -33,8 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
-	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
+	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
 const (
@@ -70,7 +70,7 @@ func NewGpuOperatorDependencyChecker(reader client.Reader) GpuOperatorDependency
 	return GpuOperatorDependencyChecker{reader: reader}
 }
 
-func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha1.GpuSharingConfig, ready metav1.Condition) (metav1.Condition, error) {
+func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha1.GpuFractioningConfig, ready metav1.Condition) (metav1.Condition, error) {
 	if ready.Status != metav1.ConditionFalse {
 		return ready, nil
 	}
@@ -96,7 +96,7 @@ func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha
 		// In that case the OLM ClusterServiceVersion can tell us the installed
 		// GPU Operator version, but not operand/readiness state. If the CSV
 		// version is supported, treat the GPU Operator dependency as not the
-		// cause of the current GpuSharingConfig failure and leave the original
+		// cause of the current GpuFractioningConfig failure and leave the original
 		// Ready condition unchanged.
 		if msg := gpuOperatorVersionFailureMessage(version, "ClusterServiceVersion"); msg != "" {
 			return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorVersionUnsupported, msg), nil

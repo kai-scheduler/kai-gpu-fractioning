@@ -13,14 +13,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/cluster"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/nodes"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/pods"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/metrics"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/plugin"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/waiter"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/cluster"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/nodes"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/pods"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/metrics"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/plugin"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/waiter"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // attributionTestNamespace hosts every workload pod these tests create —
@@ -36,7 +36,7 @@ const skipNoNVMLMock = "requires nvml-mock (set E2E_NVML_MOCK=1)"
 const (
 	// testTimeout covers a single SetProcesses cycle plus one poll window.
 	// Used by most nvml-mock tests (clamping, compute, isolation, lifecycle,
-	// normalized, sharing).
+	// normalized, fractioning).
 	testTimeout = 10 * time.Minute
 
 	// aggregationTestTimeout allows for two pods with two SetProcesses calls
@@ -59,16 +59,16 @@ const (
 	// checks that do not require nvml-mock or pod restarts.
 	metricsPresenceTimeout = 30 * time.Second
 
-	// sharingdRestartTestTimeout covers two DaemonSet restart cycles (one
-	// SetProcesses + one explicit sharingd restart) plus two metric-series
+	// fractiondRestartTestTimeout covers two DaemonSet restart cycles (one
+	// SetProcesses + one explicit fractiond restart) plus two metric-series
 	// poll windows.
-	sharingdRestartTestTimeout = 15 * time.Minute
+	fractiondRestartTestTimeout = 15 * time.Minute
 )
 
 const (
-	memMetricName  = "gpu_sharing_gpu_memory_used_bytes"
-	smMetricName   = "gpu_sharing_gpu_sm_utilization_percent"
-	normMetricName = "gpu_sharing_gpu_sm_utilization_percent_normalized"
+	memMetricName  = "gpu_fractioning_gpu_memory_used_bytes"
+	smMetricName   = "gpu_fractioning_gpu_sm_utilization_percent"
+	normMetricName = "gpu_fractioning_gpu_sm_utilization_percent_normalized"
 )
 
 // allMetricNames is the full set of per-pod series every test must cover —
@@ -76,7 +76,7 @@ const (
 // lifecycle: they are emitted and pruned together by the exporter.
 var allMetricNames = []string{memMetricName, smMetricName, normMetricName}
 
-// waitForSeries polls every sharingd pod's /metrics until a series
+// waitForSeries polls every fractiond pod's /metrics until a series
 // for metricName matches every label in match, or times out.
 func waitForSeries(ctx context.Context, c *cluster.Client, metricName string, match map[string]string) (*dto.Metric, error) {
 	var found *dto.Metric
@@ -100,7 +100,7 @@ func waitForSeries(ctx context.Context, c *cluster.Client, metricName string, ma
 	return found, nil
 }
 
-// waitForAbsence polls until no sharingd pod reports a series for
+// waitForAbsence polls until no fractiond pod reports a series for
 // metricName matching every label in match, or times out. The inverse of
 // waitForSeries — used to confirm a deleted pod's series is eventually
 // pruned (exporter.go's pruneDeletedPods).
@@ -150,7 +150,7 @@ func assertNeverAppears(ctx context.Context, t *testing.T, c *cluster.Client, me
 	}
 }
 
-// scrapeFreshFamilies scrapes /metrics from the cached sharingd pods. If all
+// scrapeFreshFamilies scrapes /metrics from the cached fractiond pods. If all
 // cached pods are unreachable (empty result — e.g. pods were replaced by a
 // nvmlmock.SetProcesses restart and s.PluginPods is stale), it re-lists pods
 // once, updates s.PluginPods for subsequent polls, and retries. This keeps
@@ -188,7 +188,7 @@ func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricNa
 	return out, nil
 }
 
-// pluginPodRestartCounts returns each sharingd pod's total
+// pluginPodRestartCounts returns each fractiond pod's total
 // container restart count, keyed by pod name. A crash (e.g. a panic from a
 // malformed annotation or a delete-during-scrape race) shows up as an
 // increase here — a more reliable resilience signal than "the test didn't
@@ -197,7 +197,7 @@ func findSeriesAcrossPluginPods(ctx context.Context, c *cluster.Client, metricNa
 func pluginPodRestartCounts(ctx context.Context, c *cluster.Client) (map[string]int32, error) {
 	pluginPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
 	if err != nil {
-		return nil, fmt.Errorf("list sharingd pods: %w", err)
+		return nil, fmt.Errorf("list fractiond pods: %w", err)
 	}
 
 	counts := make(map[string]int32, len(pluginPods))
@@ -212,10 +212,10 @@ func pluginPodRestartCounts(ctx context.Context, c *cluster.Client) (map[string]
 }
 
 // setProcesses wraps nvmlmock.SetProcesses and immediately refreshes
-// s.PluginPods to the current sharingd pods after the restart. Without this,
+// s.PluginPods to the current fractiond pods after the restart. Without this,
 // s.PluginPods still points to the terminating pre-restart pods. In CI those
 // pods stay reachable long enough that scrapeFromPods returns non-empty results
-// (bypassing the automatic re-list) and every poll sees 0 gpu_sharing_ series
+// (bypassing the automatic re-list) and every poll sees 0 gpu_fractioning_ series
 // until the old pods finally terminate. Cleanup calls that use
 // context.Background() should call nvmlmock.SetProcesses directly — they run
 // after assertions and do not need a fresh pod cache.
@@ -225,28 +225,28 @@ func setProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []nv
 	}
 	freshPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
 	if err != nil {
-		return fmt.Errorf("list sharingd pods after restart: %w", err)
+		return fmt.Errorf("list fractiond pods after restart: %w", err)
 	}
 	s.PluginPods = freshPods
 	return nil
 }
 
-// restartSharingdPods deletes every sharingd pod and waits for their
+// restartFractiondPods deletes every fractiond pod and waits for their
 // replacements to be ready, then refreshes s.PluginPods. Use this to simulate
 // an NRI plugin reconnect without changing the nvml-mock ConfigMap.
-func restartSharingdPods(ctx context.Context, t *testing.T, c *cluster.Client) {
+func restartFractiondPods(ctx context.Context, t *testing.T, c *cluster.Client) {
 	t.Helper()
 
 	existing, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
 	if err != nil {
-		t.Fatalf("list sharingd pods before restart: %v", err)
+		t.Fatalf("list fractiond pods before restart: %v", err)
 	}
 
 	deleted := make(map[string]struct{}, len(existing))
 	for i := range existing {
 		deleted[existing[i].Name] = struct{}{}
 		if err := c.Ctrl.Delete(ctx, &existing[i]); err != nil {
-			t.Fatalf("delete sharingd pod %s: %v", existing[i].Name, err)
+			t.Fatalf("delete fractiond pod %s: %v", existing[i].Name, err)
 		}
 	}
 
@@ -257,7 +257,7 @@ func restartSharingdPods(ctx context.Context, t *testing.T, c *cluster.Client) {
 		var updated corev1.PodList
 		if err := c.Ctrl.List(ctx, &updated,
 			ctrlclient.InNamespace(c.Config.OperatorNamespace),
-			ctrlclient.MatchingLabels{"app.kubernetes.io/component": "sharingd", "app.kubernetes.io/managed-by": "gpu-sharing"}); err != nil {
+			ctrlclient.MatchingLabels{"app.kubernetes.io/component": "fractiond", "app.kubernetes.io/managed-by": "gpu-fractioning"}); err != nil {
 			continue
 		}
 		ready := 0
@@ -278,13 +278,13 @@ func restartSharingdPods(ctx context.Context, t *testing.T, c *cluster.Client) {
 		if ready >= want {
 			freshPods, err := pods.ListByLabel(ctx, c, c.Config.OperatorNamespace, plugin.LabelSelector)
 			if err != nil {
-				t.Fatalf("list sharingd pods after restart: %v", err)
+				t.Fatalf("list fractiond pods after restart: %v", err)
 			}
 			s.PluginPods = freshPods
 			return
 		}
 	}
-	t.Fatalf("sharingd pods not ready within %v", c.Config.DaemonSetReadyTimeout)
+	t.Fatalf("fractiond pods not ready within %v", c.Config.DaemonSetReadyTimeout)
 }
 
 // firstGPUNode returns the name of the first GPU node in the cluster.
@@ -330,7 +330,7 @@ func multiContainerMarker(namespace, podName, containerName string) string {
 }
 
 // applyMultiContainerFractionalPod creates a pod whose containers each carry a
-// GPU-memory annotation, making sharingd track each container independently.
+// GPU-memory annotation, making fractiond track each container independently.
 // The pod runs on the node given by spec.NodeSelector. Callers must Delete the
 // pod when done; use workload.Delete since the pod name/namespace is the key.
 func applyMultiContainerFractionalPod(ctx context.Context, c *cluster.Client, spec multiContainerPodSpec) (*corev1.Pod, error) {
@@ -341,7 +341,7 @@ func applyMultiContainerFractionalPod(ctx context.Context, c *cluster.Client, sp
 		return nil, fmt.Errorf("pre-create cleanup of %s/%s: %w", spec.Namespace, spec.Name, err)
 	}
 
-	// One annotation pair per container so sharingd tracks every container.
+	// One annotation pair per container so fractiond tracks every container.
 	annotations := make(map[string]string, len(spec.Containers)*2)
 	for _, name := range spec.Containers {
 		annotations[fmt.Sprintf("nvidia.com/container.%s.gpu-memory.limit", name)] = spec.MemoryMiB + "Mi"

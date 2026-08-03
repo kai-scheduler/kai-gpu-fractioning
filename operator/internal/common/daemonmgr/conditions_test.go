@@ -18,7 +18,7 @@ func nodeWithConditions(name string, conditions ...corev1.NodeCondition) *corev1
 	}
 }
 
-func gpuSharingCondition(status corev1.ConditionStatus) corev1.NodeCondition {
+func gpuFractioningCondition(status corev1.ConditionStatus) corev1.NodeCondition {
 	return corev1.NodeCondition{
 		Type:   corev1.NodeConditionType(NodeConditionType),
 		Status: status,
@@ -38,8 +38,8 @@ func TestRemoveNodeCondition(t *testing.T) {
 		expectedConditions []corev1.NodeConditionType
 	}{
 		{
-			name:               "removes the gpu-sharing condition and preserves others",
-			node:               nodeWithConditions("node-a", readyCondition, gpuSharingCondition(corev1.ConditionTrue)),
+			name:               "removes the gpu-fractioning condition and preserves others",
+			node:               nodeWithConditions("node-a", readyCondition, gpuFractioningCondition(corev1.ConditionTrue)),
 			expectedConditions: []corev1.NodeConditionType{corev1.NodeReady},
 		},
 		{

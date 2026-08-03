@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/metrics"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/metrics"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // TestE2E_SoloFractionalPodIsNotComputeThrottled verifies that a fractional GPU
@@ -19,7 +19,7 @@ import (
 //
 // The test pins the pod's host PID in nvml-mock with sm_util=95
 // (deliberately far above the 25% declared fraction) and asserts
-// gpu_sharing_gpu_sm_utilization_percent == 95, proving the exporter
+// gpu_fractioning_gpu_sm_utilization_percent == 95, proving the exporter
 // reports what NVML says without any fraction-proportional adjustment.
 //
 // This protects against a future reader "fixing" the metric to cap it near

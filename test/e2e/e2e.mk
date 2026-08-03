@@ -5,10 +5,10 @@
 #   make e2e                          # cluster up + load images + helm deploy + run tests
 #   make e2e-cluster-down             # tear down the k3d cluster
 #
-# The gpu-sharing stack is built and installed the way it ships, by Skaffold
-# (skaffold.yaml): it builds all four component images (operator, sharingd,
+# The gpu-fractioning stack is built and installed the way it ships, by Skaffold
+# (skaffold.yaml): it builds all four component images (operator, fractiond,
 # metricsd, mpsd), loads them into the cluster, and `helm install`s the operator
-# chart (operator/charts). The operator then creates the sharingd DaemonSet
+# chart (operator/charts). The operator then creates the fractiond DaemonSet
 # (which hosts the metricsd sidecar under test) and the mpsd DaemonSet. The Go
 # suite only connects to the deployed cluster and asserts — it deploys nothing.
 #
@@ -20,7 +20,7 @@
 # root (make's `include` does not change the working directory).
 # -----------------------------------------------------------
 
-E2E_CLUSTER_NAME              ?= gpu-sharing-e2e
+E2E_CLUSTER_NAME              ?= gpu-fractioning-e2e
 E2E_GPU_WORKER_NODES          ?= 2
 E2E_NON_GPU_WORKER_NODES      ?= 1
 E2E_FAKE_GPU_OPERATOR_VERSION ?= 0.2.0
@@ -34,7 +34,7 @@ E2E_REGISTRY_PORT             ?= 5001
 
 # Namespace the operator chart is installed into (must match skaffold.yaml's
 # release namespace). The Go suite reads this via E2E_OPERATOR_NAMESPACE.
-E2E_OPERATOR_NAMESPACE        ?= gpu-sharing
+E2E_OPERATOR_NAMESPACE        ?= gpu-fractioning
 
 # Dedicated kubeconfig for the e2e cluster. create-cluster.py writes it here
 # (it can't use ~/.kube/config — the NRI mount breaks `k3d kubeconfig`), and the
@@ -65,7 +65,7 @@ export E2E_KUBECONFIG
 
 .PHONY: e2e e2e-cluster-up e2e-cluster-down e2e-cluster-deps \
 	e2e-deploy e2e-undeploy e2e-kubeconfig-merge e2e-kubeconfig-unmerge \
-	test-e2e test-e2e-metrics test-e2e-operator test-e2e-sharingd run-e2e
+	test-e2e test-e2e-metrics test-e2e-operator test-e2e-fractiond run-e2e
 
 e2e: e2e-cluster-up e2e-deploy test-e2e
 
@@ -129,17 +129,17 @@ e2e-kubeconfig-unmerge:
 #   --cache-artifacts=false skips Skaffold's registry-backed cache check, which
 #     otherwise shells out to a docker credential helper (e.g. gcloud) to look up
 #     the chart's default ghcr.io repos.
-#   --verbosity=error silences Skaffold's "image [sharingd|mpsd|metricsd] is not
+#   --verbosity=error silences Skaffold's "image [fractiond|mpsd|metricsd] is not
 #     used" warnings: those images reach the pods indirectly (the chart passes
 #     their repo/tag to the operator, which creates the DaemonSets), so Skaffold's
 #     rendered-manifest scan can't see them. False positives, not real problems.
 #
-# It then waits on the sharingd DaemonSet specifically (which hosts the metricsd
+# It then waits on the fractiond DaemonSet specifically (which hosts the metricsd
 # sidecar under test), NOT the operator's aggregate CR Ready condition. The chart
 # also creates the mpsd DaemonSet; under the e2e profile that runs the fake-mps
 # image (hack/fake-mps) on the runc-backed "nvidia" RuntimeClass, so mpsd does
 # reach Ready here — but the metrics suite doesn't depend on it, so we keep the
-# wait scoped to sharingd and let the operator E2E suite assert mpsd/CR Ready.
+# wait scoped to fractiond and let the operator E2E suite assert mpsd/CR Ready.
 E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --default-repo=localhost:$(E2E_REGISTRY_PORT) --cache-artifacts=false --verbosity=error
 
 e2e-deploy:
@@ -149,9 +149,9 @@ e2e-deploy:
 	@# `k3d image import` pre-seed is needed. (It was also actively harmful:
 	@# importing a registry-tagged localhost:PORT/<repo> ref could hang for
 	@# minutes and blow the job timeout.)
-	@echo "Waiting for the operator to create the sharingd DaemonSet..."
-	@for i in $$(seq 1 60); do KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) get ds gpu-sharing-sharingd >/dev/null 2>&1 && break; sleep 2; done
-	KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) rollout status ds/gpu-sharing-sharingd --timeout=180s
+	@echo "Waiting for the operator to create the fractiond DaemonSet..."
+	@for i in $$(seq 1 60); do KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) get ds gpu-fractioning-fractiond >/dev/null 2>&1 && break; sleep 2; done
+	KUBECONFIG=$(E2E_KUBECONFIG) kubectl -n $(E2E_OPERATOR_NAMESPACE) rollout status ds/gpu-fractioning-fractiond --timeout=180s
 
 e2e-undeploy:
 	KUBECONFIG=$(E2E_KUBECONFIG) skaffold delete -p e2e --verbosity=error
@@ -172,13 +172,13 @@ test-e2e-metrics:
 test-e2e-operator:
 	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 40m ./tests/operator/...
 
-# The sharingd suite exercises the sharingd NRI data plane (env/mount injection
+# The fractiond suite exercises the fractiond NRI data plane (env/mount injection
 # on annotated workloads). Like the operator suite it asserts daemon behavior,
 # not GPU metrics, so it does NOT need nvml-mock. It creates a handful of
 # workload pods and does one CR re-roll (fail-open), so it's much shorter than
 # the operator suite — a 20m timeout clears it with margin, under the job limit.
-test-e2e-sharingd:
-	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 20m ./tests/sharingd/...
+test-e2e-fractiond:
+	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 20m ./tests/fractiond/...
 
 # run-e2e runs the suite against whatever cluster the caller provides
 # (set E2E_KUBECONFIG=...). The suite never provisions a cluster, so this works

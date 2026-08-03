@@ -1,8 +1,8 @@
 //go:build e2e
 
-// Package operator holds the gpu-sharing operator/controller e2e suite. It
+// Package operator holds the gpu-fractioning operator/controller e2e suite. It
 // covers the controller surface EXCEPT metrics (owned by tests/metrics) and the
-// sharingd NRI injection (owned by tests/sharingd): DaemonSet deployment shape,
+// fractiond NRI injection (owned by tests/fractiond): DaemonSet deployment shape,
 // CR status + node conditions, fault injection/recovery, config propagation, and
 // teardown.
 //
@@ -26,7 +26,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/harness"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/harness"
 )
 
 // h is the shared harness (one cluster connection + FX-STEADY snapshot), set in
@@ -43,7 +43,7 @@ func TestMain(m *testing.M) {
 	}
 	h = created
 
-	// Fast-fail precondition: GPU nodes present and the sharingd DaemonSet
+	// Fast-fail precondition: GPU nodes present and the fractiond DaemonSet
 	// deployed. Full FX-STEADY (CR Ready, mpsd Ready, node conditions) is
 	// asserted at the top of TestOperator via assertSteady.
 	if err := h.Preflight(ctx); err != nil {

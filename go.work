@@ -5,6 +5,6 @@ use (
 	./api
 	./operator
 	./pkg
-	./sharing-manager/metricsd
+	./fractioning-manager/metricsd
 	./test/e2e
 )

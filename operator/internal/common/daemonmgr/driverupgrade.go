@@ -41,7 +41,7 @@ func DriverUpgradeActive(labelValue string) bool {
 // longer satisfy the pod's node affinity (unlike a Deployment, where
 // IgnoredDuringExecution would leave the pod running). So when the gpu-operator
 // sets the upgrade label on a node, the node stops matching, the DaemonSet
-// controller drains sharingd/mpsd from it, mpsd exits and MPS graceful-quits
+// controller drains fractiond/mpsd from it, mpsd exits and MPS graceful-quits
 // before the driver is unloaded. When the label clears (or reaches upgrade-done)
 // the node matches again and the daemons are rescheduled.
 func driverUpgradeNodeAffinity() *corev1.Affinity {

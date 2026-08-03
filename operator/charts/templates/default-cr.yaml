@@ -1,9 +1,9 @@
-apiVersion: gpu-sharing.kai.scheduler/v1alpha1
-kind: GpuSharingConfig
+apiVersion: gpu-fractioning.kai.scheduler/v1alpha1
+kind: GpuFractioningConfig
 metadata:
   name: default
   labels:
-    {{- include "gpu-sharing.labels" . | nindent 4 }}
+    {{- include "gpu-fractioning.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "0"
@@ -11,12 +11,12 @@ spec:
   nodeSelector:
     nvidia.com/gpu.present: "true"
   # Present (even if empty) so the API server applies field-level defaults such
-  # as sharingAgent.retroactiveEnforcement=true.
-  {{- if and .Values.sharingAgent .Values.sharingAgent.logLevel }}
-  sharingAgent:
-    logLevel: {{ .Values.sharingAgent.logLevel | quote }}
+  # as fractioningAgent.retroactiveEnforcement=true.
+  {{- if and .Values.fractioningAgent .Values.fractioningAgent.logLevel }}
+  fractioningAgent:
+    logLevel: {{ .Values.fractioningAgent.logLevel | quote }}
   {{- else }}
-  sharingAgent: {}
+  fractioningAgent: {}
   {{- end }}
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}

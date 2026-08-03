@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package metrics holds the gpu-sharing metrics e2e suite. Run just this
+// Package metrics holds the gpu-fractioning metrics e2e suite. Run just this
 // suite with:
 //
 //	make test-e2e-metrics
@@ -24,7 +24,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/suite"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/suite"
 )
 
 var s *suite.Suite

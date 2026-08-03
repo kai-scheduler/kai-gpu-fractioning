@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/nodes"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/nodes"
 )
 
 // GPUNodeNames returns the sorted names of nodes matching the configured GPU

@@ -1,8 +1,8 @@
-sharingAgent:
+fractioningAgent:
   logLevel: debug
 
 metricsAgent:
-  # k3d has no "nvidia" RuntimeClass; clear it so sharingd+metricsd pods schedule.
+  # k3d has no "nvidia" RuntimeClass; clear it so fractiond+metricsd pods schedule.
   # metricsd gets NVML via nvml-mock (fake-gpu-operator), not the nvidia runtime.
   runtimeClassName: ""
   logLevel: debug

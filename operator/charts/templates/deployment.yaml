@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gpu-sharing.fullname" . }}
+  name: {{ include "gpu-fractioning.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gpu-sharing.labels" . | nindent 4 }}
+    {{- include "gpu-fractioning.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "gpu-sharing.selectorLabels" . | nindent 6 }}
+      {{- include "gpu-fractioning.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "gpu-sharing.selectorLabels" . | nindent 8 }}
+        {{- include "gpu-fractioning.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "gpu-sharing.serviceAccountName" . }}
+      serviceAccountName: {{ include "gpu-fractioning.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: true
       containers:
@@ -31,12 +31,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: SHARINGD_IMAGE_REPOSITORY
-              value: {{ .Values.images.sharingd.repository | quote }}
-            - name: SHARINGD_IMAGE_TAG
-              value: {{ .Values.images.sharingd.tag | default .Chart.AppVersion | quote }}
-            - name: SHARINGD_IMAGE_PULL_POLICY
-              value: {{ .Values.images.sharingd.pullPolicy | quote }}
+            - name: FRACTIOND_IMAGE_REPOSITORY
+              value: {{ .Values.images.fractiond.repository | quote }}
+            - name: FRACTIOND_IMAGE_TAG
+              value: {{ .Values.images.fractiond.tag | default .Chart.AppVersion | quote }}
+            - name: FRACTIOND_IMAGE_PULL_POLICY
+              value: {{ .Values.images.fractiond.pullPolicy | quote }}
             - name: METRICSD_IMAGE_REPOSITORY
               value: {{ .Values.images.metricsd.repository | quote }}
             - name: METRICSD_IMAGE_TAG

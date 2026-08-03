@@ -7,13 +7,13 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/metrics"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/metrics"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // TestE2E_NormalizedSMUtilIsCapped verifies that
-// gpu_sharing_gpu_sm_utilization_percent_normalized is capped at 100 when the
+// gpu_fractioning_gpu_sm_utilization_percent_normalized is capped at 100 when the
 // raw SM utilization divided by the pod's declared GPU fraction exceeds 100.
 //
 // A pod holding 50% of the device's memory with SMUtil=80 would produce a raw
@@ -91,7 +91,7 @@ func TestE2E_NormalizedSMUtilIsCapped(t *testing.T) {
 
 // TestE2E_NormalizedSMUtilIsProportional verifies that when the raw SM
 // utilization is below the proportional ceiling,
-// gpu_sharing_gpu_sm_utilization_percent_normalized is amplified above the raw
+// gpu_fractioning_gpu_sm_utilization_percent_normalized is amplified above the raw
 // value — proving the normalization formula (smUtil ÷ fraction) is applied and
 // the cap is not engaged.
 //
