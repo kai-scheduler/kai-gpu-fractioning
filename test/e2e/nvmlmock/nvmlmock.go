@@ -8,7 +8,7 @@
 // attribute metrics to a real pod this package:
 //
 //  1. resolves the workload container's host-namespace PID (HostPID), and
-//  2. rewrites the gpu-sharing/nvml-mock-config ConfigMap so that
+//  2. rewrites the gpu-fractioning/nvml-mock-config ConfigMap so that
 //     PID appears as a GPU process on a chosen device UUID (SetProcesses).
 //
 // Changing the ConfigMap requires metricsd pod restarts to take effect:
@@ -30,8 +30,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/cluster"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/pods"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/cluster"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/pods"
 )
 
 //go:embed config.yaml.tmpl
@@ -53,11 +53,11 @@ const (
 	// metricsd sidecar mounts as MOCK_NVML_CONFIG. SetProcesses updates this
 	// ConfigMap and restarts the metricsd pod so the production NVML collector
 	// reads the new process list at nvmlInit time.
-	MetricsdNamespace     = "gpu-sharing"
+	MetricsdNamespace     = "gpu-fractioning"
 	MetricsdConfigMapName = "nvml-mock-config"
 
-	// metricsdComponent is the app.kubernetes.io/component label value on sharingd pods.
-	metricsdComponent = "sharingd"
+	// metricsdComponent is the app.kubernetes.io/component label value on fractiond pods.
+	metricsdComponent = "fractiond"
 	// metricsdContainer is the container name of the metricsd sidecar.
 	metricsdContainer = "metricsd"
 )
@@ -76,7 +76,7 @@ type Proc struct {
 	UsedMemoryMiB uint64 // MiB; nvml-mock stores used_memory_mib (not bytes) in its YAML config
 	// SMUtil is the per-process SM utilization percent (0–100) reported via
 	// GetProcessUtilization. Non-zero values produce a non-zero
-	// gpu_sharing_gpu_sm_utilization_percent metric.
+	// gpu_fractioning_gpu_sm_utilization_percent metric.
 	SMUtil uint32
 }
 
@@ -122,7 +122,7 @@ func HostPID(ctx context.Context, c *cluster.Client, nodeName, marker string) (u
 	return uint32(pid), nil
 }
 
-// SetProcesses rewrites the metricsd nvml-mock ConfigMap (gpu-sharing
+// SetProcesses rewrites the metricsd nvml-mock ConfigMap (gpu-fractioning
 // namespace) for GPU model gpu (a Profiles key, e.g. "a100"; "" selects
 // DefaultGPU) so its devices carry procs, then restarts the metricsd pod on
 // each node so the production NVML collector re-reads the config at nvmlInit.
@@ -151,7 +151,7 @@ func SetProcesses(ctx context.Context, c *cluster.Client, gpu string, procs []Pr
 	return restartMetricsd(ctx, c)
 }
 
-// restartMetricsd deletes all sharingd pods (which contain the metricsd sidecar)
+// restartMetricsd deletes all fractiond pods (which contain the metricsd sidecar)
 // so the DaemonSet controller recreates them with the latest ConfigMap data.
 // The new pods call nvmlInit and read MOCK_NVML_CONFIG fresh, picking up the
 // updated process list.

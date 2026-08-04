@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the gpu-sharing v1alpha1 API group.
+// Package v1alpha1 contains API Schema definitions for the gpu-fractioning v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=gpu-sharing.kai.scheduler
+// +groupName=gpu-fractioning.kai.scheduler
 package v1alpha1
 
 import (
@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	SchemeGroupVersion = schema.GroupVersion{Group: "gpu-sharing.kai.scheduler", Version: "v1alpha1"}
+	SchemeGroupVersion = schema.GroupVersion{Group: "gpu-fractioning.kai.scheduler", Version: "v1alpha1"}
 	GroupVersion       = SchemeGroupVersion
 
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
@@ -35,8 +35,8 @@ var (
 
 func addKnownTypes(s *runtime.Scheme) error {
 	s.AddKnownTypes(SchemeGroupVersion,
-		&GpuSharingConfig{},
-		&GpuSharingConfigList{},
+		&GpuFractioningConfig{},
+		&GpuFractioningConfigList{},
 	)
 	metav1.AddToGroupVersion(s, SchemeGroupVersion)
 	return nil

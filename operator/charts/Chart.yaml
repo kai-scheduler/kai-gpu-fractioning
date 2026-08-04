@@ -1,6 +1,6 @@
 apiVersion: v2
-name: gpu-sharing
-description: Kubernetes operator for GPU sharing via NVIDIA MPS and NRI
+name: gpu-fractioning
+description: Kubernetes operator for GPU fractioning via NVIDIA MPS and NRI
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

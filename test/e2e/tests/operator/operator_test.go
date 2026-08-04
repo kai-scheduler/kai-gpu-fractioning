@@ -34,7 +34,7 @@ func TestOperator(t *testing.T) {
 		t.Run("NamingAndLabels", func(t *testing.T) { verifyNamingAndLabels(ctx, t) })
 		t.Run("OwnerReferences", func(t *testing.T) { verifyOwnerReferences(ctx, t) })
 		t.Run("SchedulingScope", func(t *testing.T) { verifySchedulingScope(ctx, t) })
-		t.Run("SharingdPodSpec", func(t *testing.T) { verifySharingdPodSpec(ctx, t) })
+		t.Run("FractiondPodSpec", func(t *testing.T) { verifyFractiondPodSpec(ctx, t) })
 		t.Run("MpsdPodSpec", func(t *testing.T) { verifyMpsdPodSpec(ctx, t) })
 		t.Run("ReconcileIdempotent", func(t *testing.T) { verifyReconcileIdempotent(ctx, t) })
 		t.Run("ReadyTransitionTimeStable", func(t *testing.T) { verifyReadyTransitionTimeStable(ctx, t) })
@@ -47,7 +47,7 @@ func TestOperator(t *testing.T) {
 	// Recovery — fault injection & recovery (each restores FX-STEADY).
 	t.Run("Recovery", func(t *testing.T) {
 		t.Run("MpsdFaultAndRecovery", func(t *testing.T) { caseMpsdFaultAndRecovery(ctx, t) })
-		t.Run("SharingdSocketFaultIsolation", func(t *testing.T) { caseSharingdSocketFaultIsolation(ctx, t) })
+		t.Run("FractiondSocketFaultIsolation", func(t *testing.T) { caseFractiondSocketFaultIsolation(ctx, t) })
 		t.Run("SupervisorBackoffNoRestart", func(t *testing.T) { caseSupervisorBackoffNoRestart(ctx, t) })
 		t.Run("RetryBudgetExhaustedRestart", func(t *testing.T) { caseRetryBudgetExhaustedRestart(ctx, t) })
 		t.Run("SpecDriftReverted", func(t *testing.T) { caseSpecDriftReverted(ctx, t) })
@@ -59,7 +59,7 @@ func TestOperator(t *testing.T) {
 	// Propagation — config / spec propagation to the DaemonSets (each reverts).
 	t.Run("Propagation", func(t *testing.T) {
 		t.Run("MpsdConfigToArgs", func(t *testing.T) { caseMpsdConfigToArgs(ctx, t) })
-		t.Run("SharingdConfigToArgs", func(t *testing.T) { caseSharingdConfigToArgs(ctx, t) })
+		t.Run("FractiondConfigToArgs", func(t *testing.T) { caseFractiondConfigToArgs(ctx, t) })
 		t.Run("CustomAnnotationPrefix", func(t *testing.T) { caseCustomAnnotationPrefix(ctx, t) })
 		t.Run("RollingUpdateConverges", func(t *testing.T) { caseRollingUpdateConverges(ctx, t) })
 	})

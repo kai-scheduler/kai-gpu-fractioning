@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kai-scheduler/gpu-sharing/pkg/env"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/env"
 )
 
 // Config is read entirely from the environment.
@@ -17,10 +17,10 @@ type Config struct {
 	// Kubeconfig is the path to the kubeconfig used to reach the cluster.
 	Kubeconfig string
 
-	// OperatorNamespace is where the gpu-sharing is installed and,
-	// therefore, where the operator-managed DaemonSets (sharingd — which hosts
+	// OperatorNamespace is where the gpu-fractioning is installed and,
+	// therefore, where the operator-managed DaemonSets (fractiond — which hosts
 	// the metricsd sidecar — and mpsd) are created. The suite scrapes the
-	// metricsd sidecar in the sharingd pods here.
+	// metricsd sidecar in the fractiond pods here.
 	OperatorNamespace string
 
 	// GPUNodeSelector selects nodes expected to advertise GPUs.
@@ -40,7 +40,7 @@ type Config struct {
 	PollInterval time.Duration
 
 	// DaemonSetReadyTimeout bounds how long nvmlmock waits for a DaemonSet
-	// rollout (nvml-mock or sharingd) to complete after a config change.
+	// rollout (nvml-mock or fractiond) to complete after a config change.
 	DaemonSetReadyTimeout time.Duration
 
 	// GPUMemoryMiB is the total GPU memory per device in MiB, used by
@@ -84,7 +84,7 @@ const (
 	envRolloutTimeout        = "E2E_ROLLOUT_TIMEOUT"
 	envCondTimeout           = "E2E_COND_TIMEOUT"
 
-	defaultOperatorNamespace     = "gpu-sharing"
+	defaultOperatorNamespace     = "gpu-fractioning"
 	defaultGPUNodeSelector       = "nvidia.com/gpu.present=true"
 	defaultGPUNodeCount          = 0
 	defaultGPUMemoryMiB          = 40960

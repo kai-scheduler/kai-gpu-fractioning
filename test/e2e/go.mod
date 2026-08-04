@@ -1,10 +1,10 @@
-module github.com/kai-scheduler/gpu-sharing/test/e2e
+module github.com/kai-scheduler/kai-gpu-fractioning/test/e2e
 
 go 1.26.4
 
 require (
-	github.com/kai-scheduler/gpu-sharing/api v0.0.0
-	github.com/kai-scheduler/gpu-sharing/pkg v0.0.0
+	github.com/kai-scheduler/kai-gpu-fractioning/api v0.0.0
+	github.com/kai-scheduler/kai-gpu-fractioning/pkg v0.0.0
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.70.1
 	k8s.io/api v0.36.3
@@ -60,6 +60,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/kai-scheduler/gpu-sharing/pkg => ../../pkg
+replace github.com/kai-scheduler/kai-gpu-fractioning/pkg => ../../pkg
 
-replace github.com/kai-scheduler/gpu-sharing/api => ../../api
+replace github.com/kai-scheduler/kai-gpu-fractioning/api => ../../api

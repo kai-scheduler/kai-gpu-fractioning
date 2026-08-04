@@ -12,11 +12,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const daemonSetPrefix = "gpu-sharing"
+const daemonSetPrefix = "gpu-fractioning"
 
 // BaseDaemonSet returns a DaemonSet skeleton with standard naming, labels,
 // selector, and RollingUpdate strategy. The DaemonSet is named
-// "gpu-sharing-<component>" and labelled with the managed-by and component
+// "gpu-fractioning-<component>" and labelled with the managed-by and component
 // labels that the controller uses for pod listing and condition patching.
 // Callers layer on their own container spec, volumes, etc.
 func BaseDaemonSet(component, namespace string) *appsv1.DaemonSet {
@@ -71,14 +71,14 @@ func DaemonResources(cpuRequest, memRequest, memLimit string) corev1.ResourceReq
 }
 
 // PrivilegedSecurityContext returns a SecurityContext with privileged=true,
-// required by both sharingd (NRI socket access) and mpsd (MPS daemon).
+// required by both fractiond (NRI socket access) and mpsd (MPS daemon).
 func PrivilegedSecurityContext() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
 		Privileged: ptr.To(true),
 	}
 }
 
-// SetOwnerReference sets the GpuSharingConfig CR as the owner of the DaemonSet
+// SetOwnerReference sets the GpuFractioningConfig CR as the owner of the DaemonSet
 // so that garbage collection cleans up DaemonSets when the CR is deleted.
 func SetOwnerReference(ds *appsv1.DaemonSet, owner metav1.Object, scheme *runtime.Scheme) error {
 	return controllerutil.SetControllerReference(owner, ds, scheme)

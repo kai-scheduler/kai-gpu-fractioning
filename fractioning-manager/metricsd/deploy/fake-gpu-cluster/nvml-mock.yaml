@@ -1,0 +1,251 @@
+# nvml-mock DaemonSet — installs a real libnvidia-ml.so mock on fake-GPU worker nodes.
+#
+# Source: https://github.com/NVIDIA/k8s-test-infra/tree/main/deployments/nvml-mock
+#
+# Each process that loads libnvidia-ml.so gets its own NVML state driven by
+# MOCK_NVML_CONFIG:
+#   - nvml-mock DaemonSet binary: reads gpu-operator/nvml-mock-config (below)
+#   - metricsd sidecar: reads gpu-fractioning/nvml-mock-config (also below),
+#     mounted at /etc/nvml-mock via metricsAgent.volumes / metricsAgent.volumeMounts
+#     on the GpuFractioningConfig CR (see operator/charts/e2e-values.yaml).
+#     Tests call nvmlmock.SetProcesses() to update that ConfigMap and restart the
+#     metricsd pod, causing nvmlInit to re-read the new process list.
+#
+# GPU UUIDs must match Device0UUID/Device1UUID in test/e2e/nvmlmock/nvmlmock.go.
+#
+# Usage:
+#   kubectl apply -f deploy/nvml-mock.yaml
+#   kubectl rollout status ds/nvml-mock -n gpu-operator
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvml-mock-config
+  namespace: gpu-operator
+data:
+  config.yaml: |
+    version: "1.0"
+    system:
+      driver_version: "550.163.01"
+      nvml_version: "12.550.163.01"
+      cuda_version: "12.4"
+      cuda_version_major: 12
+      cuda_version_minor: 4
+    device_defaults:
+      name: "NVIDIA A100-SXM4-40GB"
+      brand: "nvidia"
+      architecture: "ampere"
+      compute_capability:
+        major: 8
+        minor: 0
+      memory:
+        total_bytes: 42949672960
+        reserved_bytes: 611319808
+        free_bytes: 32519249920
+        used_bytes: 10430423040
+      power:
+        management_supported: true
+        default_limit_mw: 400000
+        enforced_limit_mw: 400000
+        min_limit_mw: 100000
+        max_limit_mw: 400000
+        current_draw_mw: 280000
+      thermal:
+        temperature_gpu_c: 58
+      clocks:
+        graphics_current: 1095
+        graphics_max: 1410
+        sm_current: 1095
+        sm_max: 1410
+        memory_current: 1215
+        memory_max: 1215
+      utilization:
+        gpu: 65
+        memory: 24
+      compute_mode: "default"
+      persistence_mode: "enabled"
+      performance_state: "P0"
+      ecc:
+        mode_current: "enabled"
+      mig:
+        mode_current: "disabled"
+        max_gpu_instances: 7
+      processes: []
+    devices:
+      - index: 0
+        uuid: "2881be89-519e-4b30-8d25-b9032893e6f9"
+        pci:
+          bus_id: "0000:07:00.0"
+        minor_number: 0
+        processes:
+          - pid: 17052
+            used_gpu_memory: 10311827456
+            type: C
+      - index: 1
+        uuid: "1a1fb9fb-a857-4986-8b0f-d0d664ba0364"
+        pci:
+          bus_id: "0000:0F:00.0"
+        minor_number: 1
+        processes:
+          - pid: 17059
+            used_gpu_memory: 10311827456
+            type: C
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nvml-mock
+  namespace: gpu-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nvml-mock
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nvml-mock
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nvml-mock
+subjects:
+  - kind: ServiceAccount
+    name: nvml-mock
+    namespace: gpu-operator
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvml-mock
+  namespace: gpu-operator
+  labels:
+    app: nvml-mock
+spec:
+  selector:
+    matchLabels:
+      app: nvml-mock
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: nvml-mock
+    spec:
+      serviceAccountName: nvml-mock
+      hostPID: true
+      terminationGracePeriodSeconds: 10
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: nvml-mock
+          image: ghcr.io/nvidia/nvml-mock:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command: ["/scripts/entrypoint.sh"]
+          env:
+            - name: GPU_COUNT
+              value: "2"
+            - name: DRIVER_VERSION
+              value: "550.163.01"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: MOCK_NVML_CONFIG
+              value: /etc/nvml-mock/config.yaml
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/scripts/cleanup.sh"]
+          volumeMounts:
+            - name: host-nvml-mock
+              mountPath: /host/var/lib/nvml-mock
+            - name: host-nvml-mock
+              mountPath: /var/lib/nvml-mock
+            - name: gpu-config
+              mountPath: /etc/nvml-mock
+            - name: host-cdi
+              mountPath: /host/var/run/cdi
+            - name: host-run-nvidia
+              mountPath: /host/run/nvidia
+      volumes:
+        - name: host-nvml-mock
+          hostPath:
+            path: /var/lib/nvml-mock
+            type: DirectoryOrCreate
+        - name: gpu-config
+          configMap:
+            name: nvml-mock-config
+        - name: host-cdi
+          hostPath:
+            path: /var/run/cdi
+            type: DirectoryOrCreate
+        - name: host-run-nvidia
+          hostPath:
+            path: /run/nvidia
+            type: DirectoryOrCreate
+---
+# Idle nvml-mock config for the metricsd sidecar (gpu-fractioning namespace).
+# nvmlmock.SetProcesses() updates this ConfigMap and restarts the metricsd pod
+# so the baked-in libnvidia-ml.so re-reads it at nvmlInit time.
+# UUIDs must match Device0UUID/Device1UUID in test/e2e/nvmlmock/nvmlmock.go.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nvml-mock-config
+  namespace: gpu-fractioning
+data:
+  config.yaml: |
+    version: "1.0"
+    system:
+      driver_version: "550.163.01"
+      nvml_version: "12.550.163.01"
+      cuda_version: "12.4"
+      cuda_version_major: 12
+      cuda_version_minor: 4
+    device_defaults:
+      name: "NVIDIA A100-SXM4-40GB"
+      brand: "nvidia"
+      architecture: "ampere"
+      compute_capability:
+        major: 8
+        minor: 0
+      memory:
+        total_bytes: 42949672960
+        reserved_bytes: 611319808
+        free_bytes: 42338353152
+        used_bytes: 0
+      utilization:
+        gpu: 0
+        memory: 0
+      compute_mode: "default"
+      persistence_mode: "enabled"
+      performance_state: "P0"
+      ecc:
+        mode_current: "enabled"
+      mig:
+        mode_current: "disabled"
+        max_gpu_instances: 7
+      processes: []
+    devices:
+      - index: 0
+        uuid: "2881be89-519e-4b30-8d25-b9032893e6f9"
+        pci:
+          bus_id: "0000:07:00.0"
+        minor_number: 0
+        processes: []
+      - index: 1
+        uuid: "1a1fb9fb-a857-4986-8b0f-d0d664ba0364"
+        pci:
+          bus_id: "0000:0F:00.0"
+        minor_number: 1
+        processes: []

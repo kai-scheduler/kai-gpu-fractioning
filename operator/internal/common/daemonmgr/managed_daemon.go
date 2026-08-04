@@ -10,11 +10,11 @@ import (
 const (
 	LabelManagedBy = "app.kubernetes.io/managed-by"
 	LabelComponent = "app.kubernetes.io/component"
-	ManagedByValue = "gpu-sharing"
+	ManagedByValue = "gpu-fractioning"
 )
 
 // ImageSpec holds a container image reference injected by the Helm chart.
-// It is an internal operator type — it is NOT part of the GpuSharingConfig CRD.
+// It is an internal operator type — it is NOT part of the GpuFractioningConfig CRD.
 type ImageSpec struct {
 	Repository      string
 	Tag             string
@@ -42,11 +42,11 @@ func (s ImageSpec) PullPolicy() corev1.PullPolicy {
 }
 
 // ManagedDaemon describes a daemon whose lifecycle is managed by the controller.
-// Each implementation (sharingd, mpsd) defines the DaemonSet spec for its daemon;
+// Each implementation (fractiond, mpsd) defines the DaemonSet spec for its daemon;
 // the shared reconciler handles create-or-update, health tracking, and reporting.
 type ManagedDaemon interface {
 	// Name returns a unique identifier used in DaemonSet names, conditions, and logs
-	// (e.g. "sharingd", "mpsd").
+	// (e.g. "fractiond", "mpsd").
 	Name() string
 
 	// BuildDaemonSet returns the desired DaemonSet for this daemon.

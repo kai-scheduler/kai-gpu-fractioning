@@ -12,7 +12,7 @@ import (
 )
 
 // operatorDeployment returns the operator's Deployment. The operator namespace
-// contains exactly one Deployment — the data-plane components (sharingd, mpsd)
+// contains exactly one Deployment — the data-plane components (fractiond, mpsd)
 // are DaemonSets, not Deployments — so there is no ambiguity to resolve and no
 // dependence on the Helm release name.
 func (h *Harness) operatorDeployment(ctx context.Context) (*appsv1.Deployment, error) {

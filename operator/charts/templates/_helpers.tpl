@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "gpu-sharing.name" -}}
+{{- define "gpu-fractioning.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Fully qualified app name.
 */}}
-{{- define "gpu-sharing.fullname" -}}
+{{- define "gpu-fractioning.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,9 +24,9 @@ Fully qualified app name.
 {{/*
 Common labels.
 */}}
-{{- define "gpu-sharing.labels" -}}
-helm.sh/chart: {{ include "gpu-sharing.chart" . }}
-{{ include "gpu-sharing.selectorLabels" . }}
+{{- define "gpu-fractioning.labels" -}}
+helm.sh/chart: {{ include "gpu-fractioning.chart" . }}
+{{ include "gpu-fractioning.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
@@ -36,24 +36,24 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{/*
 Selector labels.
 */}}
-{{- define "gpu-sharing.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "gpu-sharing.name" . }}
+{{- define "gpu-fractioning.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "gpu-fractioning.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Chart name and version.
 */}}
-{{- define "gpu-sharing.chart" -}}
+{{- define "gpu-fractioning.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Service account name.
 */}}
-{{- define "gpu-sharing.serviceAccountName" -}}
+{{- define "gpu-fractioning.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "gpu-sharing.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "gpu-fractioning.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}

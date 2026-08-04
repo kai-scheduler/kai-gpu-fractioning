@@ -6,21 +6,21 @@
 # supervisor + readiness + controller status/node-condition flow without a GPU,
 # and needs NO controller/CRD change (the supervisor uses the default binary path).
 #
-# Build from the REPO ROOT (context must include go.mod, pkg/, sharing-manager/, hack/):
+# Build from the REPO ROOT (context must include go.mod, pkg/, fractioning-manager/, hack/):
 #   docker build -f hack/fake-mps/Dockerfile -t <name>:<tag> .
 FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS builder
 ARG TARGETARCH
 WORKDIR /workspace
 
-# Real mpsd supervisor (identical build to sharing-manager/mpsd/build/Dockerfile).
+# Real mpsd supervisor (identical build to fractioning-manager/mpsd/build/Dockerfile).
 # pkg/ is copied before `go mod download` because the root go.mod has
-# `replace github.com/kai-scheduler/gpu-sharing/pkg => ./pkg`.
+# `replace github.com/kai-scheduler/kai-gpu-fractioning/pkg => ./pkg`.
 COPY go.mod go.sum ./
 COPY pkg/ pkg/
 RUN go mod download
-COPY sharing-manager/common/ sharing-manager/common/
-COPY sharing-manager/mpsd/ sharing-manager/mpsd/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./sharing-manager/mpsd/cmd
+COPY fractioning-manager/common/ fractioning-manager/common/
+COPY fractioning-manager/mpsd/ fractioning-manager/mpsd/
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./fractioning-manager/mpsd/cmd
 
 # Fake nvidia-cuda-mps-control — standalone std-lib-only module (hack/fake-mps).
 COPY hack/fake-mps/ /fake-mps-src/

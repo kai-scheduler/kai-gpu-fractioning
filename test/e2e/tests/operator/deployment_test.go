@@ -10,10 +10,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/harness"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/daemonset"
-	gsc "github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/gpusharingconfig"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/nodes"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/harness"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/daemonset"
+	gsc "github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/gpufractioningconfig"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/nodes"
 )
 
 // stabilityWindow is how long the "stable" cases (ReconcileIdempotent,
@@ -37,7 +37,7 @@ func caseRollsOutToReady(ctx context.Context, t *testing.T) {
 	if cond, ok := gsc.Condition(obj, harness.CondReady); !ok || cond.Status != metav1.ConditionTrue || cond.Reason != reasonAllComponentsReady {
 		t.Errorf("Ready = %s/%q, want True/%s", harness.CondStatus(ok, cond), harness.CondReasonOf(ok, cond), reasonAllComponentsReady)
 	}
-	for _, ct := range []string{harness.CondSharingdReady, harness.CondMpsdReady} {
+	for _, ct := range []string{harness.CondFractiondReady, harness.CondMpsdReady} {
 		if cond, ok := gsc.Condition(obj, ct); !ok || cond.Status != metav1.ConditionTrue || cond.Reason != reasonAllPodsReady {
 			t.Errorf("%s = %s/%q, want True/%s", ct, harness.CondStatus(ok, cond), harness.CondReasonOf(ok, cond), reasonAllPodsReady)
 		}
@@ -51,15 +51,15 @@ func verifyBothDaemonSetsReady(ctx context.Context, t *testing.T) {
 	if want == 0 {
 		t.Skip("no matching GPU nodes")
 	}
-	for _, comp := range []string{harness.ComponentSharingd, harness.ComponentMpsd} {
+	for _, comp := range []string{harness.ComponentFractiond, harness.ComponentMpsd} {
 		ds := h.GetDaemonSet(ctx, t, comp)
 		if ds.Status.DesiredNumberScheduled != want || ds.Status.NumberReady != want {
 			t.Errorf("%s: desired=%d ready=%d, want both %d", ds.Name, ds.Status.DesiredNumberScheduled, ds.Status.NumberReady, want)
 		}
 	}
-	// sharingd hosts the metricsd sidecar; mpsd is single-container.
-	if got := daemonset.ContainerNames(h.GetDaemonSet(ctx, t, harness.ComponentSharingd)); !hasAll(got, containerSharingd, containerMetricsd) {
-		t.Errorf("sharingd DaemonSet containers = %v, want to include %s and %s", got, containerSharingd, containerMetricsd)
+	// fractiond hosts the metricsd sidecar; mpsd is single-container.
+	if got := daemonset.ContainerNames(h.GetDaemonSet(ctx, t, harness.ComponentFractiond)); !hasAll(got, containerFractiond, containerMetricsd) {
+		t.Errorf("fractiond DaemonSet containers = %v, want to include %s and %s", got, containerFractiond, containerMetricsd)
 	}
 	if got := daemonset.ContainerNames(h.GetDaemonSet(ctx, t, harness.ComponentMpsd)); !hasAll(got, containerMpsd) {
 		t.Errorf("mpsd DaemonSet containers = %v, want to include %s", got, containerMpsd)
@@ -68,7 +68,7 @@ func verifyBothDaemonSetsReady(ctx context.Context, t *testing.T) {
 
 // NamingAndLabels — DaemonSet naming and management labels.
 func verifyNamingAndLabels(ctx context.Context, t *testing.T) {
-	for _, comp := range []string{harness.ComponentSharingd, harness.ComponentMpsd} {
+	for _, comp := range []string{harness.ComponentFractiond, harness.ComponentMpsd} {
 		ds := h.GetDaemonSet(ctx, t, comp)
 		if ds.Labels[harness.LabelManagedBy] != harness.ManagedByValue {
 			t.Errorf("%s: %s=%q, want %q", ds.Name, harness.LabelManagedBy, ds.Labels[harness.LabelManagedBy], harness.ManagedByValue)
@@ -84,18 +84,18 @@ func verifyNamingAndLabels(ctx context.Context, t *testing.T) {
 }
 
 // OwnerReferences — each DaemonSet is owned (controller ref) by the
-// default GpuSharingConfig, so CR deletion garbage-collects them.
+// default GpuFractioningConfig, so CR deletion garbage-collects them.
 func verifyOwnerReferences(ctx context.Context, t *testing.T) {
-	for _, comp := range []string{harness.ComponentSharingd, harness.ComponentMpsd} {
+	for _, comp := range []string{harness.ComponentFractiond, harness.ComponentMpsd} {
 		ds := h.GetDaemonSet(ctx, t, comp)
 		var owned bool
 		for _, ref := range ds.OwnerReferences {
-			if ref.Kind == "GpuSharingConfig" && ref.Name == gsc.DefaultName && ref.Controller != nil && *ref.Controller {
+			if ref.Kind == "GpuFractioningConfig" && ref.Name == gsc.DefaultName && ref.Controller != nil && *ref.Controller {
 				owned = true
 			}
 		}
 		if !owned {
-			t.Errorf("%s: missing controller ownerReference to GpuSharingConfig/%s (refs=%v)", ds.Name, gsc.DefaultName, ds.OwnerReferences)
+			t.Errorf("%s: missing controller ownerReference to GpuFractioningConfig/%s (refs=%v)", ds.Name, gsc.DefaultName, ds.OwnerReferences)
 		}
 	}
 }
@@ -104,7 +104,7 @@ func verifyOwnerReferences(ctx context.Context, t *testing.T) {
 // verified from real cluster state (not DaemonSet/CR status; readiness and rollout
 // are covered by BothDaemonSetsReady / RollsOutToReady):
 //   - matching nodes: exactly one managed pod each;
-//   - non-matching nodes: no managed pod and no gpu-sharing node condition.
+//   - non-matching nodes: no managed pod and no gpu-fractioning node condition.
 //
 // Each half is guarded on the topology it needs, so a cluster missing one class of
 // node still exercises the other. The "exactly one per matching node" check needs
@@ -120,7 +120,7 @@ func verifySchedulingScope(ctx context.Context, t *testing.T) {
 
 	// One pod scan per component drives both the "none on non-matching nodes" and
 	// the "exactly one per matching node" assertions.
-	for _, comp := range []string{harness.ComponentSharingd, harness.ComponentMpsd} {
+	for _, comp := range []string{harness.ComponentFractiond, harness.ComponentMpsd} {
 		perNode := map[string]int{}
 		for _, p := range h.ListComponentPods(ctx, t, comp) {
 			node := p.Spec.NodeName
@@ -141,7 +141,7 @@ func verifySchedulingScope(ctx context.Context, t *testing.T) {
 		}
 	}
 
-	// Non-matching nodes are never annotated with the gpu-sharing condition.
+	// Non-matching nodes are never annotated with the gpu-fractioning condition.
 	for _, name := range nonGPU {
 		n, err := nodes.Get(ctx, h.Client(), name)
 		if err != nil {
@@ -149,36 +149,36 @@ func verifySchedulingScope(ctx context.Context, t *testing.T) {
 			continue
 		}
 		if _, ok := nodes.Condition(n, harness.NodeConditionType); ok {
-			t.Errorf("non-matching node %s unexpectedly carries the gpu-sharing condition", name)
+			t.Errorf("non-matching node %s unexpectedly carries the gpu-fractioning condition", name)
 		}
 	}
 }
 
-// SharingdPodSpec — sharingd pod spec: hostPID, privileged main
+// FractiondPodSpec — fractiond pod spec: hostPID, privileged main
 // container, the metricsd sidecar, and the NRI-socket + MPS-pipe hostPath mounts.
 // RuntimeClass is deliberately NOT asserted (it's install-dependent: cleared on
 // the fake cluster, "nvidia" on a real one) — the suite is cluster-agnostic.
-func verifySharingdPodSpec(ctx context.Context, t *testing.T) {
-	ds := h.GetDaemonSet(ctx, t, harness.ComponentSharingd)
+func verifyFractiondPodSpec(ctx context.Context, t *testing.T) {
+	ds := h.GetDaemonSet(ctx, t, harness.ComponentFractiond)
 	if !ds.Spec.Template.Spec.HostPID {
-		t.Error("sharingd pod: hostPID = false, want true")
+		t.Error("fractiond pod: hostPID = false, want true")
 	}
-	sh, ok := daemonset.Container(ds, containerSharingd)
+	sh, ok := daemonset.Container(ds, containerFractiond)
 	if !ok {
-		t.Fatal("sharingd container not found")
+		t.Fatal("fractiond container not found")
 	}
 	if sh.SecurityContext == nil || sh.SecurityContext.Privileged == nil || !*sh.SecurityContext.Privileged {
-		t.Error("sharingd container is not privileged")
+		t.Error("fractiond container is not privileged")
 	}
 	if _, ok := daemonset.Container(ds, containerMetricsd); !ok {
-		t.Error("metricsd sidecar not present in sharingd DaemonSet")
+		t.Error("metricsd sidecar not present in fractiond DaemonSet")
 	}
-	mounts := daemonset.HostPathMounts(ds, containerSharingd)
+	mounts := daemonset.HostPathMounts(ds, containerFractiond)
 	if !mounts[harness.MPSPipeDir] {
-		t.Errorf("sharingd: missing MPS pipe hostPath mount %s (mounts=%v)", harness.MPSPipeDir, mounts)
+		t.Errorf("fractiond: missing MPS pipe hostPath mount %s (mounts=%v)", harness.MPSPipeDir, mounts)
 	}
 	if !mounts["/var/run/nri"] {
-		t.Errorf("sharingd: missing NRI socket hostPath mount /var/run/nri (mounts=%v)", mounts)
+		t.Errorf("fractiond: missing NRI socket hostPath mount /var/run/nri (mounts=%v)", mounts)
 	}
 }
 
@@ -211,7 +211,7 @@ func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 // ReconcileIdempotent — steady-state idempotency: no DaemonSet/CR
 // generation churn while nothing changes (the controller must not fight itself).
 func verifyReconcileIdempotent(ctx context.Context, t *testing.T) {
-	shGen := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation
+	shGen := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation
 	mpGen := h.GetDaemonSet(ctx, t, harness.ComponentMpsd).Generation
 	crObj, err := gsc.Get(ctx, h.Client())
 	if err != nil {
@@ -221,8 +221,8 @@ func verifyReconcileIdempotent(ctx context.Context, t *testing.T) {
 
 	time.Sleep(stabilityWindow)
 
-	if g := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation; g != shGen {
-		t.Errorf("sharingd DaemonSet generation churned: %d → %d", shGen, g)
+	if g := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation; g != shGen {
+		t.Errorf("fractiond DaemonSet generation churned: %d → %d", shGen, g)
 	}
 	if g := h.GetDaemonSet(ctx, t, harness.ComponentMpsd).Generation; g != mpGen {
 		t.Errorf("mpsd DaemonSet generation churned: %d → %d", mpGen, g)
@@ -257,7 +257,7 @@ func verifyReadyTransitionTimeStable(ctx context.Context, t *testing.T) {
 	}
 }
 
-// NodeConditionReady — every matching node carries the gpu-sharing
+// NodeConditionReady — every matching node carries the gpu-fractioning
 // Ready condition True with reason AllDaemonsReady.
 func verifyNodeConditionReady(ctx context.Context, t *testing.T) {
 	list, err := nodes.ListGPUNodes(ctx, h.Client())
@@ -289,7 +289,7 @@ func verifyNodeConditionStable(ctx context.Context, t *testing.T) {
 	}
 	before, ok := nodes.Condition(n0, harness.NodeConditionType)
 	if !ok {
-		t.Fatalf("node %s missing gpu-sharing condition", node[0])
+		t.Fatalf("node %s missing gpu-fractioning condition", node[0])
 	}
 	time.Sleep(stabilityWindow)
 	n1, err := nodes.Get(ctx, h.Client(), node[0])

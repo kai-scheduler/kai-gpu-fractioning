@@ -9,17 +9,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/daemonset"
-	gsc "github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/gpusharingconfig"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/nodes"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/waiter"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/daemonset"
+	gsc "github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/gpufractioningconfig"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/nodes"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/waiter"
 )
 
 // SteadyState reports whether the cluster is in FX-STEADY: operator Available,
 // default CR Ready (all per-daemon conditions True, observedGeneration current),
 // both DaemonSets rolled out over every matching node, and each matching node's
-// gpu-sharing Ready condition True. It is the single predicate behind both the
+// gpu-fractioning Ready condition True. It is the single predicate behind both the
 // preflight and the between-phase AssertSteady.
 func (h *Harness) SteadyState(ctx context.Context) (bool, error) {
 	// Operator Deployment Available.
@@ -35,7 +35,7 @@ func (h *Harness) SteadyState(ctx context.Context) (bool, error) {
 	if obj.Status.ObservedGeneration != obj.Generation {
 		return false, nil
 	}
-	for _, ct := range []string{CondSharingdReady, CondMpsdReady, CondReady} {
+	for _, ct := range []string{CondFractiondReady, CondMpsdReady, CondReady} {
 		cond, ok := gsc.Condition(obj, ct)
 		if !ok || cond.Status != metav1.ConditionTrue {
 			return false, nil
@@ -50,7 +50,7 @@ func (h *Harness) SteadyState(ctx context.Context) (bool, error) {
 	want := int32(len(gpuNodes))
 
 	// Both DaemonSets rolled out over exactly the matching nodes.
-	for _, comp := range []string{ComponentSharingd, ComponentMpsd} {
+	for _, comp := range []string{ComponentFractiond, ComponentMpsd} {
 		ds, err := daemonset.Get(ctx, h.Client(), h.NS(), DSName(comp))
 		if err != nil {
 			return false, err
@@ -96,7 +96,7 @@ func (h *Harness) RestoreSteady(ctx context.Context, t *testing.T) {
 	if h.originalSpec == nil {
 		t.Fatal("RestoreSteady called before the default CR was snapshotted")
 	}
-	obj := &v1alpha1.GpuSharingConfig{
+	obj := &v1alpha1.GpuFractioningConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: gsc.DefaultName},
 		Spec:       *h.originalSpec.DeepCopy(),
 	}
@@ -116,7 +116,7 @@ func (h *Harness) ApplyCRWithSelector(ctx context.Context, t *testing.T, selecto
 	}
 	spec := h.originalSpec.DeepCopy()
 	spec.NodeSelector = selector
-	obj := &v1alpha1.GpuSharingConfig{
+	obj := &v1alpha1.GpuFractioningConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: gsc.DefaultName},
 		Spec:       *spec,
 	}
@@ -135,7 +135,7 @@ func (h *Harness) CleanCR(ctx context.Context, t *testing.T) {
 	if err := gsc.WaitGone(ctx, h.Client(), gsc.DefaultName, h.RolloutTimeout(), h.PollInterval()); err != nil {
 		t.Fatalf("wait CR deleted: %v", err)
 	}
-	for _, comp := range []string{ComponentSharingd, ComponentMpsd} {
+	for _, comp := range []string{ComponentFractiond, ComponentMpsd} {
 		if err := daemonset.WaitGone(ctx, h.Client(), h.NS(), DSName(comp), h.RolloutTimeout(), h.PollInterval()); err != nil {
 			t.Fatalf("wait DaemonSet %s GC'd: %v", DSName(comp), err)
 		}

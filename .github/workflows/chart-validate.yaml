@@ -42,11 +42,11 @@ jobs:
           set -euo pipefail
           # Validate both the default render and the monitors-enabled render.
           # -ignore-missing-schemas skips CRs whose CRD schemas aren't published
-          # (our GpuSharingConfig, plus ServiceMonitor/PodMonitor from the
+          # (our GpuFractioningConfig, plus ServiceMonitor/PodMonitor from the
           # Prometheus Operator) rather than failing on them.
           for extra in "" "--set prometheus.enabled=true"; do
             echo "== helm template ${extra:-(defaults)} =="
-            helm template gpu-sharing operator/charts $extra \
+            helm template gpu-fractioning operator/charts $extra \
               | kubeconform -strict -summary -ignore-missing-schemas \
                   -kubernetes-version 1.31.0
           done

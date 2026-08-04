@@ -1,5 +1,5 @@
 // Package workload creates and tears down single-purpose test pods used to
-// exercise gpu-sharing attribution. Separate from the plugin package,
+// exercise gpu-fractioning attribution. Separate from the plugin package,
 // which manages the DaemonSet under test itself, not workloads that exercise
 // it.
 package workload
@@ -15,8 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/cluster"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/waiter"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/cluster"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/waiter"
 )
 
 // DefaultImage is a minimal image with no GPU/CUDA dependency — attribution
@@ -25,9 +25,9 @@ const DefaultImage = "busybox:1.37"
 
 // FractionalPod describes a single-container pod carrying the
 // nvidia.com/container.<name>.gpu-memory.{limit,request} annotation that
-// makes the sharingd NRI plugin track it — see
-// sharing-manager/sharingd/internal/adapter.go. Values/format mirror
-// sharing-manager/metricsd/test/workloads/test-fractional-gpu-pods.yaml.
+// makes the fractiond NRI plugin track it — see
+// fractioning-manager/fractiond/internal/adapter.go. Values/format mirror
+// fractioning-manager/metricsd/test/workloads/test-fractional-gpu-pods.yaml.
 type FractionalPod struct {
 	Namespace     string
 	Name          string
@@ -53,7 +53,7 @@ type FractionalPod struct {
 }
 
 // AnnotationKey builds a per-container gpu-memory annotation key using
-// sharingd's default annotation prefix
+// fractiond's default annotation prefix
 // (configuration.DefaultAnnotationPrefix = "nvidia.com/container."):
 //
 //	nvidia.com/container.<container>.gpu-memory.<suffix>
@@ -63,7 +63,7 @@ func AnnotationKey(container, suffix string) string {
 
 // FractionalAnnotations builds the standard request+limit fractional-GPU
 // annotation pair for a container. Values are MiB and get the "Mi" suffix:
-// sharingd parses them as k8s resource.Quantity, so a bare "2048" would be read
+// fractiond parses them as k8s resource.Quantity, so a bare "2048" would be read
 // as 2048 bytes (→ 0 MB) and rejected.
 func FractionalAnnotations(container, requestMiB, limitMiB string) map[string]string {
 	return map[string]string{

@@ -45,7 +45,7 @@ type GPUProfile struct {
 // callers pass to SetProcesses; extend this map to add GPU types.
 var Profiles = map[string]GPUProfile{
 	// NVIDIA A100-SXM4-40GB. Memory mirrors
-	// sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml:
+	// fractioning-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml:
 	//   total = 40 GiB (40 * 1024^3 = 42949672960)
 	//   reserved = 583 MiB (583 * 1024^2 = 611319808), driver/ECC-reserved FB
 	//   free (~30.3 GiB) + used (~9.7 GiB) == total, so ~9.7 GiB presents in use.

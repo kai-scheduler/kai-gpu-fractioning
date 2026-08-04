@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
-	"github.com/kai-scheduler/gpu-sharing/operator/internal/common/daemonmgr"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
+	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
 func TestGpuOperatorDependencyChecker(t *testing.T) {
@@ -45,9 +45,9 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 		Status:             metav1.ConditionFalse,
 		ObservedGeneration: 7,
 		Reason:             daemonmgr.ReasonComponentNotReady,
-		Message:            "not ready: SharingdReady",
+		Message:            "not ready: FractiondReady",
 	}
-	config := &v1alpha1.GpuSharingConfig{
+	config := &v1alpha1.GpuFractioningConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "default",
 			Generation: 7,
@@ -80,7 +80,7 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			},
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonComponentNotReady,
-			expectedMessage: "not ready: SharingdReady",
+			expectedMessage: "not ready: FractiondReady",
 		},
 		{
 			name:  "ready ClusterPolicy with unsupported version blocks Ready",
@@ -129,7 +129,7 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			},
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  daemonmgr.ReasonComponentNotReady,
-			expectedMessage: "not ready: SharingdReady",
+			expectedMessage: "not ready: FractiondReady",
 		},
 		{
 			name:  "unsupported OpenShift ClusterServiceVersion blocks Ready",

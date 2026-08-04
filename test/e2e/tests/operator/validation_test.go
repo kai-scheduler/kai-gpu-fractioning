@@ -9,19 +9,19 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1alpha1 "github.com/kai-scheduler/gpu-sharing/api/v1alpha1"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/harness"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/daemonset"
-	gsc "github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/gpusharingconfig"
+	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/harness"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/daemonset"
+	gsc "github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/gpufractioningconfig"
 )
 
 // RejectsNonDefaultCRName — only a CR named "default" is accepted (CRD
 // CEL rule). Dry-run create of a differently-named, otherwise-valid CR must be
 // rejected; the live default is untouched (dry-run persists nothing).
 func verifyRejectsNonDefaultCRName(ctx context.Context, t *testing.T) {
-	obj := &v1alpha1.GpuSharingConfig{
+	obj := &v1alpha1.GpuFractioningConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "not-default"},
-		Spec:       v1alpha1.GpuSharingConfigSpec{NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"}},
+		Spec:       v1alpha1.GpuFractioningConfigSpec{NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"}},
 	}
 	err := gsc.CreateDryRun(ctx, h.Client(), obj)
 	if err == nil {
@@ -85,7 +85,7 @@ func caseZeroMatchSelectorIsReady(ctx context.Context, t *testing.T) {
 	}
 
 	// Wait for the DaemonSets to to be ready
-	for _, ct := range []string{harness.CondSharingdReady, harness.CondMpsdReady} {
+	for _, ct := range []string{harness.CondFractiondReady, harness.CondMpsdReady} {
 		cond, ok := gsc.Condition(obj, ct)
 		if !ok || cond.Status != metav1.ConditionTrue || cond.Reason != reasonNoTargetNodes {
 			t.Errorf("%s = %v/%q, want True/%s", ct, harness.CondStatus(ok, cond), harness.CondReasonOf(ok, cond), reasonNoTargetNodes)
@@ -98,7 +98,7 @@ func caseZeroMatchSelectorIsReady(ctx context.Context, t *testing.T) {
 
 	// Both DaemonSets converge to desired == 0 (may take a reconcile after the
 	// selector change).
-	for _, comp := range []string{harness.ComponentSharingd, harness.ComponentMpsd} {
+	for _, comp := range []string{harness.ComponentFractiond, harness.ComponentMpsd} {
 		if _, err := daemonset.WaitDesired(ctx, h.Client(), h.NS(), harness.DSName(comp), 0, h.CondTimeout(), h.PollInterval()); err != nil {
 			t.Errorf("%s did not converge to desired=0: %v", harness.DSName(comp), err)
 		}

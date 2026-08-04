@@ -1,7 +1,7 @@
 version: 2
 updates:
   # Go modules. The root go.work makes this single entry cover every module in
-  # the workspace (api, operator, pkg, sharing-manager/metricsd, test/e2e), so
+  # the workspace (api, operator, pkg, fractioning-manager/metricsd, test/e2e), so
   # listing those directories separately only produces duplicate PRs.
   #
   # Grouping is load-bearing here, not cosmetic: an ungrouped bump opens one PR
@@ -43,9 +43,9 @@ updates:
   - package-ecosystem: docker
     directories:
       - /operator
-      - /sharing-manager/mpsd/build
-      - /sharing-manager/sharingd/build
-      - /sharing-manager/metricsd
+      - /fractioning-manager/mpsd/build
+      - /fractioning-manager/fractiond/build
+      - /fractioning-manager/metricsd
     schedule:
       interval: weekly
     labels:

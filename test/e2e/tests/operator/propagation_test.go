@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/harness"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/daemonset"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/harness"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/daemonset"
 )
 
 // MpsdConfigToArgs — mpsDaemon config propagates to the mpsd container
@@ -31,41 +31,41 @@ func caseMpsdConfigToArgs(ctx context.Context, t *testing.T) {
 	})
 }
 
-// SharingdConfigToArgs — sharingAgent config propagates to the sharingd
+// FractiondConfigToArgs — fractioningAgent config propagates to the fractiond
 // container args. Uses "warn" (the shipped default is "debug") so the change
 // actually re-rolls the DaemonSet and the assertion isn't trivially satisfied.
-func caseSharingdConfigToArgs(ctx context.Context, t *testing.T) {
-	beforeGen := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation
-	patch := []byte(`{"spec":{"sharingAgent":{"logLevel":"warn"}}}`)
-	revert := []byte(`{"spec":{"sharingAgent":{"logLevel":null}}}`)
+func caseFractiondConfigToArgs(ctx context.Context, t *testing.T) {
+	beforeGen := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation
+	patch := []byte(`{"spec":{"fractioningAgent":{"logLevel":"warn"}}}`)
+	revert := []byte(`{"spec":{"fractioningAgent":{"logLevel":null}}}`)
 	h.WithCRConfig(ctx, t, patch, revert, func() {
-		ds, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentSharingd), beforeGen, h.RolloutTimeout(), h.PollInterval())
+		ds, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentFractiond), beforeGen, h.RolloutTimeout(), h.PollInterval())
 		if err != nil {
-			t.Fatalf("sharingd rollout after logLevel change: %v", err)
+			t.Fatalf("fractiond rollout after logLevel change: %v", err)
 		}
-		cont, _ := daemonset.Container(ds, containerSharingd)
+		cont, _ := daemonset.Container(ds, containerFractiond)
 		if !argsHasFlagValue(cont.Args, "--log-level", "warn") {
-			t.Errorf("sharingd args = %v, want --log-level warn", cont.Args)
+			t.Errorf("fractiond args = %v, want --log-level warn", cont.Args)
 		}
 	})
 }
 
 // CustomAnnotationPrefix — a custom annotationPrefix propagates to
-// sharingd's args AND changes runtime behavior: a container annotated with the
+// fractiond's args AND changes runtime behavior: a container annotated with the
 // custom prefix is injected, while the default prefix is ignored.
 func caseCustomAnnotationPrefix(ctx context.Context, t *testing.T) {
 	const customPrefix = "custom.example.com/c."
-	beforeGen := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation
-	patch := []byte(`{"spec":{"sharingAgent":{"annotationPrefix":"` + customPrefix + `"}}}`)
-	revert := []byte(`{"spec":{"sharingAgent":{"annotationPrefix":null}}}`)
+	beforeGen := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation
+	patch := []byte(`{"spec":{"fractioningAgent":{"annotationPrefix":"` + customPrefix + `"}}}`)
+	revert := []byte(`{"spec":{"fractioningAgent":{"annotationPrefix":null}}}`)
 	h.WithCRConfig(ctx, t, patch, revert, func() {
-		ds, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentSharingd), beforeGen, h.RolloutTimeout(), h.PollInterval())
+		ds, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentFractiond), beforeGen, h.RolloutTimeout(), h.PollInterval())
 		if err != nil {
-			t.Fatalf("sharingd rollout after annotationPrefix change: %v", err)
+			t.Fatalf("fractiond rollout after annotationPrefix change: %v", err)
 		}
-		cont, _ := daemonset.Container(ds, containerSharingd)
+		cont, _ := daemonset.Container(ds, containerFractiond)
 		if !argsHasFlagValue(cont.Args, "--annotation-prefix", customPrefix) {
-			t.Errorf("sharingd args = %v, want --annotation-prefix %s", cont.Args, customPrefix)
+			t.Errorf("fractiond args = %v, want --annotation-prefix %s", cont.Args, customPrefix)
 		}
 
 		// Functional: a workload using the custom prefix gets injected.
@@ -88,26 +88,26 @@ func caseCustomAnnotationPrefix(ctx context.Context, t *testing.T) {
 // strategy, and a spec change rolls them out to convergence (rather than
 // replacing all pods at once).
 func caseRollingUpdateConverges(ctx context.Context, t *testing.T) {
-	for _, comp := range []string{harness.ComponentSharingd, harness.ComponentMpsd} {
+	for _, comp := range []string{harness.ComponentFractiond, harness.ComponentMpsd} {
 		ds := h.GetDaemonSet(ctx, t, comp)
 		if ds.Spec.UpdateStrategy.Type != "RollingUpdate" {
 			t.Errorf("%s updateStrategy = %q, want RollingUpdate", ds.Name, ds.Spec.UpdateStrategy.Type)
 		}
 	}
 
-	// A config change rolls sharingd out and converges. Wait for the generation
+	// A config change rolls fractiond out and converges. Wait for the generation
 	// to advance past `before` (WaitRolledOut alone would return the pre-patch
 	// DaemonSet, still rolled out at `before`, before the operator reconciles).
-	before := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation
-	patch := []byte(`{"spec":{"sharingAgent":{"logLevel":"warn"}}}`)
-	revert := []byte(`{"spec":{"sharingAgent":{"logLevel":null}}}`)
+	before := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation
+	patch := []byte(`{"spec":{"fractioningAgent":{"logLevel":"warn"}}}`)
+	revert := []byte(`{"spec":{"fractioningAgent":{"logLevel":null}}}`)
 	h.WithCRConfig(ctx, t, patch, revert, func() {
-		ds, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentSharingd), before, h.RolloutTimeout(), h.PollInterval())
+		ds, err := daemonset.WaitRolledOutAfter(ctx, h.Client(), h.NS(), harness.DSName(harness.ComponentFractiond), before, h.RolloutTimeout(), h.PollInterval())
 		if err != nil {
-			t.Fatalf("sharingd rollout on config change: %v", err)
+			t.Fatalf("fractiond rollout on config change: %v", err)
 		}
 		if ds.Generation <= before {
-			t.Errorf("sharingd generation did not advance on config change: %d → %d", before, ds.Generation)
+			t.Errorf("fractiond generation did not advance on config change: %d → %d", before, ds.Generation)
 		}
 	})
 }

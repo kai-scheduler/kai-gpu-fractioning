@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/config"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/config"
 )
 
 // Client bundles the pieces of the cluster connection tests need: a

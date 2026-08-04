@@ -11,7 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/daemonset"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/daemonset"
 )
 
 // DumpDiagOnFailure registers a cleanup that, only if the (sub)test failed,
@@ -26,7 +26,7 @@ func (h *Harness) DumpDiagOnFailure(ctx context.Context, t *testing.T) {
 		t.Log("── diagnostics (test failed) ─────────────────────────────")
 		dep := h.OperatorDeployment(ctx, t)
 		t.Logf("operator Deployment %s: available=%d/%d", dep.Name, dep.Status.AvailableReplicas, dep.Status.Replicas)
-		for _, comp := range []string{ComponentSharingd, ComponentMpsd} {
+		for _, comp := range []string{ComponentFractiond, ComponentMpsd} {
 			if ds, err := daemonset.Get(ctx, h.Client(), h.NS(), DSName(comp)); err == nil {
 				t.Logf("ds %s: desired=%d ready=%d updated=%d unavailable=%d gen=%d observed=%d",
 					ds.Name, ds.Status.DesiredNumberScheduled, ds.Status.NumberReady,

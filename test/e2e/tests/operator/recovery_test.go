@@ -15,19 +15,19 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/harness"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/daemonset"
-	gsc "github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/gpusharingconfig"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/nodes"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/k8s/pods"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/waiter"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/harness"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/daemonset"
+	gsc "github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/gpufractioningconfig"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/nodes"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/k8s/pods"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/waiter"
 )
 
 // MpsdFaultAndRecovery — mpsd fault, AND-gated status, node isolation, and
 // recovery. Holding the mpsd control socket away makes the mpsd readiness probe
 // fail, and asserts:
-//   - the faulted node's gpu-sharing condition flips False;
-//   - CR MpsdReady=False while SharingdReady stays True, so aggregate Ready=False;
+//   - the faulted node's gpu-fractioning condition flips False;
+//   - CR MpsdReady=False while FractiondReady stays True, so aggregate Ready=False;
 //   - another matching node stays True (daemon health is scoped per node);
 //   - on release, everything returns to Ready (assertSteady).
 func caseMpsdFaultAndRecovery(ctx context.Context, t *testing.T) {
@@ -52,17 +52,17 @@ func caseMpsdFaultAndRecovery(ctx context.Context, t *testing.T) {
 		t.Fatalf("node %s condition did not flip False under mpsd fault: %v", node, err)
 	}
 
-	// AND-gate: MpsdReady False, SharingdReady still True, Ready False.
+	// AND-gate: MpsdReady False, FractiondReady still True, Ready False.
 	obj, err := gsc.WaitCondition(ctx, h.Client(), gsc.DefaultName, harness.CondMpsdReady, metav1.ConditionFalse, h.CondTimeout(), h.PollInterval())
 	if err != nil {
 		t.Fatalf("CR MpsdReady did not go False: %v", err)
 	}
-	if cond, ok := gsc.Condition(obj, harness.CondSharingdReady); !ok || cond.Status != metav1.ConditionTrue {
-		t.Errorf("SharingdReady = %s, want True (sharingd must be unaffected by an mpsd fault)", harness.CondStatus(ok, cond))
+	if cond, ok := gsc.Condition(obj, harness.CondFractiondReady); !ok || cond.Status != metav1.ConditionTrue {
+		t.Errorf("FractiondReady = %s, want True (fractiond must be unaffected by an mpsd fault)", harness.CondStatus(ok, cond))
 	}
 	// Aggregate Ready must be False (a component is down); we assert only the
 	// status, not the reason. The per-daemon conditions above already pin down
-	// *why* (MpsdReady False, SharingdReady True). The aggregate reason is an
+	// *why* (MpsdReady False, FractiondReady True). The aggregate reason is an
 	// operator implementation detail that varies by environment: when Ready is
 	// False the operator consults its GPU-operator dependency checker, so a real
 	// GPU cluster reports ComponentNotReady while a fake-gpu-operator cluster
@@ -88,50 +88,50 @@ func caseMpsdFaultAndRecovery(ctx context.Context, t *testing.T) {
 	h.AssertSteady(ctx, t)
 }
 
-// SharingdSocketFaultIsolation — an unreachable NRI socket path breaks sharingd
+// FractiondSocketFaultIsolation — an unreachable NRI socket path breaks fractiond
 // only, and the breakage shows up at every layer while mpsd stays healthy:
-//   - CR: SharingdReady=False, MpsdReady=True, aggregate Ready=False;
-//   - DaemonSet: sharingd DS degraded (NumberReady < desired), mpsd DS unaffected;
-//   - node: at least one targeted node's gpu-sharing condition flips False
+//   - CR: FractiondReady=False, MpsdReady=True, aggregate Ready=False;
+//   - DaemonSet: fractiond DS degraded (NumberReady < desired), mpsd DS unaffected;
+//   - node: at least one targeted node's gpu-fractioning condition flips False
 //     (the condition is AND-gated on both daemons per node).
 //
 // Reverting recovers — withCRConfig's deferred revert + assertSteady re-checks CR,
 // DaemonSets, and node conditions back to True.
-func caseSharingdSocketFaultIsolation(ctx context.Context, t *testing.T) {
+func caseFractiondSocketFaultIsolation(ctx context.Context, t *testing.T) {
 	gpuNodes := h.GPUNodeNames(ctx, t)
 	if len(gpuNodes) == 0 {
-		// With no target nodes the sharingd DS has desired=0 and no pods, so a bad
-		// socket path can't break sharingd (SharingdReady stays True/NoTargetNodes).
-		t.Skip("no matching GPU nodes; a sharingd fault has no target pods to break")
+		// With no target nodes the fractiond DS has desired=0 and no pods, so a bad
+		// socket path can't break fractiond (FractiondReady stays True/NoTargetNodes).
+		t.Skip("no matching GPU nodes; a fractiond fault has no target pods to break")
 	}
-	patch := []byte(`{"spec":{"sharingAgent":{"nriSocketPath":"/var/run/nri-e2e-bogus/nri.sock"}}}`)
-	revert := []byte(`{"spec":{"sharingAgent":{"nriSocketPath":null}}}`)
+	patch := []byte(`{"spec":{"fractioningAgent":{"nriSocketPath":"/var/run/nri-e2e-bogus/nri.sock"}}}`)
+	revert := []byte(`{"spec":{"fractioningAgent":{"nriSocketPath":null}}}`)
 	h.WithCRConfig(ctx, t, patch, revert, func() {
-		// CR conditions: sharingd down, mpsd isolated, aggregate down.
-		obj, err := gsc.WaitCondition(ctx, h.Client(), gsc.DefaultName, harness.CondSharingdReady, metav1.ConditionFalse, h.RolloutTimeout(), h.PollInterval())
+		// CR conditions: fractiond down, mpsd isolated, aggregate down.
+		obj, err := gsc.WaitCondition(ctx, h.Client(), gsc.DefaultName, harness.CondFractiondReady, metav1.ConditionFalse, h.RolloutTimeout(), h.PollInterval())
 		if err != nil {
-			t.Fatalf("SharingdReady did not go False with a bad NRI socket path: %v", err)
+			t.Fatalf("FractiondReady did not go False with a bad NRI socket path: %v", err)
 		}
 		if cond, ok := gsc.Condition(obj, harness.CondMpsdReady); !ok || cond.Status != metav1.ConditionTrue {
-			t.Errorf("MpsdReady = %s, want True (mpsd must be unaffected by a sharingd fault)", harness.CondStatus(ok, cond))
+			t.Errorf("MpsdReady = %s, want True (mpsd must be unaffected by a fractiond fault)", harness.CondStatus(ok, cond))
 		}
 		if cond, ok := gsc.Condition(obj, harness.CondReady); !ok || cond.Status != metav1.ConditionFalse {
 			t.Errorf("Ready = %s, want False", harness.CondStatus(ok, cond))
 		}
 
-		// DaemonSet: sharingd is degraded (SharingdReady=False derives from its
+		// DaemonSet: fractiond is degraded (FractiondReady=False derives from its
 		// pods failing readiness), while mpsd stays fully rolled out.
-		if sh := h.GetDaemonSet(ctx, t, harness.ComponentSharingd); sh.Status.NumberReady >= sh.Status.DesiredNumberScheduled {
-			t.Errorf("sharingd DS NumberReady=%d desired=%d, want NumberReady < desired under the fault",
+		if sh := h.GetDaemonSet(ctx, t, harness.ComponentFractiond); sh.Status.NumberReady >= sh.Status.DesiredNumberScheduled {
+			t.Errorf("fractiond DS NumberReady=%d desired=%d, want NumberReady < desired under the fault",
 				sh.Status.NumberReady, sh.Status.DesiredNumberScheduled)
 		}
 		if mp := h.GetDaemonSet(ctx, t, harness.ComponentMpsd); !daemonset.RolledOut(mp) {
-			t.Errorf("mpsd DS not fully rolled out (ready=%d desired=%d); it must be unaffected by a sharingd fault",
+			t.Errorf("mpsd DS not fully rolled out (ready=%d desired=%d); it must be unaffected by a fractiond fault",
 				mp.Status.NumberReady, mp.Status.DesiredNumberScheduled)
 		}
 
 		// Node: the per-node condition is AND-gated on both daemons, so at least
-		// one targeted node flips False while sharingd is broken there.
+		// one targeted node flips False while fractiond is broken there.
 		if err := waiter.PollUntil(ctx, h.CondTimeout(), h.PollInterval(), "a targeted node condition to flip False",
 			func(ctx context.Context) (bool, error) {
 				for _, name := range gpuNodes {
@@ -145,7 +145,7 @@ func caseSharingdSocketFaultIsolation(ctx context.Context, t *testing.T) {
 				}
 				return false, nil
 			}); err != nil {
-			t.Errorf("no targeted node flipped the gpu-sharing condition False under the sharingd fault: %v", err)
+			t.Errorf("no targeted node flipped the gpu-fractioning condition False under the fractiond fault: %v", err)
 		}
 	})
 }
@@ -240,7 +240,7 @@ func caseRetryBudgetExhaustedRestart(ctx context.Context, t *testing.T) {
 // SpecDriftReverted — spec drift on a managed DaemonSet is reverted by
 // the controller.
 func caseSpecDriftReverted(ctx context.Context, t *testing.T) {
-	name := harness.DSName(harness.ComponentSharingd)
+	name := harness.DSName(harness.ComponentFractiond)
 	const marker = "e2e.drift/marker"
 	// Inject a pod-template annotation the operator never sets.
 	patch := []byte(fmt.Sprintf(`{"spec":{"template":{"metadata":{"annotations":{%q:"1"}}}}}`, marker))
@@ -281,7 +281,7 @@ func caseDeletedDaemonSetRecreated(ctx context.Context, t *testing.T) {
 // the operator comes back Available, FX-STEADY holds, and the managed DaemonSets
 // are not re-rolled (no generation churn from a fresh reconcile).
 func caseControllerRestartTransparent(ctx context.Context, t *testing.T) {
-	shGen := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation
+	shGen := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation
 	mpGen := h.GetDaemonSet(ctx, t, harness.ComponentMpsd).Generation
 
 	dep := h.OperatorDeployment(ctx, t)
@@ -302,8 +302,8 @@ func caseControllerRestartTransparent(ctx context.Context, t *testing.T) {
 
 	h.AssertSteady(ctx, t)
 
-	if g := h.GetDaemonSet(ctx, t, harness.ComponentSharingd).Generation; g != shGen {
-		t.Errorf("sharingd DaemonSet re-rolled across controller restart: gen %d → %d", shGen, g)
+	if g := h.GetDaemonSet(ctx, t, harness.ComponentFractiond).Generation; g != shGen {
+		t.Errorf("fractiond DaemonSet re-rolled across controller restart: gen %d → %d", shGen, g)
 	}
 	if g := h.GetDaemonSet(ctx, t, harness.ComponentMpsd).Generation; g != mpGen {
 		t.Errorf("mpsd DaemonSet re-rolled across controller restart: gen %d → %d", mpGen, g)

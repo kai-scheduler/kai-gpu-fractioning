@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // TestE2E_MultiProcessPerPodAggregation verifies that when several GPU
@@ -17,11 +17,11 @@ import (
 // Pod A has 2 containers → 2 attributed processes on Device0UUID.
 // Pod B has 3 containers → 3 attributed processes on Device0UUID.
 //
-// Each container is tracked independently by sharingd (separate cgroup, separate
+// Each container is tracked independently by fractiond (separate cgroup, separate
 // fsstore entry) but all containers in a pod share the same pod_uid, so the
 // engine groups them under the same (pod_uid, gpu_uuid) key and sums:
-//   - gpu_sharing_gpu_memory_used_bytes = Σ(per-container used_memory_mib) * 1MiB
-//   - gpu_sharing_gpu_sm_utilization_percent = Σ(per-container sm_util), clamped at 100
+//   - gpu_fractioning_gpu_memory_used_bytes = Σ(per-container used_memory_mib) * 1MiB
+//   - gpu_fractioning_gpu_sm_utilization_percent = Σ(per-container sm_util), clamped at 100
 func TestE2E_MultiProcessPerPodAggregation(t *testing.T) {
 	if !s.Client.Config.NVMLMock {
 		t.Skip(skipNoNVMLMock)

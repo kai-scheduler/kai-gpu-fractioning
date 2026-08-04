@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/nvmlmock"
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/nvmlmock"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // TestE2E_SingleFractionalPodAttribution verifies that a pod carrying a fractional GPU

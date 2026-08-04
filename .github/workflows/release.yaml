@@ -40,4 +40,4 @@ jobs:
       - name: Upload chart as Release asset
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/gpu-sharing-${{ github.event.release.tag_name }}.tgz
+          files: dist/gpu-fractioning-${{ github.event.release.tag_name }}.tgz

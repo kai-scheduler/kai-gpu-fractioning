@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kai-scheduler/gpu-sharing/test/e2e/workload"
+	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
 
 // TestE2E_FullGPUPodIsExcludedFromMetrics verifies that a pod requesting
 // nvidia.com/gpu without a fractional gpu-memory annotation is treated as
 // full-GPU and intentionally excluded from tracking
-// (sharing-manager/metricsd/internal/plugin/adapter.go:38-46). This is a
+// (fractioning-manager/metricsd/internal/plugin/adapter.go:38-46). This is a
 // deliberate design decision — worth a negative test since silent exclusion
 // is otherwise unobservable from outside the code.
 func TestE2E_FullGPUPodIsExcludedFromMetrics(t *testing.T) {

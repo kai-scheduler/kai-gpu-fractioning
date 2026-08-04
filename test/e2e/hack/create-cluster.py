@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""create-cluster.py - k3d cluster + fake-gpu-operator for gpu-sharing e2e tests.
+"""create-cluster.py - k3d cluster + fake-gpu-operator for gpu-fractioning e2e tests.
 
 Uses an env-driven pydantic-settings config, a typer CLI, and
 retry-on-create-failure, scoped to what this project needs: a k3d cluster with a
 single fake-GPU node pool and fake-gpu-operator installed. It also stands up a
 k3d-managed local image registry (see create_registry) that Skaffold pushes the
-gpu-sharing component images to, so nodes pull them (pullPolicy IfNotPresent)
+gpu-fractioning component images to, so nodes pull them (pullPolicy IfNotPresent)
 and an image evicted from a node's containerd under disk pressure is re-pulled
 instead of wedging at ErrImageNeverPull. The only other cluster-level tweak is
 repointing the "nvidia" RuntimeClass at the runc handler so the mpsd DaemonSet
@@ -18,7 +18,7 @@ stdout is enough for CI logs).
 
 Environment variables (E2E_ prefix, see ClusterConfig):
     E2E_FAKE_GPU_OPERATOR_VERSION  (required) e.g. "0.2.0"
-    E2E_CLUSTER_NAME               (default: gpu-sharing-e2e)
+    E2E_CLUSTER_NAME               (default: gpu-fractioning-e2e)
     E2E_GPU_WORKER_NODES           (default: 2)   # GPU worker nodes
     E2E_NON_GPU_WORKER_NODES       (default: 1)   # plain (no-GPU) worker nodes
     E2E_K3S_IMAGE                  (default: rancher/k3s:v1.31.5-k3s1)
@@ -56,25 +56,25 @@ import typer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-app = typer.Typer(help="k3d cluster setup for gpu-sharing e2e tests")
+app = typer.Typer(help="k3d cluster setup for gpu-fractioning e2e tests")
 
 FAKE_GPU_OPERATOR_CHART = "oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator"
 
 # nvml-mock: NVIDIA's mock libnvidia-ml.so DaemonSet (supplements fake-gpu-operator).
 # Applied as a static manifest — its setup.sh self-labels nodes
-# nvidia.com/gpu.present=true (the sharingd DaemonSet's nodeSelector) and installs a
+# nvidia.com/gpu.present=true (the fractiond DaemonSet's nodeSelector) and installs a
 # real libnvidia-ml.so into /var/lib/nvml-mock/driver, so metricsd's NVML calls
 # resolve against the mock instead of falling back to NoopCollector. No Helm
 # release and no device plugin are needed for the metrics e2e suite: attribution
 # keys off the fractional annotation + cgroup + NVML UUID, not a scheduled
 # nvidia.com/gpu resource.
-NVML_MOCK_MANIFEST = "sharing-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml"
+NVML_MOCK_MANIFEST = "fractioning-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml"
 
-# sharingd (the gpu-sharing's NRI DaemonSet, created by the Helm chart)
+# fractiond (the gpu-fractioning's NRI DaemonSet, created by the Helm chart)
 # mounts /var/run/nri as a hostPath of type "Directory", which requires the path
 # to already exist on the node. Stock k3s images ship with containerd's NRI
 # plugin disabled, so that directory/socket is never created and the
-# sharingd pods hang forever in ContainerCreating. Override each node's
+# fractiond pods hang forever in ContainerCreating. Override each node's
 # containerd config to enable NRI so containerd creates the socket (and its
 # parent directory) on startup.
 CONTAINERD_NRI_CONFIG_TEMPLATE = """{{ template "base" . }}
@@ -92,13 +92,13 @@ def write_containerd_nri_template() -> str:
 
 
 # The mpsd DaemonSet hard-codes runtimeClassName: nvidia (mpsd.go — there is no
-# spec/Helm override, unlike the sharingd+metricsd pod, which clears it via
+# spec/Helm override, unlike the fractiond+metricsd pod, which clears it via
 # metricsAgent.runtimeClassName=""). k3s ships a "nvidia" RuntimeClass whose
 # handler is "nvidia", but the underlying nvidia containerd runtime isn't
 # registered on a GPU-less k3d node, so mpsd pods stay stuck at container
 # creation ("no runtime for \"nvidia\" is configured") and the operator's
 # aggregate Ready never flips. The metrics suite tolerates that (it waits only on
-# sharingd), but the operator/controller e2e suite asserts
+# fractiond), but the operator/controller e2e suite asserts
 # MpsdReady/Ready/the node condition, all of which need mpsd actually running.
 #
 # Re-point the "nvidia" RuntimeClass at the default "runc" handler (always
@@ -120,7 +120,7 @@ class ClusterConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="E2E_", extra="ignore")
 
-    cluster_name: str = "gpu-sharing-e2e"
+    cluster_name: str = "gpu-fractioning-e2e"
     # GPU worker nodes (carry the fake-gpu-operator node-pool label; get
     # nvidia.com/gpu.present=true). Non-GPU workers below are plain agents with
     # no GPU label, so the cluster mirrors a real mixed GPU/CPU topology.
@@ -235,7 +235,7 @@ def create_cluster(config: ClusterConfig) -> bool:
     # (non-GPU workers). This label is what everything downstream selects on: the
     # nvml-mock DaemonSet's nodeSelector (which must match before it can schedule
     # and patch the node), the operator's default-CR nodeSelector, and the
-    # sharingd/mpsd DaemonSets.
+    # fractiond/mpsd DaemonSets.
     total_agents = config.gpu_worker_nodes + config.non_gpu_worker_nodes
     gpu_node_filter = ";".join(f"agent:{i}" for i in range(config.gpu_worker_nodes))
     gpu_node_label = f"nvidia.com/gpu.present=true@{gpu_node_filter}"
@@ -464,10 +464,10 @@ def install_nvml_mock(config: ClusterConfig) -> None:
     # test/e2e/hack -> repo root (hack, e2e, test, <root>).
     manifest = Path(__file__).resolve().parents[3] / NVML_MOCK_MANIFEST
 
-    # The manifest spans gpu-operator and gpu-sharing namespaces; create
+    # The manifest spans gpu-operator and gpu-fractioning namespaces; create
     # both up-front so apply doesn't race. _ok_code tolerates AlreadyExists.
     sh.kubectl("create", "namespace", "gpu-operator", _ok_code=[0, 1])
-    sh.kubectl("create", "namespace", "gpu-sharing", _ok_code=[0, 1])
+    sh.kubectl("create", "namespace", "gpu-fractioning", _ok_code=[0, 1])
 
     # Pre-warm the nvml-mock image so the DaemonSet rollout below doesn't block on
     # a slow registry pull (see prewarm_images).
@@ -524,7 +524,7 @@ def main(
         False, "--skip-gpu-mock", help="Skip nvml-mock install"
     ),
 ) -> None:
-    """Create (or delete) a k3d cluster with fake-gpu-operator and nvml-mock for gpu-sharing e2e tests."""
+    """Create (or delete) a k3d cluster with fake-gpu-operator and nvml-mock for gpu-fractioning e2e tests."""
     config = ClusterConfig()
     if not config.kubeconfig:
         config.kubeconfig = str(Path.home() / ".kube" / f"{config.cluster_name}.yaml")

@@ -26,7 +26,7 @@ func TestDriverUpgradeActive(t *testing.T) {
 // The managed daemon must schedule only where the upgrade label is absent or
 // upgrade-done, so the DaemonSet controller drains it from upgrading nodes.
 func TestBaseDaemonSetDriverUpgradeAffinity(t *testing.T) {
-	ds := BaseDaemonSet("sharingd", "ns")
+	ds := BaseDaemonSet("fractiond", "ns")
 
 	aff := ds.Spec.Template.Spec.Affinity
 	if aff == nil || aff.NodeAffinity == nil || aff.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
@@ -59,7 +59,7 @@ func TestDriverUpgradeCondition(t *testing.T) {
 // be mistaken for a not-ready daemon component when aggregating Ready.
 func TestAggregateReadyIgnoresDriverUpgrade(t *testing.T) {
 	conds := []metav1.Condition{
-		{Type: "sharingd", Status: metav1.ConditionTrue},
+		{Type: "fractiond", Status: metav1.ConditionTrue},
 		{Type: "mpsd", Status: metav1.ConditionTrue},
 		{Type: ConditionDriverUpgradeInProgress, Status: metav1.ConditionFalse},
 	}

@@ -18,7 +18,7 @@ import (
 const absent = "<absent>"
 
 // ExpectedDecimalMB converts a MiB value (e.g. "2048") to the decimal-MB string
-// sharingd injects: bytes(=mib*1Mi) ÷ 1e6. 2048Mi → "2147", 4096Mi → "4294".
+// fractiond injects: bytes(=mib*1Mi) ÷ 1e6. 2048Mi → "2147", 4096Mi → "4294".
 func ExpectedDecimalMB(t *testing.T, mib string) string {
 	t.Helper()
 	q, err := resource.ParseQuantity(mib + "Mi")

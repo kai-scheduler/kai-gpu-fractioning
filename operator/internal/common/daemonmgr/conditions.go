@@ -1,7 +1,7 @@
 package daemonmgr
 
 // This file gathers everything that reads or writes the
-// gpu-sharing.nvidia.com/Ready node condition. Helpers for the CR's own
+// gpu-fractioning.nvidia.com/Ready node condition. Helpers for the CR's own
 // status conditions live in status.go.
 
 import (
@@ -23,7 +23,7 @@ import (
 // cleanup, keeping peak memory flat on large clusters.
 const nodeListPageSize = 500
 
-// FindNodeCondition returns the node's gpu-sharing.nvidia.com/Ready condition
+// FindNodeCondition returns the node's gpu-fractioning.nvidia.com/Ready condition
 // and whether the node carries it.
 func FindNodeCondition(node *corev1.Node) (corev1.NodeCondition, bool) {
 	for _, cond := range node.Status.Conditions {
@@ -34,7 +34,7 @@ func FindNodeCondition(node *corev1.Node) (corev1.NodeCondition, bool) {
 	return corev1.NodeCondition{}, false
 }
 
-// PatchNodeCondition sets or updates the gpu-sharing.nvidia.com/Ready condition
+// PatchNodeCondition sets or updates the gpu-fractioning.nvidia.com/Ready condition
 // on a node using a strategic merge patch.
 //
 // reader serves the current-node read and is deliberately the uncached API
@@ -96,14 +96,14 @@ func PatchNodeCondition(ctx context.Context, reader client.Reader, writer client
 	return nil
 }
 
-// removeNodeConditionPatch deletes the gpu-sharing.nvidia.com/Ready entry from
+// removeNodeConditionPatch deletes the gpu-fractioning.nvidia.com/Ready entry from
 // the merge-keyed conditions list. Node conditions use patchMergeKey "type",
 // so a plain strategic merge patch can only upsert entries; deletion needs the
 // $patch:delete directive, which typed NodeConditions cannot express. The
 // payload depends only on the constant condition type, so it is built once.
 var removeNodeConditionPatch = []byte(`{"status":{"conditions":[{"type":"` + NodeConditionType + `","$patch":"delete"}]}}`)
 
-// RemoveNodeCondition deletes the gpu-sharing.nvidia.com/Ready condition from
+// RemoveNodeCondition deletes the gpu-fractioning.nvidia.com/Ready condition from
 // a node's status.
 //
 // The call is idempotent: deleting an absent condition is a server-side no-op,
@@ -127,7 +127,7 @@ func RemoveNodeCondition(ctx context.Context, writer client.Client, nodeName str
 	return nil
 }
 
-// RemoveNodeConditions removes the gpu-sharing.nvidia.com/Ready condition from
+// RemoveNodeConditions removes the gpu-fractioning.nvidia.com/Ready condition from
 // all nodes matching nodeSelector (the selector is reliable here because
 // editing it on a live CR is unsupported). Nodes are listed via the uncached
 // reader with pagination, for the same reason PatchNodeCondition avoids a
