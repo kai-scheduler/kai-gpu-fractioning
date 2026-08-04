@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package audit inspects the containers reports on an NRI
 // (re)connect (the Synchronize snapshot) and finds containers that are running
 // without the fractioning setup the CreateContainer hook is supposed to inject.

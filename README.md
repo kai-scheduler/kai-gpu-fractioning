@@ -4,7 +4,7 @@ A Kubernetes operator that enables **multiple pods to safely share a single GPU 
 
 The operator manages the full lifecycle of GPU fractioning on a cluster: it deploys an [NRI](https://github.com/containerd/nri) plugin that injects per-container GPU memory limits at container creation time — before the container process starts — and runs [NVIDIA MPS](https://docs.nvidia.com/deploy/mps/index.html) with GPU memory accounting enabled on every shared GPU.
 
-It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler): KAI Scheduler decides *which* fraction of *which* GPU a workload gets, and kai-gpu-fractioning enforces that memory boundary on the node and exports per-pod metrics for the resulting fractional GPUs.
+It is designed to run alongside [KAI Scheduler](https://github.com/kai-scheduler/KAI-Scheduler): KAI Scheduler decides *which* fraction of *which* GPU a workload gets, and kai-gpu-fractioning enforces that memory boundary on the node and exports per-pod metrics for the resulting fractional GPUs.
 
 ## How It Works
 
@@ -49,7 +49,7 @@ It is designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Sc
 - containerd 2.0+ with **NRI enabled**, or CRI-O with NRI support
 - [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer**, which provides the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under
 - **NVIDIA driver `r615` or newer (CUDA 13.4)** on the GPU nodes — see below, this is *not* the GPU Operator default
-- A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler)
+- A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/kai-scheduler/KAI-Scheduler)
 
 ### Selecting the r615 driver
 
@@ -180,6 +180,19 @@ make validate   # format, vet, and lint
 
 metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-level `make build`; build it with `make -C fractioning-manager/metricsd build`. `make test` and `make docker-build` do cover all four components.
 
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) — every commit
+must be signed off under the [Developer Certificate of Origin](CLA.md), and all
+participants are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Security issues go through the private channels in [SECURITY.md](SECURITY.md),
+not public issues.
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
+
+Third-party components statically linked into the shipped binaries are listed in
+[THIRD-PARTY.txt](THIRD-PARTY.txt), which is also included in every image at
+`/THIRD-PARTY.txt`.

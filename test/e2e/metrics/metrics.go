@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package metrics scrapes and parses a Prometheus text-exposition endpoint.
 // It has no dependency on the rest of the framework — callers supply a local
 // port (typically from portforward).

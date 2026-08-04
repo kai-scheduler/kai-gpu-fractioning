@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Fake mpsd image for fake-GPU E2E clusters.
 #
 # It contains the REAL mpsd supervisor (same code as the production image) plus a

@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package daemonset provides generic, read-only inspection and rollout-wait
 // helpers for Kubernetes DaemonSets. It is used by the e2e suites to assert
 // deployment shape, args/mount propagation, and rollout convergence without

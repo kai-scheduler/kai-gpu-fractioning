@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package suite ties setup together for a run of an e2e test binary: one
 // cluster connection, reused by every test. Setup is exposed as ordered phases
 // (New → Preflight) so a suite's TestMain can run — and report — each step

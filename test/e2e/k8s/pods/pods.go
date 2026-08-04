@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package pods provides list and exec helpers for pods running in the
 // cluster.
 package pods

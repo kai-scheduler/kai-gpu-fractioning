@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1.7
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 #
 # Build context MUST be the repository root (not fractioning-manager/metricsd): the
 # metricsd module replaces github.com/kai-scheduler/kai-gpu-fractioning => ../../ to use
@@ -43,13 +46,21 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/metricsd ./cmd
 
-# distroless/base-debian12 (glibc) because the NVML bindings load libnvidia-ml.so
-# at runtime; the driver is injected by the NVIDIA container runtime.
-FROM gcr.io/distroless/base-debian12
+# NVIDIA-approved distroless base pulled from NGC (OSRB requires an approved
+# NVIDIA base container; gcr.io/distroless is not one). This variant ships
+# glibc — including libdl/libpthread — which metricsd needs because it is built
+# CGO_ENABLED=1 and the NVML bindings dlopen libnvidia-ml.so at runtime; the
+# driver itself is injected by the NVIDIA container runtime. No OS packages are
+# added on top of the base.
+FROM nvcr.io/nvidia/distroless/go:v4.0.8
 
+# Root, because reading per-process GPU state through NVML requires it. The base
+# image defaults to its non-root `nvs` user, so this has to be explicit.
 USER 0:0
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 COPY --from=build /out/metricsd /usr/local/bin/metricsd
+# Attribution for the third-party code statically linked into the binary.
+COPY THIRD-PARTY.txt /THIRD-PARTY.txt
 
 ENTRYPOINT ["/usr/local/bin/metricsd"]

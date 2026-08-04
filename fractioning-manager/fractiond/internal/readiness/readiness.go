@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package readiness exposes fractiond's NRI registration state as an HTTP
 // readiness endpoint. fractiond retries its NRI connection indefinitely by
 // default, so without this signal a pod that never registers with containerd

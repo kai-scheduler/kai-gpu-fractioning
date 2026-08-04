@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 version: 2
 updates:
   # Go modules. The root go.work makes this single entry cover every module in

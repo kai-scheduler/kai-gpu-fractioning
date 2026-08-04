@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package portforward opens SPDY port-forwards to pods, the programmatic
 // equivalent of `kubectl port-forward`.
 package portforward

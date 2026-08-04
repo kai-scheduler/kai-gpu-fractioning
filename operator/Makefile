@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # ===================================================================
 # Configuration
 # ===================================================================
@@ -61,6 +64,16 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd paths="{./...,../api/...}" output:crd:artifacts:config=config/crd/bases
+	@# controller-gen emits no license header on generated YAML, so regenerating
+	@# would silently drop it and fail the repo-wide license-check. Re-apply it.
+	@for f in config/crd/bases/*.yaml; do \
+		head -2 "$$f" | grep -q 'SPDX-License-Identifier' || { \
+			printf '# %s\n# SPDX-License-Identifier: Apache-2.0\n\n' \
+				"Copyright $(YEAR) NVIDIA CORPORATION & AFFILIATES. All rights reserved." \
+				| cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+			echo "  license header re-applied: $$f"; \
+		}; \
+	done
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -79,15 +92,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $$($(GO) list ./... | grep -v /e2e) -coverprofile cover.out
 
 .PHONY: validate
-validate: fmt vet lint verify-boilerplate ## Run all code-quality checks.
-
-.PHONY: verify-boilerplate
-verify-boilerplate: ## Verify that all .go files contain the Apache 2.0 boilerplate header.
-	@hack/verify-boilerplate.sh
-
-.PHONY: fix-boilerplate
-fix-boilerplate: ## Add the Apache 2.0 boilerplate header to .go files that are missing it.
-	@hack/fix-boilerplate.sh
+validate: fmt vet lint ## Run all code-quality checks.
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 name: DCO
 
 # Enforces the Developer Certificate of Origin: every commit in a PR must carry a

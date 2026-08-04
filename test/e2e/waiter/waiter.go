@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package waiter provides a minimal polling helper. It has zero dependencies
 // on the rest of the e2e framework so any package (including future
 // diagnostics collection) can depend on it without risking an import cycle.

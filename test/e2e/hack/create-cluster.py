@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """create-cluster.py - k3d cluster + fake-gpu-operator for gpu-fractioning e2e tests.
 
 Uses an env-driven pydantic-settings config, a typer CLI, and

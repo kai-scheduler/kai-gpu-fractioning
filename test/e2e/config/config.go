@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package config loads e2e run configuration entirely from the environment so
 // the suite can point at whatever cluster the caller provides (no config file,
 // no assumption about how the cluster was created). The suite only connects to
