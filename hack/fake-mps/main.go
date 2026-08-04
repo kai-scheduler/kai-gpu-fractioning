@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Command fake-mps is a drop-in stand-in for nvidia-cuda-mps-control, used on
 // fake-GPU E2E clusters where there is no real GPU/driver.
 //

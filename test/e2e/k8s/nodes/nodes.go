@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package nodes verifies GPU node preconditions (count, labels). It never
 // labels, cordons, or otherwise mutates nodes.
 package nodes

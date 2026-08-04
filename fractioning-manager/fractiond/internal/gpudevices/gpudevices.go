@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package gpudevices identifies the GPUs assigned to a container from its Linux
 // device nodes (NVIDIA char major 195), which are authoritative for device
 // identity. It is the single, environment-independent detector used everywhere:

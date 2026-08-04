@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Skaffold builds all four component images and deploys them through the operator
 # Helm chart (operator/charts) in one flow — the "4 images, use Skaffold + Helm"
 # direction from PR review.

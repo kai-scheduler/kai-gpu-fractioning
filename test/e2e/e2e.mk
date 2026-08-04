@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # -----------------------------------------------------------
 # E2E (metrics-only, stage 1). Requires k3d, kubectl, helm, docker, python3
 # (see test/e2e/hack/requirements.txt).

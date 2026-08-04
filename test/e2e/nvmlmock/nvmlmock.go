@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package nvmlmock drives the nvml-mock ConfigMap so per-pod GPU metrics are
 // deterministic in the e2e suite.
 //

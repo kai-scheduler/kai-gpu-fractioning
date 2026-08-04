@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # syntax=docker/dockerfile:1.7
 #
 # E2E-only Dockerfile — extends the production metricsd build with the

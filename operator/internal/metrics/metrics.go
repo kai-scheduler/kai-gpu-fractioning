@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package metrics defines and registers the operator's custom Prometheus metrics
 // on controller-runtime's registry, so they are exposed on the same (secure)
 // controller metrics endpoint as the built-in controller_runtime_* series.

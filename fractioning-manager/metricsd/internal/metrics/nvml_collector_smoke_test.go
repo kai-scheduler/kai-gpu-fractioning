@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build nvml_smoke
 
 // Package metrics smoke tests exercise the production NVML collector against

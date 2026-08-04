@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Build stage
 FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder
 ARG TARGETARCH
@@ -19,8 +22,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./fractioning-
 # Runtime stage — nvidia/cuda base provides nvidia-cuda-mps-control which mpsd
 # needs to exec. The NVIDIA container runtime only injects device access, not
 # the MPS control binary itself.
+#
+# This is an OSRB-approved NVIDIA base container (the public NVIDIA CUDA images
+# on Docker Hub are explicitly exempt from the "must be pulled from an NVIDIA
+# managed repository" rule). No `apt install` layer is added on top of it, so
+# this image adds no OS packages — only the static mpsd binary.
 FROM nvidia/cuda:13.3.1-base-ubuntu24.04
 
 COPY --from=builder /mpsd /usr/local/bin/mpsd
+# Attribution for the third-party code statically linked into the binary.
+COPY THIRD-PARTY.txt /THIRD-PARTY.txt
 
 ENTRYPOINT ["/usr/local/bin/mpsd"]

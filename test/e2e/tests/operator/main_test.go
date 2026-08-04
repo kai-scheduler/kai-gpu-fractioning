@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build e2e
 
 // Package operator holds the gpu-fractioning operator/controller e2e suite. It

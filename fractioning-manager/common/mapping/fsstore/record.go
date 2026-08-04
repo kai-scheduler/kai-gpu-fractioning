@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package fsstore is the filesystem handoff for the container->pod mapping
 // The NRI mapper component writes one <containerID>.json file per container under a shared directory; the metrics
 // component reads those files read-only. The two sides live in separate

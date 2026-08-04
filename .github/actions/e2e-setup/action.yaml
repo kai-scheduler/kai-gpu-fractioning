@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 name: "E2E Setup"
 description: >-
   Install the e2e toolchain (Go, Python, k3d, Helm) and bring up the

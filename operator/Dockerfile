@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Build on the native BUILDPLATFORM and cross-compile to the target arch. The
 # operator is CGO_ENABLED=0, so cross-compilation is pure Go (no emulation) —
 # much faster than running the whole build under qemu for a foreign --platform.
@@ -24,8 +27,14 @@ COPY operator/internal/  operator/internal/
 
 RUN cd operator && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o manager cmd/main.go
 
-FROM gcr.io/distroless/static:nonroot
+# NVIDIA-approved distroless base pulled from NGC (OSRB requires an approved
+# NVIDIA base container; gcr.io/distroless is not one). Adds no OS packages of
+# our own — the image is the base plus the static manager binary.
+FROM nvcr.io/nvidia/distroless/go:v4.0.8
 WORKDIR /
 COPY --from=builder /workspace/operator/manager .
-USER 65532:65532
+# Attribution for the third-party code statically linked into the binary.
+COPY THIRD-PARTY.txt /THIRD-PARTY.txt
+# 1000 is the base image's `nvs` user; the chart requires runAsNonRoot.
+USER 1000:1000
 ENTRYPOINT ["/manager"]

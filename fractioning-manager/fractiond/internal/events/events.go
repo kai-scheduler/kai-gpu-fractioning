@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package events decouples the ingestion of container lifecycle events from
 // their application to storage. Producers (e.g. the NRI plugin handlers) hand the
 // Processor an adapter that yields the container→pod mapping and return

@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package workload creates and tears down single-purpose test pods used to
 // exercise gpu-fractioning attribution. Separate from the plugin package,
 // which manages the DaemonSet under test itself, not workloads that exercise

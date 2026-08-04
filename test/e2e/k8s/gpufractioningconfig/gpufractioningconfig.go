@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package gpufractioningconfig provides typed CRUD and status helpers for the
 // cluster-scoped GpuFractioningConfig custom resource, so the operator e2e suite can
 // drive the CR's lifecycle (create/patch/delete) and read its status conditions

@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 name: PR Validation
 
 on:
@@ -41,6 +44,24 @@ jobs:
         with:
           version: v2.12
           working-directory: ${{ matrix.module }}
+
+  license:
+    name: License headers
+    runs-on: ubuntu-latest
+    # Apache-2.0 SPDX headers are an OSS-compliance requirement, not a style
+    # preference: every authored file in every module, the Helm chart, the
+    # Dockerfiles and the CI config must carry one. Gate it in its own job so a
+    # missing header is unambiguous in the PR checks.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make license-check
+      # THIRD-PARTY.txt is attribution for what we actually ship, so it has to
+      # track the linked dependency set — a dependency bump that changes it must
+      # regenerate it in the same PR.
+      - run: make third-party-check
 
   test:
     name: Test

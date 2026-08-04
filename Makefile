@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # kai-gpu-fractioning
 # -----------------------------------------------------------
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -5,6 +8,27 @@ DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/kai-gpu-fractioning
 # Target platform for image builds. GPU clusters are amd64; override for others.
 # buildkit emulates (qemu) when the host arch differs.
 PLATFORM ?= linux/amd64
+
+LOCALBIN ?= $(CURDIR)/bin
+ADDLICENSE ?= $(LOCALBIN)/addlicense
+ADDLICENSE_VERSION ?= v1.2.0
+
+# The exact copyright holder string OSRB checks for. Do not reword.
+LICENSE_HOLDER := NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+LICENSE_YEAR ?= 2026
+
+# addlicense does not honor .gitignore, so ignored source-like paths are listed
+# here to keep validation reproducible in developer worktrees.
+LICENSE_IGNORES := \
+	-ignore 'bin/**' \
+	-ignore 'dist/**' \
+	-ignore '.context/**' \
+	-ignore '.gocache/**' \
+	-ignore '.gotmp/**' \
+	-ignore '.local/**' \
+	-ignore '.idea/**' \
+	-ignore '.vscode/**' \
+	-ignore '**/testdata/**'
 
 # -----------------------------------------------------------
 # Build
@@ -68,22 +92,52 @@ lint:
 	$(MAKE) -C operator lint
 	golangci-lint run ./fractioning-manager/...
 
-validate:
+validate: license-check
 	$(MAKE) -C operator validate
 	go fmt ./fractioning-manager/...
 	go vet ./fractioning-manager/...
 	golangci-lint run ./fractioning-manager/...
 
-fix-boilerplate:
-	$(MAKE) -C operator fix-boilerplate
-	@year=$$(date +%Y); \
-	for f in $$(find api -name '*.go' -not -path '*/vendor/*'); do \
-		if ! head -2 "$$f" | grep -q 'Copyright'; then \
-			echo "  FIXING: $$f"; \
-			header=$$(sed "s/YEAR/$$year/" operator/hack/boilerplate.go.txt); \
-			printf '%s\n\n' "$$header" | cat - "$$f" > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
-		fi; \
-	done
+# -----------------------------------------------------------
+# License headers
+#
+# Every authored file carries the two-line Apache-2.0 SPDX header. This is
+# enforced repo-wide (all modules, the Helm chart, the Dockerfiles and CI
+# config), not left to convention — `license-check` is part of `validate` and
+# runs as its own required CI job.
+# -----------------------------------------------------------
+
+.PHONY: addlicense gen-license license-check
+
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+addlicense: $(ADDLICENSE) ## Install addlicense locally.
+$(ADDLICENSE): | $(LOCALBIN)
+	test -s $(ADDLICENSE) || GOBIN=$(LOCALBIN) go install github.com/google/addlicense@$(ADDLICENSE_VERSION)
+
+gen-license: addlicense ## Add the Apache-2.0 SPDX header to files that are missing it.
+	$(ADDLICENSE) -c "$(LICENSE_HOLDER)" -y $(LICENSE_YEAR) -s=only -l apache -v \
+		$(LICENSE_IGNORES) .
+
+license-check: addlicense ## Verify every file carries the Apache-2.0 SPDX header.
+	$(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -s=only -l apache \
+		$(LICENSE_IGNORES) .
+
+# -----------------------------------------------------------
+# Third-party attribution
+#
+# THIRD-PARTY.txt is generated from the modules `go list -deps` reports for the
+# four shipped binaries, and is copied into every image at /THIRD-PARTY.txt.
+# -----------------------------------------------------------
+
+.PHONY: third-party third-party-check
+
+third-party: ## Regenerate THIRD-PARTY.txt from the linked dependency set.
+	python3 hack/gen-third-party.py
+
+third-party-check: ## Fail if THIRD-PARTY.txt does not match the linked dependency set.
+	python3 hack/gen-third-party.py --check
 
 # -----------------------------------------------------------
 # Generate (CRDs, deepcopy, manifests) — delegated to operator

@@ -1,3 +1,6 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package injection holds the "output" contract of the fractiond NRI plugin: the
 // environment variables the CreateContainer hook injects into GPU-fractioning
 // containers. It is the counterpart to the annotations package (the "input"
