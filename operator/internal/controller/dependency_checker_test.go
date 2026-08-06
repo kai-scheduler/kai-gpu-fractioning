@@ -50,14 +50,24 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 		expectedMessage string
 	}{
 		{
-			name:  "true Ready condition skips dependency check",
+			name:  "true Ready condition stays true when GPU Operator version is supported",
 			input: trueReady,
 			objects: []client.Object{
-				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.3.3"}, clusterPolicyStatus("ready", "True", "False", "")),
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.1"}, clusterPolicyStatus("ready", "True", "False", "")),
 			},
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  daemonmgr.ReasonAllComponentsReady,
 			expectedMessage: daemonmgr.MessageAllComponentsReady,
+		},
+		{
+			name:  "true Ready condition is blocked when GPU Operator version is unsupported",
+			input: trueReady,
+			objects: []client.Object{
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.3.3"}, clusterPolicyStatus("ready", "True", "False", "")),
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  daemonmgr.ReasonGPUOperatorVersionUnsupported,
+			expectedMessage: "v26.3.3",
 		},
 		{
 			name:  "ready ClusterPolicy with supported version leaves false Ready unchanged",
@@ -371,7 +381,10 @@ func TestNormalizeGPUOperatorVersion(t *testing.T) {
 
 func clusterPolicyScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
+	return newDependencyScheme()
+}
 
+func newDependencyScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	scheme.AddKnownTypeWithName(clusterPolicyGVK, &unstructured.Unstructured{})
 	scheme.AddKnownTypeWithName(clusterPolicyGVK.GroupVersion().WithKind(clusterPolicyGVK.Kind+"List"), &unstructured.UnstructuredList{})

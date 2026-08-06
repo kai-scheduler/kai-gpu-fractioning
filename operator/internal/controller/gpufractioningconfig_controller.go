@@ -15,12 +15,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
@@ -31,8 +36,9 @@ import (
 )
 
 const (
-	requeueInterval = 30 * time.Second
-	podListPageSize = 500
+	defaultGpuFractioningConfigName = "default"
+	requeueInterval                 = 30 * time.Second
+	podListPageSize                 = 500
 
 	// NodeConditionCleanupFinalizer blocks GpuFractioningConfig deletion until the
 	// gpu-fractioning.nvidia.com/Ready conditions the controller patched onto nodes
@@ -66,8 +72,10 @@ type GpuFractioningConfigReconciler struct {
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
 
-	// GpuOperatorChecker refines an already-false aggregate Ready condition
-	// with NVIDIA GPU Operator dependency failures.
+	// GpuOperatorChecker checks NVIDIA GPU Operator dependency failures against
+	// the aggregate Ready condition. The check runs even when managed daemons are
+	// healthy so a GPU Operator downgrade is reflected in status as soon as the
+	// dependency watch fires.
 	GpuOperatorChecker GpuOperatorDependencyChecker
 
 	// GpuDriverChecker refines already-false node Ready conditions with CUDA
@@ -162,14 +170,11 @@ func (r *GpuFractioningConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Aggregate Ready condition.
 	readyCond := daemonmgr.AggregateReadyCondition(config.Status.Conditions, config.Generation)
-	if readyCond.Status == metav1.ConditionFalse {
-		var err error
-		readyCond, err = r.GpuOperatorChecker.Check(ctx, &config, readyCond)
-		if err != nil {
-			r.Recorder.Eventf(&config, corev1.EventTypeWarning, "DependencyCheckError", "%v", err)
-			log.Error(err, "failed to check GPU stack dependencies")
-			needsRequeue = true
-		}
+	readyCond, err := r.GpuOperatorChecker.Check(ctx, &config, readyCond)
+	if err != nil {
+		r.Recorder.Eventf(&config, corev1.EventTypeWarning, "DependencyCheckError", "%v", err)
+		log.Error(err, "failed to check GPU stack dependencies")
+		needsRequeue = true
 	}
 	daemonmgr.SetCondition(&config.Status, readyCond)
 
@@ -454,8 +459,40 @@ func (r *GpuFractioningConfigReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.GpuFractioningConfig{}).
 		Owns(&appsv1.DaemonSet{}).
+		WatchesRawSource(gpuOperatorDependencySource(mgr, clusterPolicyGVK)).
+		WatchesRawSource(gpuOperatorDependencySource(mgr, clusterServiceVersionGVK)).
 		Named("gpufractioningconfig").
 		Complete(r)
+}
+
+type nonBlockingSyncingSource struct {
+	src source.SyncingSource
+}
+
+// Start delegates to the underlying kind source but intentionally does not
+// expose WaitForSync. GPU Operator APIs can be installed after this controller
+// starts; source.Kind keeps trying to create the informer, while the primary CR
+// controller can still start and report the missing dependency.
+func (s nonBlockingSyncingSource) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) error {
+	return s.src.Start(ctx, queue)
+}
+
+func (s nonBlockingSyncingSource) String() string {
+	if stringer, ok := s.src.(fmt.Stringer); ok {
+		return stringer.String()
+	}
+	return fmt.Sprintf("%T", s.src)
+}
+
+func gpuOperatorDependencySource(mgr ctrl.Manager, gvk schema.GroupVersionKind) source.Source {
+	obj := &metav1.PartialObjectMetadata{}
+	obj.SetGroupVersionKind(gvk)
+
+	return nonBlockingSyncingSource{
+		src: source.Kind(mgr.GetCache(), obj, handler.TypedEnqueueRequestsFromMapFunc(func(context.Context, *metav1.PartialObjectMetadata) []reconcile.Request {
+			return []reconcile.Request{{NamespacedName: client.ObjectKey{Name: defaultGpuFractioningConfigName}}}
+		})),
+	}
 }
 
 // ReadImageFromEnv reads the <PREFIX>_REPOSITORY, <PREFIX>_TAG, and
