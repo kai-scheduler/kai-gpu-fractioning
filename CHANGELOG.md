@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- CNCF project-repository requirements, ahead of making the repository public in
+  the `kai-scheduler` organization: `GOVERNANCE.md` (deferring to the KAI
+  Scheduler project governance), `MAINTAINERS.md`, `ADOPTERS.md`, `SUPPORT.md`,
+  `ROADMAP.md`, and `LICENSE-docs` (CC-BY-4.0) alongside the Apache-2.0
+  `LICENSE`, per CNCF Charter section 11. `CODE_OF_CONDUCT.md` now explicitly
+  adopts the CNCF Code of Conduct and names <conduct@cncf.io> as an escalation
+  path, and the README references it, carries the CNCF footer and the LF
+  Projects copyright/trademark notice, and states the dual code/docs licensing.
 - Open-source compliance plumbing ahead of the public release: `CLA.md`
   (Developer Certificate of Origin 1.1), `CODE_OF_CONDUCT.md`, a generated
   `THIRD-PARTY.txt` covering the 92 third-party Go modules linked into the
