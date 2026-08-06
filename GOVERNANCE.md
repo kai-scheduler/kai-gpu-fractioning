@@ -22,7 +22,7 @@ Maintainers are responsible for the long-term health of kai-gpu-fractioning. The
 
 Maintainers:
 
-- set the technical direction of this repository and own its [roadmap](ROADMAP.md);
+- set the technical direction of this repository and decide what gets worked on;
 - review and approve pull requests, and are the only people who can merge them;
 - own the release process and the artifacts this repository publishes;
 - keep documentation, dependencies and security posture current;

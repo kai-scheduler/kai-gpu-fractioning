@@ -182,7 +182,8 @@ metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-lev
 
 ## Roadmap
 
-What the maintainers intend to work on next: [ROADMAP.md](ROADMAP.md).
+Planned work lives in the [issue tracker](https://github.com/kai-scheduler/kai-gpu-fractioning/issues);
+[ROADMAP.md](ROADMAP.md) explains where to look and how to propose something.
 
 ## Community, discussion and support
 
