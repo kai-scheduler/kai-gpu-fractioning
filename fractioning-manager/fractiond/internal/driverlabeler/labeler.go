@@ -120,7 +120,7 @@ func PatchNodeDriverMajor(ctx context.Context, cfg Config, major int) error {
 		return fmt.Errorf("%s is required", envNodeName)
 	}
 	if cfg.APIServerURL == "" {
-		return fmt.Errorf("Kubernetes API server URL is required")
+		return fmt.Errorf("kubernetes API server URL is required")
 	}
 	if cfg.TokenPath == "" {
 		cfg.TokenPath = defaultServiceAccountTokenPath
@@ -163,7 +163,9 @@ func PatchNodeDriverMajor(ctx context.Context, cfg Config, major int) error {
 	if err != nil {
 		return fmt.Errorf("patch node %s label %q: %w", cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBytes))
@@ -195,7 +197,7 @@ func nodePatchURL(apiServerURL, nodeName string) (string, error) {
 		return "", fmt.Errorf("parse Kubernetes API server URL: %w", err)
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("Kubernetes API server URL %q must include scheme and host", apiServerURL)
+		return "", fmt.Errorf("kubernetes API server URL %q must include scheme and host", apiServerURL)
 	}
 	parsed.Path = "/api/v1/nodes/" + nodeName
 	parsed.RawPath = "/api/v1/nodes/" + url.PathEscape(nodeName)
