@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -456,13 +458,45 @@ func podFailureReason(pod *corev1.Pod) string {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GpuFractioningConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.GpuFractioningConfig{}).
-		Owns(&appsv1.DaemonSet{}).
-		WatchesRawSource(gpuOperatorDependencySource(mgr, clusterPolicyGVK)).
-		WatchesRawSource(gpuOperatorDependencySource(mgr, clusterServiceVersionGVK)).
-		Named("gpufractioningconfig").
-		Complete(r)
+		Owns(&appsv1.DaemonSet{})
+
+	var err error
+	for _, gvk := range []schema.GroupVersionKind{clusterPolicyGVK, clusterServiceVersionGVK} {
+		b, err = watchGpuOperatorDependencyIfAvailable(b, mgr, gvk)
+		if err != nil {
+			return err
+		}
+	}
+
+	return b.Named("gpufractioningconfig").Complete(r)
+}
+
+func watchGpuOperatorDependencyIfAvailable(b *builder.Builder, mgr ctrl.Manager, gvk schema.GroupVersionKind) (*builder.Builder, error) {
+	available, err := gpuOperatorDependencyGVKExists(mgr.GetRESTMapper(), gvk)
+	if err != nil {
+		return nil, fmt.Errorf("checking optional GPU Operator dependency API %s: %w", gvk.String(), err)
+	}
+	if !available {
+		// These dependency APIs are optional across supported environments. The
+		// checker still tolerates their absence on every reconcile; this only avoids
+		// starting an informer for a GVK the API server does not currently serve.
+		ctrl.Log.WithName("setup").Info("skipping optional GPU Operator dependency watch because API is not installed", "gvk", gvk.String())
+		return b, nil
+	}
+	return b.WatchesRawSource(gpuOperatorDependencySource(mgr, gvk)), nil
+}
+
+func gpuOperatorDependencyGVKExists(mapper meta.RESTMapper, gvk schema.GroupVersionKind) (bool, error) {
+	_, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err == nil {
+		return true, nil
+	}
+	if meta.IsNoMatchError(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 type nonBlockingSyncingSource struct {
@@ -470,9 +504,10 @@ type nonBlockingSyncingSource struct {
 }
 
 // Start delegates to the underlying kind source but intentionally does not
-// expose WaitForSync. GPU Operator APIs can be installed after this controller
-// starts; source.Kind keeps trying to create the informer, while the primary CR
-// controller can still start and report the missing dependency.
+// expose WaitForSync. The source is registered only when discovery reports the
+// optional API during setup; if that API disappears before source startup,
+// source.Kind can keep retrying without blocking the primary CR/DaemonSet
+// controller.
 func (s nonBlockingSyncingSource) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) error {
 	return s.src.Start(ctx, queue)
 }

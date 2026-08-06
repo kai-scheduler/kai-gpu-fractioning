@@ -9,9 +9,12 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -112,11 +115,18 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			expectedMessage: "operand failed",
 		},
 		{
-			name:            "missing ClusterPolicy blocks Ready",
+			name:            "true Ready condition stays true when no GPU Operator source is present",
+			input:           trueReady,
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  daemonmgr.ReasonAllComponentsReady,
+			expectedMessage: daemonmgr.MessageAllComponentsReady,
+		},
+		{
+			name:            "missing GPU Operator sources leave false Ready unchanged",
 			input:           falseReady,
 			expectedStatus:  metav1.ConditionFalse,
-			expectedReason:  daemonmgr.ReasonGPUOperatorNotReady,
-			expectedMessage: "no gpu-operator ClusterServiceVersion found",
+			expectedReason:  daemonmgr.ReasonComponentNotReady,
+			expectedMessage: "not ready: FractiondReady",
 		},
 		{
 			name:  "supported OpenShift ClusterServiceVersion leaves false Ready unchanged",
@@ -162,15 +172,15 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 		},
 		{
 			// Only CSVs whose name carries the gpu-operator prefix are considered,
-			// so an unrelated operator's CSV must not satisfy the dependency.
+			// so an unrelated operator's CSV must not satisfy or fail the dependency.
 			name:  "non-gpu-operator ClusterServiceVersion is ignored",
 			input: falseReady,
 			objects: []client.Object{
 				clusterServiceVersionObject("some-other-operator.v26.7.1", "26.7.1"),
 			},
 			expectedStatus:  metav1.ConditionFalse,
-			expectedReason:  daemonmgr.ReasonGPUOperatorNotReady,
-			expectedMessage: "no gpu-operator ClusterServiceVersion found",
+			expectedReason:  daemonmgr.ReasonComponentNotReady,
+			expectedMessage: "not ready: FractiondReady",
 		},
 		{
 			name:  "ClusterPolicy takes precedence over OpenShift ClusterServiceVersion",
@@ -218,6 +228,40 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGpuOperatorDependencyChecker_ToleratesMissingDependencyAPIs(t *testing.T) {
+	ready := metav1.Condition{
+		Type:               daemonmgr.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: 7,
+		Reason:             daemonmgr.ReasonAllComponentsReady,
+		Message:            daemonmgr.MessageAllComponentsReady,
+	}
+	config := &v1alpha1.GpuFractioningConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "default", Generation: 7},
+	}
+
+	got, err := NewGpuOperatorDependencyChecker(missingDependencyAPIReader{}).Check(context.Background(), config, ready)
+	if err != nil {
+		t.Fatalf("Check returned error: %v", err)
+	}
+	if got.Status != metav1.ConditionTrue {
+		t.Fatalf("Status = %s, expected True", got.Status)
+	}
+	if got.Reason != daemonmgr.ReasonAllComponentsReady {
+		t.Fatalf("Reason = %q, expected %q", got.Reason, daemonmgr.ReasonAllComponentsReady)
+	}
+}
+
+type missingDependencyAPIReader struct{}
+
+func (missingDependencyAPIReader) Get(context.Context, types.NamespacedName, client.Object, ...client.GetOption) error {
+	return apierrors.NewNotFound(schema.GroupResource{Group: "test.kai.scheduler", Resource: "missing"}, "")
+}
+
+func (missingDependencyAPIReader) List(context.Context, client.ObjectList, ...client.ListOption) error {
+	return apierrors.NewNotFound(schema.GroupResource{Group: "test.kai.scheduler", Resource: "missing"}, "")
 }
 
 func TestGpuDriverDependencyChecker(t *testing.T) {
