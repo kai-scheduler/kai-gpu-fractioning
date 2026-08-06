@@ -232,8 +232,8 @@ spec:
                     type: array
                   volumes:
                     description: |-
-                      volumes are additional volumes to add to the fractiond DaemonSet pod. Use this to
-                      inject environment-specific config (e.g. an alternative NVML backend in
+                      volumes are additional volumes to add to the fractiond DaemonSet pod. Use this
+                      to inject environment-specific config (e.g. an alternative NVML backend in
                       test clusters) without encoding test knowledge in the operator itself.
                     items:
                       description: Volume represents a named volume in a pod that
@@ -2166,6 +2166,13 @@ spec:
                       0 means unlimited. Default: 0.
                     format: int32
                     type: integer
+                  runtimeClassName:
+                    description: |-
+                      runtimeClassName sets the RuntimeClass for the mpsd pod so the NVIDIA
+                      container runtime provides GPU device and NVML access.
+                      Defaults to "nvidia". Set to "" to use the node's default runtime class
+                      (only safe when the default runtime already provides NVIDIA GPU/NVML access).
+                    type: string
                   stableThreshold:
                     description: |-
                       stableThreshold is how long the MPS daemon must run to be considered stable.

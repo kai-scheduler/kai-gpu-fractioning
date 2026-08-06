@@ -58,7 +58,7 @@ func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog bool) daemonmgr.Manage
 func (d *daemon) Name() string { return daemonName }
 
 // BuildDaemonSet constructs the desired DaemonSet for mpsd.
-// The pod runs privileged with the nvidia runtime class so it can label the
+// The pod runs privileged with the configured runtime class so it can label the
 // node with the local NVIDIA driver major version via NVML, then start the
 // nvidia-cuda-mps-control binary.
 // Two host paths are mounted:
@@ -69,7 +69,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
 	result.Spec.Template.Spec.ServiceAccountName = opts.ServiceAccountName
-	result.Spec.Template.Spec.RuntimeClassName = ptr.To(nvidiaRuntimeClass)
+	result.Spec.Template.Spec.RuntimeClassName = d.runtimeClassName()
 	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
 	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
 	// 30s default, shorter than the graceful stop delay, defeating the graceful
@@ -92,6 +92,19 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)
 
 	return result
+}
+
+// runtimeClassName returns the RuntimeClass to set on the pod. Nil in the spec
+// defaults to "nvidia"; a pointer to "" explicitly clears the runtime class
+// (use the node default); any other value is used as-is.
+func (d *daemon) runtimeClassName() *string {
+	if d.spec == nil || d.spec.RuntimeClassName == nil {
+		return ptr.To(nvidiaRuntimeClass)
+	}
+	if *d.spec.RuntimeClassName == "" {
+		return nil
+	}
+	return d.spec.RuntimeClassName
 }
 
 // terminationGraceSeconds is the effective --graceful-stop-delay (the CR value,

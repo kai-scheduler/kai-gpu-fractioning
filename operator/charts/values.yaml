@@ -32,6 +32,9 @@ mpsd:
   # control-daemon config (nvidia-cuda-mps-control -a). memacct itself is always
   # enabled and context-share always disabled.
   auditLog: true
+  # runtimeClassName sets the RuntimeClass for mpsd. Set to "" to use the node's
+  # default runtime when it already provides NVIDIA GPU/NVML access.
+  runtimeClassName: "nvidia"
 
 metricsAgent:
   enabled: true

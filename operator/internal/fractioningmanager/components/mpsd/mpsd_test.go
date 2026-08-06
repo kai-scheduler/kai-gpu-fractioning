@@ -155,6 +155,53 @@ func TestDaemon_BuildDaemonSet_AuditLogDisabled(t *testing.T) {
 	}
 }
 
+func TestDaemon_BuildDaemonSet_RuntimeClass(t *testing.T) {
+	custom := "custom-nvidia"
+	empty := ""
+
+	tests := []struct {
+		name string
+		spec *v1alpha1.MpsDaemonSpec
+		want *string
+	}{
+		{
+			name: "nil spec defaults to nvidia",
+			spec: nil,
+			want: ptr.To(nvidiaRuntimeClass),
+		},
+		{
+			name: "nil runtime class defaults to nvidia",
+			spec: &v1alpha1.MpsDaemonSpec{},
+			want: ptr.To(nvidiaRuntimeClass),
+		},
+		{
+			name: "custom runtime class is propagated",
+			spec: &v1alpha1.MpsDaemonSpec{RuntimeClassName: &custom},
+			want: &custom,
+		},
+		{
+			name: "empty runtime class uses node default",
+			spec: &v1alpha1.MpsDaemonSpec{RuntimeClassName: &empty},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := NewMpsdDaemon(tt.spec, true).BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+			if tt.want == nil {
+				if spec.RuntimeClassName != nil {
+					t.Fatalf("RuntimeClassName = %q, want nil", *spec.RuntimeClassName)
+				}
+				return
+			}
+			if spec.RuntimeClassName == nil || *spec.RuntimeClassName != *tt.want {
+				t.Fatalf("RuntimeClassName = %v, want %q", spec.RuntimeClassName, *tt.want)
+			}
+		})
+	}
+}
+
 func envValue(env []corev1.EnvVar, name string) string {
 	for _, e := range env {
 		if e.Name == name {

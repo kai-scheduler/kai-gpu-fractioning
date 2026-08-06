@@ -42,3 +42,7 @@ spec:
     volumeMounts:
       {{- toYaml .Values.metricsAgent.volumeMounts | nindent 6 }}
     {{- end }}
+  {{- if hasKey .Values.mpsd "runtimeClassName" }}
+  mpsDaemon:
+    runtimeClassName: {{ .Values.mpsd.runtimeClassName | quote }}
+  {{- end }}

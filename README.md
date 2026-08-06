@@ -96,6 +96,7 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 |-------|---------|---------|
 | `metricsAgent.enabled` | `true` | run the metricsd metrics sidecar |
 | `metricsAgent.runtimeClassName` | `nvidia` | RuntimeClass for the fractiond pod when metricsd needs NVML |
+| `mpsd.runtimeClassName` | `nvidia` | RuntimeClass for the mpsd pod; set `""` to use a node default runtime with NVIDIA GPU/NVML access |
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
 | `nodeSelector` | `{}` | scheduling constraint for the **controller** Deployment |
@@ -138,7 +139,7 @@ A single cluster-scoped CR configures the whole stack. Field docs are authoritat
 | `spec.nodeSelector` *(required)* | Which nodes the fractiond/mpsd DaemonSets target. **Immutable** — set once at creation. |
 | `spec.fractioningAgent` | fractiond options (annotation prefix, log level, fail-open, retroactive enforcement). |
 | `spec.metricsAgent` | fractiond-pod NVML/runtime settings plus metricsd options (`enabled`, metric-name overrides). |
-| `spec.mpsDaemon` | mpsd supervisor options (e.g. `gracefulStopDelay`). |
+| `spec.mpsDaemon` | mpsd supervisor/runtime options (e.g. `runtimeClassName`, `gracefulStopDelay`). |
 
 Status is surfaced as conditions on the CR:
 - **`FractiondReady`** / **`MpsdReady`** — per-daemon rollout health (ready vs desired nodes).

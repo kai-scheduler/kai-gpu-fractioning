@@ -174,6 +174,13 @@ type MpsDaemonSpec struct {
 	// +optional
 	LogLevel string `json:"logLevel,omitempty"`
 
+	// runtimeClassName sets the RuntimeClass for the mpsd pod so the NVIDIA
+	// container runtime provides GPU device and NVML access.
+	// Defaults to "nvidia". Set to "" to use the node's default runtime class
+	// (only safe when the default runtime already provides NVIDIA GPU/NVML access).
+	// +optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
 	// backoff is the initial delay before restarting the MPS daemon after a crash.
 	// Doubles on each failure, capped at 60s. Default: 5s.
 	// +optional

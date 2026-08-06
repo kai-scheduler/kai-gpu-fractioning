@@ -167,6 +167,13 @@ spec:
                   properties:
                     logLevel:
                       type: string
+                    runtimeClassName:
+                      description: >-
+                        runtimeClassName sets the RuntimeClass for the mpsd pod.
+                        Defaults to "nvidia" when unset. Set to "" to use the node
+                        default (only safe when the default runtime already provides
+                        NVIDIA GPU/NVML access).
+                      type: string
                     backoff:
                       type: string
                     maxRetries:
