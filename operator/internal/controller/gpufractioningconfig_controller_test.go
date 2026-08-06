@@ -13,9 +13,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,6 +82,50 @@ func waitingStatus(reason string) corev1.ContainerStatus {
 			Waiting: &corev1.ContainerStateWaiting{Reason: reason},
 		},
 	}
+}
+
+func TestGpuOperatorDependencyGVKExists(t *testing.T) {
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{clusterPolicyGVK.GroupVersion()})
+	mapper.Add(clusterPolicyGVK, meta.RESTScopeRoot)
+
+	tests := []struct {
+		name     string
+		gvk      schema.GroupVersionKind
+		expected bool
+	}{
+		{
+			name:     "installed API is watchable",
+			gvk:      clusterPolicyGVK,
+			expected: true,
+		},
+		{
+			name:     "absent optional API is skipped",
+			gvk:      clusterServiceVersionGVK,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := gpuOperatorDependencyGVKExists(mapper, tt.gvk)
+			if err != nil {
+				t.Fatalf("gpuOperatorDependencyGVKExists returned error: %v", err)
+			}
+			if got != tt.expected {
+				t.Fatalf("gpuOperatorDependencyGVKExists(%s) = %t, expected %t", tt.gvk, got, tt.expected)
+			}
+		})
+	}
+}
+
+func gpuOperatorCheckerWithClusterPolicyVersion(version string) GpuOperatorDependencyChecker {
+	return NewGpuOperatorDependencyChecker(fake.NewClientBuilder().
+		WithScheme(newDependencyScheme()).
+		WithObjects(clusterPolicyObject(
+			map[string]string{clusterPolicyVersionLabel: version},
+			clusterPolicyStatus("ready", "True", "False", ""),
+		)).
+		Build())
 }
 
 var _ = Describe("GpuFractioningConfig Controller", func() {
@@ -157,11 +203,12 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should not check dependencies or requeue after a healthy reconcile", func() {
+		It("should check dependencies and not requeue after a healthy reconcile with a supported GPU Operator", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
 				"default", defaultImages, true,
 			)
+			controllerReconciler.GpuOperatorChecker = gpuOperatorCheckerWithClusterPolicyVersion("v26.7.1")
 
 			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -177,7 +224,35 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			Expect(ready.Reason).To(Equal(daemonmgr.ReasonAllComponentsReady))
 		})
 
-		It("should check GPU Operator dependencies and retry sooner when readiness is false", func() {
+		It("should mark Ready false when the GPU Operator is downgraded while daemons stay healthy", func() {
+			controllerReconciler := NewGpuFractioningConfigReconciler(
+				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
+				"default", defaultImages, true,
+			)
+			controllerReconciler.GpuOperatorChecker = gpuOperatorCheckerWithClusterPolicyVersion("v26.7.1")
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			controllerReconciler.GpuOperatorChecker = gpuOperatorCheckerWithClusterPolicyVersion("v26.7.0")
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var updated gpufractioningv1alpha1.GpuFractioningConfig
+			Expect(k8sClient.Get(ctx, typeNamespacedName, &updated)).To(Succeed())
+			ready := meta.FindStatusCondition(updated.Status.Conditions, daemonmgr.ConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal(daemonmgr.ReasonGPUOperatorVersionUnsupported))
+			Expect(ready.Message).To(ContainSubstring("v26.7.0"))
+		})
+
+		It("should tolerate missing GPU Operator sources and retry sooner when daemon readiness is false", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
 				"default", nil, true,
@@ -194,8 +269,8 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			ready := meta.FindStatusCondition(updated.Status.Conditions, daemonmgr.ConditionReady)
 			Expect(ready).NotTo(BeNil())
 			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-			Expect(ready.Reason).To(Equal(daemonmgr.ReasonGPUOperatorNotReady))
-			Expect(ready.Message).To(ContainSubstring("ClusterPolicy or ClusterServiceVersion"))
+			Expect(ready.Reason).To(Equal(daemonmgr.ReasonComponentNotReady))
+			Expect(ready.Message).To(ContainSubstring("FractiondReady"))
 		})
 
 		It("should update observedGeneration on reconcile", func() {
