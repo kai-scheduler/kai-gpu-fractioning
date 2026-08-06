@@ -38,6 +38,9 @@ import (
 )
 
 const (
+	// defaultGpuFractioningConfigName is the CRD-enforced singleton name
+	// (+kubebuilder validation requires metadata.name == "default"), so
+	// dependency watch events can enqueue this one cluster-scoped object.
 	defaultGpuFractioningConfigName = "default"
 	requeueInterval                 = 30 * time.Second
 	podListPageSize                 = 500
@@ -75,9 +78,10 @@ type GpuFractioningConfigReconciler struct {
 	DefaultMpsdAuditLog bool
 
 	// GpuOperatorChecker checks NVIDIA GPU Operator dependency failures against
-	// the aggregate Ready condition. The check runs even when managed daemons are
-	// healthy so a GPU Operator downgrade is reflected in status as soon as the
-	// dependency watch fires.
+	// the aggregate Ready condition. Version validation runs even when managed
+	// daemons are healthy so a GPU Operator downgrade is reflected in status as
+	// soon as the dependency watch fires; transient GPU Operator readiness is used
+	// only to refine an already-unhealthy status.
 	GpuOperatorChecker GpuOperatorDependencyChecker
 
 	// GpuDriverChecker refines already-false node Ready conditions with CUDA

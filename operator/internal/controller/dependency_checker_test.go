@@ -73,6 +73,16 @@ func TestGpuOperatorDependencyChecker(t *testing.T) {
 			expectedMessage: "v26.3.3",
 		},
 		{
+			name:  "unready ClusterPolicy with supported version leaves true Ready unchanged",
+			input: trueReady,
+			objects: []client.Object{
+				clusterPolicyObject(map[string]string{clusterPolicyVersionLabel: "v26.7.1"}, clusterPolicyStatus("notReady", "False", "False", "operator upgrade in progress")),
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  daemonmgr.ReasonAllComponentsReady,
+			expectedMessage: daemonmgr.MessageAllComponentsReady,
+		},
+		{
 			name:  "ready ClusterPolicy with supported version leaves false Ready unchanged",
 			input: falseReady,
 			objects: []client.Object{

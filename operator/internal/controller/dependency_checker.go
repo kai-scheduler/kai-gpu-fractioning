@@ -90,13 +90,15 @@ func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha
 		return ready, nil
 	}
 
-	if msg := clusterPolicyReadinessFailureMessage(clusterPolicy); msg != "" {
-		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady, msg), nil
-	}
-
 	version := gpuOperatorVersionFromClusterPolicy(clusterPolicy)
 	if msg := gpuOperatorVersionFailureMessage(version, fmt.Sprintf("ClusterPolicy label %q", clusterPolicyVersionLabel)); msg != "" {
 		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorVersionUnsupported, msg), nil
+	}
+
+	if ready.Status == metav1.ConditionFalse {
+		if msg := clusterPolicyReadinessFailureMessage(clusterPolicy); msg != "" {
+			return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady, msg), nil
+		}
 	}
 
 	return ready, nil
