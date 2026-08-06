@@ -10,10 +10,11 @@
 #   skaffold delete -p e2e       # uninstall
 #
 # The default profile builds prod-style images. The `e2e` profile switches
-# metricsd to Dockerfile.e2e (bakes in the nvml-mock .so for fake-GPU clusters)
-# and pushes the images to the k3d-managed local registry (create-cluster.py)
-# with pullPolicy=IfNotPresent, so a node that evicts an image under disk
-# pressure re-pulls it instead of wedging at ErrImageNeverPull.
+# fractiond to its e2e Docker target and metricsd to Dockerfile.e2e (both bake in
+# the nvml-mock .so for fake-GPU clusters), then pushes the images to the
+# k3d-managed local registry (create-cluster.py) with pullPolicy=IfNotPresent, so
+# a node that evicts an image under disk pressure re-pulls it instead of wedging
+# at ErrImageNeverPull.
 apiVersion: skaffold/v4beta11
 kind: Config
 metadata:
@@ -39,8 +40,9 @@ build:
     # the parallel builds overlap heavily and shave minutes off the deploy step.
     concurrency: 0
   artifacts:
-    # operator/fractiond/mpsd are CGO_ENABLED=0 and build FROM $BUILDPLATFORM,
-    # cross-compiling via the buildkit-provided TARGETARCH — no build args needed.
+    # operator/mpsd are CGO_ENABLED=0 and build FROM $BUILDPLATFORM, cross-compiling
+    # via the buildkit-provided TARGETARCH. fractiond also builds a small
+    # cgo/NVML init binary on $TARGETPLATFORM inside its Dockerfile.
     - image: gpu-fractioning
       context: .
       docker:
@@ -104,6 +106,11 @@ profiles:
       - op: replace
         path: /build/artifacts/2/docker/dockerfile
         value: hack/fake-mps/Dockerfile
+      # fractiond: use the e2e target which bakes in nvml-mock for the
+      # driver-labeler init container on fake-GPU clusters.
+      - op: add
+        path: /build/artifacts/1/docker/target
+        value: e2e
       # metricsd: use the e2e Dockerfile which bakes in the nvml-mock .so so
       # NVML calls resolve on fake-GPU k3d clusters without a real NVIDIA driver.
       - op: replace
@@ -124,8 +131,9 @@ profiles:
           images.mpsd.pullPolicy: IfNotPresent
           images.metricsd.pullPolicy: IfNotPresent
           metricsAgent.runtimeClassName: ""
-      # k3d has no "nvidia" RuntimeClass; clear runtimeClassName via a values file
-      # (skaffold drops empty-string setValues entries, so --set can't do this).
+      # Clear fractiond's runtimeClassName via a values file; the e2e image
+      # provides nvml-mock itself, and skaffold drops empty-string setValues
+      # entries, so --set can't do this.
       - op: add
         path: /deploy/helm/releases/0/valuesFiles
         value: [ "operator/charts/e2e-values.yaml" ]

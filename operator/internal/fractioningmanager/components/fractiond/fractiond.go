@@ -17,15 +17,21 @@ import (
 )
 
 const (
-	daemonName   = "fractiond"
-	metricsdName = "metricsd"
-	// defaultMetricsRuntimeClassName is the RuntimeClass applied to the
-	// fractiond+metricsd pod when metricsAgent.runtimeClassName is unset. The NVIDIA
-	// runtime injects libnvidia-ml.so, which metricsd needs to call NVML.
-	defaultMetricsRuntimeClassName = "nvidia"
-	defaultMPSPipeDir              = "/run/nvidia-mps"
-	defaultNRISocketDir            = "/var/run/nri"
-	defaultCRISocketPath           = "/run/containerd/containerd.sock"
+	daemonName           = "fractiond"
+	metricsdName         = "metricsd"
+	driverLabelerName    = "driver-labeler"
+	driverLabelerPath    = "/driver-labeler"
+	envNodeName          = "NODE_NAME"
+	envVisibleDevices    = "NVIDIA_VISIBLE_DEVICES"
+	envCapabilities      = "NVIDIA_DRIVER_CAPABILITIES"
+	defaultMPSPipeDir    = "/run/nvidia-mps"
+	defaultNRISocketDir  = "/var/run/nri"
+	defaultCRISocketPath = "/run/containerd/containerd.sock"
+	// defaultNVIDIARuntimeClassName is the RuntimeClass applied to the fractiond
+	// pod when metricsAgent.runtimeClassName is unset. The NVIDIA runtime injects
+	// libnvidia-ml.so, which the driver-labeler init container and metricsd need
+	// to call NVML.
+	defaultNVIDIARuntimeClassName = "nvidia"
 	// containerPodMapDir is the shared handoff directory: fractiond writes the
 	// container→pod mapping here and the metricsd sidecar reads it. Must match
 	// fractiond's and metricsd's built-in default (fsstore.DefaultMapDir).
@@ -61,6 +67,10 @@ const (
 	metricsdCPURequest = "50m"
 	metricsdMemRequest = "128Mi"
 	metricsdMemLimit   = "512Mi"
+
+	driverLabelerCPURequest = "10m"
+	driverLabelerMemRequest = "32Mi"
+	driverLabelerMemLimit   = "128Mi"
 )
 
 // daemon implements daemonmgr.ManagedDaemon for the fractiond NRI plugin plus its
@@ -78,21 +88,23 @@ func NewFractiondDaemon(spec *v1alpha1.FractioningAgentSpec, metrics *v1alpha1.M
 
 func (d *daemon) Name() string { return daemonName }
 
-// BuildDaemonSet constructs the desired DaemonSet. It is a single DaemonSet with
-// two containers:
+// BuildDaemonSet constructs the desired DaemonSet. It is a single DaemonSet pod
+// with one init container and one or two regular containers:
 //
+//   - driver-labeler: init container. Reads the node-local NVIDIA driver version
+//     via NVML and writes the gpu-fractioning-owned driver-major node label used
+//     by operator diagnostics.
 //   - fractiond: the NRI plugin. Runs privileged with host PID visibility so it can
 //     register with the host containerd's NRI endpoint and observe container
-//     lifecycle. It writes the container→pod mapping to a shared emptyDir.
+//     lifecycle. It writes the container→pod mapping to a shared hostPath.
 //   - metricsd: the metrics sidecar. Reads the same mapping (read-only) and exports
 //     per-pod GPU metrics on :2112. It relies on the pod's host PID namespace to
 //     resolve NVML-reported host PIDs to cgroups (so no /host/proc mount is
 //     needed), and runs privileged for NVML device access.
 //
 // Host paths mounted: the NRI socket directory (fractiond) and the MPS pipe
-// directory (shared with mpsd). The map directory is an emptyDir shared between
-// the two containers — a single pod owns both writer and reader, and the mapping
-// is rebuilt on every NRI (re)connect, so it need not survive a pod restart.
+// directory (shared with mpsd). The map directory is a hostPath shared between
+// fractiond and metricsd so the mapping can survive fractiond pod restarts.
 func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result := daemonmgr.BaseDaemonSet(daemonName, opts.Namespace)
 
@@ -100,17 +112,22 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	// HostPID is required so fractiond can observe container lifecycle events and
 	// so metricsd can resolve NVML host PIDs through its own /proc.
 	podSpec.NodeSelector = opts.NodeSelector
+	podSpec.ServiceAccountName = opts.ServiceAccountName
 	podSpec.HostPID = true
+	podSpec.RuntimeClassName = d.runtimeClassName()
 
 	fractiondContainer, fractiondVolumes := d.buildFractiondContainer(opts.DefaultImages[daemonName])
 	podSpec.Volumes = append(podSpec.Volumes, fractiondVolumes...)
+	if d.metricsSpec != nil {
+		podSpec.Volumes = append(podSpec.Volumes, d.metricsSpec.Volumes...)
+	}
+	podSpec.InitContainers = append(podSpec.InitContainers, d.buildDriverLabelerInitContainer(opts.DefaultImages[daemonName]))
 
 	metricsOn := d.metricsEnabled()
 	if metricsOn {
 		vol, mount := metricsSharedVolume()
 		podSpec.Volumes = append(podSpec.Volumes, vol)
 		fractiondContainer.VolumeMounts = append(fractiondContainer.VolumeMounts, mount)
-		podSpec.RuntimeClassName = d.runtimeClassName()
 	}
 	// fractiondContainer is a value type: append must happen after the map-dir mount
 	// is added so the VolumeMount is included in the copy placed into the slice.
@@ -152,9 +169,6 @@ func metricsSharedVolume() (corev1.Volume, corev1.VolumeMount) {
 // applyMetricsSidecar adds the metricsd container and Prometheus scrape
 // annotations to the DaemonSet.
 func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map[string]daemonmgr.ImageSpec) {
-	if d.metricsSpec != nil {
-		result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, d.metricsSpec.Volumes...)
-	}
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(defaultImages[metricsdName]))
 
 	if result.Spec.Template.Annotations == nil {
@@ -163,6 +177,34 @@ func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map
 	result.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
 	result.Spec.Template.Annotations["prometheus.io/port"] = d.metricsAnnotationPort()
 	result.Spec.Template.Annotations["prometheus.io/path"] = d.metricsAnnotationPath()
+}
+
+// buildDriverLabelerInitContainer returns the init container that writes the
+// gpu-fractioning-owned NVIDIA driver-major node label. It uses the fractiond
+// image so the DaemonSet does not need another image value.
+func (d *daemon) buildDriverLabelerInitContainer(image daemonmgr.ImageSpec) corev1.Container {
+	c := corev1.Container{
+		Name:            driverLabelerName,
+		Image:           image.FullImage(),
+		ImagePullPolicy: image.PullPolicy(),
+		Command:         []string{driverLabelerPath},
+		SecurityContext: daemonmgr.PrivilegedSecurityContext(),
+		Resources:       daemonmgr.DaemonResources(driverLabelerCPURequest, driverLabelerMemRequest, driverLabelerMemLimit),
+		Env: []corev1.EnvVar{
+			{
+				Name: envNodeName,
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+				},
+			},
+			{Name: envVisibleDevices, Value: "all"},
+			{Name: envCapabilities, Value: "utility"},
+		},
+	}
+	if d.metricsSpec != nil {
+		c.VolumeMounts = append(c.VolumeMounts, d.metricsSpec.VolumeMounts...)
+	}
+	return c
 }
 
 // metricsListenPort returns the TCP port metricsd actually listens on: the port
@@ -345,8 +387,8 @@ func (d *daemon) buildMetricsdContainer(image daemonmgr.ImageSpec) corev1.Contai
 		LivenessProbe:   livenessProbe,
 		Resources:       daemonmgr.DaemonResources(metricsdCPURequest, metricsdMemRequest, metricsdMemLimit),
 		Env: []corev1.EnvVar{
-			{Name: "NVIDIA_VISIBLE_DEVICES", Value: "all"},
-			{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "utility"},
+			{Name: envVisibleDevices, Value: "all"},
+			{Name: envCapabilities, Value: "utility"},
 		},
 		Ports: []corev1.ContainerPort{
 			{Name: "metrics", ContainerPort: port, Protocol: corev1.ProtocolTCP},
@@ -361,12 +403,12 @@ func (d *daemon) buildMetricsdContainer(image daemonmgr.ImageSpec) corev1.Contai
 	return c
 }
 
-// runtimeClassName returns the RuntimeClass to set on the pod when metricsd is
-// enabled. Nil in the spec defaults to "nvidia"; a pointer to "" explicitly
-// clears the runtime class (use the node default); any other value is used as-is.
+// runtimeClassName returns the RuntimeClass to set on the pod. Nil in the spec
+// defaults to "nvidia"; a pointer to "" explicitly clears the runtime class
+// (use the node default); any other value is used as-is.
 func (d *daemon) runtimeClassName() *string {
 	if d.metricsSpec == nil || d.metricsSpec.RuntimeClassName == nil {
-		return new(defaultMetricsRuntimeClassName)
+		return new(defaultNVIDIARuntimeClassName)
 	}
 	if *d.metricsSpec.RuntimeClassName == "" {
 		return nil

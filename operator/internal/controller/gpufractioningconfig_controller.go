@@ -62,6 +62,11 @@ type GpuFractioningConfigReconciler struct {
 	// keyed by daemon name (e.g. "fractiond").
 	DefaultImages map[string]daemonmgr.ImageSpec
 
+	// DaemonServiceAccountName is the ServiceAccount assigned to daemon pods that
+	// need limited Kubernetes API access, such as the fractiond driver-labeler init
+	// container patching its own node label.
+	DaemonServiceAccountName string
+
 	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct
 	// audit log, forwarded to the mpsd container via env.
 	DefaultMpsdAuditLog bool
@@ -83,18 +88,20 @@ func NewGpuFractioningConfigReconciler(
 	recorder record.EventRecorder,
 	namespace string,
 	defaultImages map[string]daemonmgr.ImageSpec,
+	daemonServiceAccountName string,
 	defaultMpsdAuditLog bool,
 ) *GpuFractioningConfigReconciler {
 	return &GpuFractioningConfigReconciler{
-		Client:              c,
-		APIReader:           apiReader,
-		Scheme:              scheme,
-		Recorder:            recorder,
-		Namespace:           namespace,
-		DefaultImages:       defaultImages,
-		DefaultMpsdAuditLog: defaultMpsdAuditLog,
-		GpuOperatorChecker:  NewGpuOperatorDependencyChecker(apiReader),
-		GpuDriverChecker:    NewGpuDriverDependencyChecker(apiReader),
+		Client:                   c,
+		APIReader:                apiReader,
+		Scheme:                   scheme,
+		Recorder:                 recorder,
+		Namespace:                namespace,
+		DefaultImages:            defaultImages,
+		DaemonServiceAccountName: daemonServiceAccountName,
+		DefaultMpsdAuditLog:      defaultMpsdAuditLog,
+		GpuOperatorChecker:       NewGpuOperatorDependencyChecker(apiReader),
+		GpuDriverChecker:         NewGpuDriverDependencyChecker(apiReader),
 	}
 }
 
@@ -265,9 +272,10 @@ func (r *GpuFractioningConfigReconciler) evaluateDriverUpgrade(ctx context.Conte
 // own CRD overrides internally.
 func (r *GpuFractioningConfigReconciler) buildOptions(config *v1alpha1.GpuFractioningConfig) daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
-		Namespace:     r.Namespace,
-		NodeSelector:  config.Spec.NodeSelector,
-		DefaultImages: r.DefaultImages,
+		Namespace:          r.Namespace,
+		NodeSelector:       config.Spec.NodeSelector,
+		ServiceAccountName: r.DaemonServiceAccountName,
+		DefaultImages:      r.DefaultImages,
 	}
 }
 

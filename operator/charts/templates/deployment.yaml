@@ -55,6 +55,8 @@ spec:
               value: {{ .Values.images.mpsd.pullPolicy | quote }}
             - name: MPSD_AUDIT_LOG
               value: {{ .Values.mpsd.auditLog | quote }}
+            - name: DAEMON_SERVICE_ACCOUNT_NAME
+              value: {{ include "gpu-fractioning.daemonServiceAccountName" . | quote }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect

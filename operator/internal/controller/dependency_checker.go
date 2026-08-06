@@ -6,7 +6,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 
 	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
 )
 
 const (
@@ -32,8 +32,7 @@ const (
 	clusterPolicyErrorCondition = "Error"
 	clusterServiceVersionPrefix = "gpu-operator"
 
-	gpuDriverMajorLabel = "nvidia.com/cuda.driver-version.major"
-	minGPUDriverMajor   = 615
+	minGPUDriverMajor = 615
 )
 
 var clusterPolicyGVK = schema.GroupVersionKind{
@@ -103,8 +102,9 @@ func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha
 	return ready, nil
 }
 
-// GpuDriverDependencyChecker checks the CUDA driver label on a node. It is
-// used only to refine already-unhealthy node conditions with a clearer reason.
+// GpuDriverDependencyChecker checks the gpu-fractioning-owned NVIDIA driver
+// label on a node. It is used only to refine already-unhealthy node conditions
+// with a clearer reason.
 type GpuDriverDependencyChecker struct {
 	reader client.Reader
 }
@@ -226,23 +226,27 @@ func gpuOperatorVersionFailureMessage(rawVersion, source string) string {
 }
 
 func gpuDriverFailureReason(node *corev1.Node) (reason, message string, found bool) {
-	rawMajor := strings.TrimSpace(node.Labels[gpuDriverMajorLabel])
+	// Use the gpu-fractioning-owned label written by the fractiond init container,
+	// not nvidia.com/cuda.driver-version.major. The GPU Operator label can be
+	// missing, stale, or absent entirely when the driver is installed by a managed
+	// cloud image or other non-GPU-Operator mechanism.
+	rawMajor := strings.TrimSpace(node.Labels[driverinfo.NVIDIADriverMajorLabel])
 	if rawMajor == "" {
 		return daemonmgr.ReasonGPUDriverVersionMissing,
-			fmt.Sprintf("CUDA driver major version label %q is missing; minimum supported major version is %d", gpuDriverMajorLabel, minGPUDriverMajor),
+			fmt.Sprintf("NVIDIA driver major version label %q is missing; minimum supported major version is %d", driverinfo.NVIDIADriverMajorLabel, minGPUDriverMajor),
 			true
 	}
 
-	major, err := strconv.Atoi(rawMajor)
+	major, err := driverinfo.ParseDriverMajorLabel(rawMajor)
 	if err != nil {
 		return daemonmgr.ReasonGPUDriverVersionInvalid,
-			fmt.Sprintf("CUDA driver major version %q from label %q is invalid; minimum supported major version is %d", rawMajor, gpuDriverMajorLabel, minGPUDriverMajor),
+			fmt.Sprintf("NVIDIA driver major version %q from label %q is invalid; minimum supported major version is %d", rawMajor, driverinfo.NVIDIADriverMajorLabel, minGPUDriverMajor),
 			true
 	}
 
 	if major < minGPUDriverMajor {
 		return daemonmgr.ReasonGPUDriverVersionUnsupported,
-			fmt.Sprintf("CUDA driver major version %d is below minimum supported major version %d", major, minGPUDriverMajor),
+			fmt.Sprintf("NVIDIA driver major version %d is below minimum supported major version %d", major, minGPUDriverMajor),
 			true
 	}
 

@@ -3,6 +3,7 @@ module github.com/kai-scheduler/kai-gpu-fractioning
 go 1.26.4
 
 require (
+	github.com/NVIDIA/go-nvml v0.13.3-1
 	github.com/containerd/nri v0.12.1
 	github.com/kai-scheduler/kai-gpu-fractioning/pkg v0.0.0
 	google.golang.org/grpc v1.83.0

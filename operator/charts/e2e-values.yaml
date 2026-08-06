@@ -5,12 +5,12 @@ fractioningAgent:
   logLevel: debug
 
 metricsAgent:
-  # k3d has no "nvidia" RuntimeClass; clear it so fractiond+metricsd pods schedule.
-  # metricsd gets NVML via nvml-mock (fake-gpu-operator), not the nvidia runtime.
+  # k3d has no real "nvidia" runtime; clear it so fractiond pods schedule.
+  # driver-labeler and metricsd get NVML from the e2e image's baked-in nvml-mock.
   runtimeClassName: ""
   logLevel: debug
   # Mount the nvml-mock config so the baked-in libnvidia-ml.so reads the
-  # test-controlled process list via MOCK_NVML_CONFIG at nvmlInit time.
+  # test-controlled driver/process state via MOCK_NVML_CONFIG at nvmlInit time.
   volumes:
     - name: nvml-mock-cfg
       configMap:

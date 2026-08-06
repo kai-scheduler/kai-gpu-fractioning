@@ -63,3 +63,14 @@ Service account name.
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Daemon service account name.
+*/}}
+{{- define "gpu-fractioning.daemonServiceAccountName" -}}
+{{- if .Values.daemonServiceAccount.create }}
+{{- default (printf "%s-daemon" (include "gpu-fractioning.fullname" .)) .Values.daemonServiceAccount.name }}
+{{- else }}
+{{- default "default" .Values.daemonServiceAccount.name }}
+{{- end }}
+{{- end }}

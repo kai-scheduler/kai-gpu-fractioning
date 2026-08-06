@@ -115,6 +115,10 @@ func main() {
 	mpsdAuditLog := env.Bool("MPSD_AUDIT_LOG", true)
 	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
 
+	// ── Daemon pod API identity (Helm-injected; used by fractiond init containers) ──
+	daemonServiceAccountName := env.String("DAEMON_SERVICE_ACCOUNT_NAME", "")
+	setupLog.Info("daemon service account", "serviceAccountName", daemonServiceAccountName)
+
 	// ── Register controllers ─────────────────────────────────────────────
 	if err := controller.NewGpuFractioningConfigReconciler(
 		mgr.GetClient(),
@@ -128,6 +132,7 @@ func main() {
 			"metricsd":  metricsdImage,
 			"mpsd":      mpsdImage,
 		},
+		daemonServiceAccountName,
 		mpsdAuditLog,
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpufractioningconfig")

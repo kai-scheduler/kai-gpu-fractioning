@@ -33,10 +33,12 @@ REPO = Path(__file__).resolve().parent.parent
 FIRST_PARTY = "github.com/kai-scheduler/kai-gpu-fractioning"
 OUTPUT = REPO / "THIRD-PARTY.txt"
 
-# (binary name, module directory, main package) — the four images we publish.
+# (binary name, module directory, main package) — the binaries shipped in the
+# images we publish.
 BINARIES = [
     ("operator", "operator", "./cmd/..."),
     ("fractiond", ".", "./fractioning-manager/fractiond/cmd"),
+    ("driver-labeler", ".", "./fractioning-manager/fractiond/cmd/driver-labeler"),
     ("mpsd", ".", "./fractioning-manager/mpsd/cmd"),
     ("metricsd", "fractioning-manager/metricsd", "./cmd"),
 ]
@@ -188,7 +190,10 @@ def render() -> str:
     out.append("Components not listed here, and why:")
     out.append("")
     out.append(
-        "  * NVML (libnvidia-ml.so.1) is dynamically loaded by metricsd at runtime."
+        "  * NVML (libnvidia-ml.so.1) is dynamically loaded by driver-labeler"
+    )
+    out.append(
+        "    and metricsd at runtime."
     )
     out.append(
         "    It is part of the NVIDIA driver, is supplied by the NVIDIA container"

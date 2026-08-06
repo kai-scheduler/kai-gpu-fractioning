@@ -14,7 +14,8 @@ This file is generated. Regenerate it with `make third-party`.
 
 Components not listed here, and why:
 
-  * NVML (libnvidia-ml.so.1) is dynamically loaded by metricsd at runtime.
+  * NVML (libnvidia-ml.so.1) is dynamically loaded by driver-labeler
+    and metricsd at runtime.
     It is part of the NVIDIA driver, is supplied by the NVIDIA container
     runtime, and is not redistributed by this project.
   * nvidia-cuda-mps-control is executed as a separate process by mpsd. It
@@ -36,7 +37,7 @@ cel.dev/expr
 github.com/NVIDIA/go-nvml
     Version:      v0.13.3-1
     Source:       https://github.com/NVIDIA/go-nvml
-    Linked into:  metricsd
+    Linked into:  driver-labeler, metricsd
     License:      LICENSE [text cfc7749b96f6]
 
 github.com/antlr4-go/antlr/v4

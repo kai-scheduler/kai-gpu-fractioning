@@ -34,7 +34,7 @@ LICENSE_IGNORES := \
 # Build
 # -----------------------------------------------------------
 
-.PHONY: build build-operator build-mpsd build-fractiond
+.PHONY: build build-operator build-mpsd build-fractiond build-driver-labeler
 
 build: build-operator build-mpsd build-fractiond
 
@@ -46,6 +46,10 @@ build-mpsd:
 
 build-fractiond:
 	go build -o bin/fractiond ./fractioning-manager/fractiond/cmd
+	CGO_ENABLED=1 go build -o bin/driver-labeler ./fractioning-manager/fractiond/cmd/driver-labeler
+
+build-driver-labeler:
+	CGO_ENABLED=1 go build -o bin/driver-labeler ./fractioning-manager/fractiond/cmd/driver-labeler
 
 # -----------------------------------------------------------
 # Test
@@ -212,9 +216,10 @@ docker-push-fractiond:
 #   make docker-buildx-operator DOCKER_BUILDX_OUTPUT=--load \
 #     DOCKER_BUILD_PLATFORM=linux/amd64                         # single-arch, local
 #
-# NOTE: operator/mpsd/fractiond are CGO_ENABLED=0 and cross-compile natively on the
-# build host; metricsd links NVML via cgo, so its non-native arch is built under
-# qemu emulation (slower).
+# NOTE: operator/mpsd and the main fractiond binary are CGO_ENABLED=0 and
+# cross-compile natively on the build host. The fractiond image also builds the
+# driver-labeler init binary via cgo/NVML, and metricsd links NVML via cgo, so
+# their non-native arch stages run under qemu emulation (slower).
 
 # Comma-separated platform list. GPU nodes may be amd64 or arm64 (e.g. GB200 is
 # arm64), so releases build both — the release workflow passes the full list. The

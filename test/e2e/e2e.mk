@@ -169,17 +169,19 @@ test-e2e-metrics:
 
 # The operator suite drives CR lifecycle, rollouts, fault injection and config
 # propagation, so it needs a longer timeout than the metrics suite (several
-# delete→recreate rollouts + fault-recovery windows). It does NOT need nvml-mock
-# (it asserts operator behavior, not GPU metrics). E2E_GPU_NODE_COUNT primes the
-# preflight.
+# delete→recreate rollouts + fault-recovery windows). The deployed fractiond pod
+# still needs nvml-mock on fake clusters because its driver-labeler init container
+# reads NVML before fractiond starts. E2E_GPU_NODE_COUNT primes the preflight.
 test-e2e-operator:
 	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 40m ./tests/operator/...
 
 # The fractiond suite exercises the fractiond NRI data plane (env/mount injection
-# on annotated workloads). Like the operator suite it asserts daemon behavior,
-# not GPU metrics, so it does NOT need nvml-mock. It creates a handful of
-# workload pods and does one CR re-roll (fail-open), so it's much shorter than
-# the operator suite — a 20m timeout clears it with margin, under the job limit.
+# on annotated workloads). It asserts daemon behavior, not GPU metrics, but the
+# deployed fractiond pod still needs nvml-mock on fake clusters because its
+# driver-labeler init container reads NVML before fractiond starts. It creates a
+# handful of workload pods and does one CR re-roll (fail-open), so it's much
+# shorter than the operator suite — a 20m timeout clears it with margin, under
+# the job limit.
 test-e2e-fractiond:
 	cd test/e2e && E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) E2E_GPU_NODE_COUNT=$(E2E_GPU_WORKER_NODES) E2E_GPU_COUNT_PER_NODE=2 go test -tags e2e -v -timeout 20m ./tests/fractiond/...
 
