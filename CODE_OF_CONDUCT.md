@@ -1,5 +1,10 @@
 # Code of Conduct
 
+kai-gpu-fractioning has adopted the
+[CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md). The text
+below is that Code of Conduct as adopted here; where the two differ, the CNCF Code of Conduct
+governs.
+
 ## Our pledge
 
 We are committed to providing a welcoming, inclusive, and harassment-free
@@ -41,8 +46,9 @@ also applies when an individual is officially representing the project.
 ## Enforcement
 
 Report abusive, harassing, or otherwise unacceptable behavior privately to the
-project maintainers. Reports will be reviewed promptly and fairly, and the
-privacy and security of the reporter will be respected.
+project maintainers (see [MAINTAINERS.md](MAINTAINERS.md)), or to the CNCF Code
+of Conduct Committee at <conduct@cncf.io>. Reports will be reviewed promptly and
+fairly, and the privacy and security of the reporter will be respected.
 
 ## Attribution
 

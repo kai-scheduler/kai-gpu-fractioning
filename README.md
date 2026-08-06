@@ -180,19 +180,49 @@ make validate   # format, vet, and lint
 
 metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-level `make build`; build it with `make -C fractioning-manager/metricsd build`. `make test` and `make docker-build` do cover all four components.
 
+## Roadmap
+
+Planned work lives in the [issue tracker](https://github.com/kai-scheduler/kai-gpu-fractioning/issues);
+[ROADMAP.md](ROADMAP.md) explains where to look and how to propose something.
+
+## Community, discussion and support
+
+- **Questions and discussion** — the `#kai-scheduler` channel on the [CNCF Slack](https://communityinviter.com/apps/cloud-native/cncf).
+- **Bugs and feature requests** — [GitHub issues](https://github.com/kai-scheduler/kai-gpu-fractioning/issues). [SUPPORT.md](SUPPORT.md) lists what to include.
+- **Security vulnerabilities** — never a public issue; use the private channels in [SECURITY.md](SECURITY.md).
+- **Who maintains this** — [MAINTAINERS.md](MAINTAINERS.md), governed as described in [GOVERNANCE.md](GOVERNANCE.md).
+- **Using this in production?** Add yourself to [ADOPTERS.md](ADOPTERS.md).
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) — every commit
 must be signed off under the [Developer Certificate of Origin](CLA.md), and all
-participants are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+participants are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md),
+which adopts the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md).
 
 Security issues go through the private channels in [SECURITY.md](SECURITY.md),
 not public issues.
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Code is licensed under the Apache License 2.0 — see [LICENSE](LICENSE).
+Documentation is licensed under the Creative Commons Attribution 4.0 International
+License — see [LICENSE-docs](LICENSE-docs).
 
 Third-party components statically linked into the shipped binaries are listed in
 [THIRD-PARTY.txt](THIRD-PARTY.txt), which is also included in every image at
 `/THIRD-PARTY.txt`.
+
+---
+
+<div align="center">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/cncf/artwork/refs/heads/main/other/cncf/horizontal/color-whitetext/cncf-color-whitetext.svg">
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/cncf/artwork/refs/heads/main/other/cncf/horizontal/color/cncf-color.svg">
+      <img width="300" alt="Cloud Native Computing Foundation logo" src="https://raw.githubusercontent.com/cncf/artwork/refs/heads/main/other/cncf/horizontal/color-whitetext/cncf-color-whitetext.svg">
+    </picture>
+    <p>kai-gpu-fractioning is part of <a href="https://github.com/kai-scheduler/KAI-Scheduler">KAI Scheduler</a>, a <a href="https://cncf.io">Cloud Native Computing Foundation</a> sandbox project.</p>
+</div>
+
+Copyright Contributors to KAI Scheduler, established as KAI Scheduler a Series of LF Projects, LLC.
+For website terms of use, trademark policy and other project policies please see [lfprojects.org/policies](https://lfprojects.org/policies/).
