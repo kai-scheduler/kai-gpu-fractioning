@@ -182,8 +182,7 @@ metricsd is a separate Go module (cgo/NVML), so it is not covered by the top-lev
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). It tracks the fractioning items on the
-[KAI Scheduler roadmap](https://github.com/kai-scheduler/KAI-Scheduler/blob/main/roadmap.md).
+What the maintainers intend to work on next: [ROADMAP.md](ROADMAP.md).
 
 ## Community, discussion and support
 

@@ -1,9 +1,8 @@
 # Maintainers
 
-kai-gpu-fractioning is part of the [KAI Scheduler](https://github.com/kai-scheduler/KAI-Scheduler)
-project, a [Cloud Native Computing Foundation](https://cncf.io) sandbox project. This file lists
-the maintainers of this repository; see [GOVERNANCE.md](GOVERNANCE.md) for what maintainers do and
-how the group changes.
+These are the maintainers of **kai-gpu-fractioning** — the people who review and merge changes
+here, own its releases, and decide its direction. See [GOVERNANCE.md](GOVERNANCE.md) for what that
+entails and how this list changes.
 
 | Maintainer        | GitHub ID                                                 | Affiliation |
 |-------------------|-----------------------------------------------------------|-------------|
