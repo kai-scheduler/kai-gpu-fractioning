@@ -46,11 +46,11 @@ type config struct {
 	HTTPClient   *http.Client
 }
 
-type preflight struct {
-	cfg      config
-	client   *http.Client
-	endpoint string
-	token    string
+type nodePatchClient struct {
+	nodeName   string
+	httpClient *http.Client
+	endpoint   string
+	token      string
 }
 
 // configFromEnv builds config from the downward API and service environment
@@ -85,7 +85,7 @@ func Run(ctx context.Context, logger *slog.Logger) (int, string, error) {
 }
 
 func run(ctx context.Context, cfg config, logger *slog.Logger) (int, string, error) {
-	pf, err := prepare(cfg)
+	nodeClient, err := newNodePatchClient(cfg)
 	if err != nil {
 		return 0, "", err
 	}
@@ -100,19 +100,19 @@ func run(ctx context.Context, cfg config, logger *slog.Logger) (int, string, err
 		return 0, driverVersion, fmt.Errorf("parse NVIDIA driver version %q: %w", driverVersion, err)
 	}
 
-	if err := patchNodeDriverMajor(ctx, pf, major); err != nil {
+	if err := patchNodeDriverMajor(ctx, nodeClient, major); err != nil {
 		return 0, driverVersion, err
 	}
 
 	return major, driverVersion, nil
 }
 
-func prepare(cfg config) (preflight, error) {
+func newNodePatchClient(cfg config) (nodePatchClient, error) {
 	if cfg.NodeName == "" {
-		return preflight{}, fmt.Errorf("%s is required", envNodeName)
+		return nodePatchClient{}, fmt.Errorf("%s is required", envNodeName)
 	}
 	if cfg.APIServerURL == "" {
-		return preflight{}, fmt.Errorf("kubernetes API server URL is required")
+		return nodePatchClient{}, fmt.Errorf("kubernetes API server URL is required")
 	}
 	if cfg.TokenPath == "" {
 		cfg.TokenPath = defaultServiceAccountTokenPath
@@ -123,23 +123,28 @@ func prepare(cfg config) (preflight, error) {
 
 	endpoint, err := nodePatchURL(cfg.APIServerURL, cfg.NodeName)
 	if err != nil {
-		return preflight{}, err
+		return nodePatchClient{}, err
 	}
 
 	token, err := os.ReadFile(cfg.TokenPath)
 	if err != nil {
-		return preflight{}, fmt.Errorf("read service account token: %w", err)
+		return nodePatchClient{}, fmt.Errorf("read service account token: %w", err)
 	}
 
 	client := cfg.HTTPClient
 	if client == nil {
 		client, err = inClusterHTTPClient(cfg.CAPath)
 		if err != nil {
-			return preflight{}, err
+			return nodePatchClient{}, err
 		}
 	}
 
-	return preflight{cfg: cfg, client: client, endpoint: endpoint, token: strings.TrimSpace(string(token))}, nil
+	return nodePatchClient{
+		nodeName:   cfg.NodeName,
+		httpClient: client,
+		endpoint:   endpoint,
+		token:      strings.TrimSpace(string(token)),
+	}, nil
 }
 
 func driverVersionFromNVML(logger *slog.Logger) (string, error) {
@@ -169,24 +174,22 @@ func driverVersionFromNVML(logger *slog.Logger) (string, error) {
 	return version, nil
 }
 
-func patchNodeDriverMajor(ctx context.Context, pf preflight, major int) error {
+func patchNodeDriverMajor(ctx context.Context, nodeClient nodePatchClient, major int) error {
 	body, err := driverMajorLabelPatch(major)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, pf.endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, nodeClient.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build node label patch request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+pf.token)
-	// Keep this init helper on the root module's existing Kubernetes dependency
-	// surface: use apimachinery's patch type without pulling in client-go.
+	req.Header.Set("Authorization", "Bearer "+nodeClient.token)
 	req.Header.Set("Content-Type", string(types.MergePatchType))
 
-	resp, err := pf.client.Do(req)
+	resp, err := nodeClient.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("patch node %s label %q: %w", pf.cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, err)
+		return fmt.Errorf("patch node %s label %q: %w", nodeClient.nodeName, driverinfo.NVIDIADriverMajorLabel, err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -195,7 +198,7 @@ func patchNodeDriverMajor(ctx context.Context, pf preflight, major int) error {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBytes))
 		return fmt.Errorf("patch node %s label %q: Kubernetes API returned %s: %s",
-			pf.cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, resp.Status, strings.TrimSpace(string(responseBody)))
+			nodeClient.nodeName, driverinfo.NVIDIADriverMajorLabel, resp.Status, strings.TrimSpace(string(responseBody)))
 	}
 
 	return nil
