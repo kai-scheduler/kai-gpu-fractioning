@@ -66,6 +66,8 @@ The fractiond DaemonSet labels each GPU node with the node-local NVIDIA driver m
 
 Driver-version diagnostics intentionally use this gpu-fractioning-owned label rather than the GPU Operator label `nvidia.com/cuda.driver-version.major`. The GPU Operator label can be missing, stale, or unavailable when the NVIDIA driver is installed by another mechanism, such as managed cloud images or custom node images. Reading the actual node-local driver version through NVML keeps the reported reason tied to the driver state that fractiond will run against.
 
+The label is written by a one-shot init container. NVIDIA GPU Operator driver upgrades drain and reschedule the fractiond pod, so the label is refreshed after those supported upgrades. If you change the driver out of band without recreating the pod, delete the fractiond pod on that node so the init container reruns and refreshes the label.
+
 Use v26.7.1 rather than v26.7.0: on v26.7.1 the bundled device-plugin and container-toolkit versions are already the ones GPU fractioning needs, and the driver is the only thing you have to override. On v26.7.0 the device-plugin and toolkit had to be overridden as well.
 
 If a GPU node ends up on an older driver, the `GpuFractioningConfig` `Ready` condition reports it (`GPUDriverVersionUnsupported`) and the node-level daemons are not rolled out there.

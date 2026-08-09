@@ -42,12 +42,12 @@ func TestPatchNodeDriverMajor(t *testing.T) {
 		}, nil
 	})}
 
-	err := PatchNodeDriverMajor(context.Background(), Config{
+	err := patchNodeDriverMajor(context.Background(), mustPrepare(t, config{
 		NodeName:     "node-a",
 		APIServerURL: "https://kubernetes.default",
 		TokenPath:    tokenPath,
 		HTTPClient:   client,
-	}, 615)
+	}), 615)
 	if err != nil {
 		t.Fatalf("PatchNodeDriverMajor() error = %v", err)
 	}
@@ -90,12 +90,12 @@ func TestPatchNodeDriverMajorEscapesNodeName(t *testing.T) {
 		}, nil
 	})}
 
-	err := PatchNodeDriverMajor(context.Background(), Config{
+	err := patchNodeDriverMajor(context.Background(), mustPrepare(t, config{
 		NodeName:     "node/name",
 		APIServerURL: "https://kubernetes.default",
 		TokenPath:    tokenPath,
 		HTTPClient:   client,
-	}, 615)
+	}), 615)
 	if err != nil {
 		t.Fatalf("PatchNodeDriverMajor() error = %v", err)
 	}
@@ -106,16 +106,25 @@ func TestPatchNodeDriverMajorEscapesNodeName(t *testing.T) {
 }
 
 func TestPatchNodeDriverMajorRequiresNodeName(t *testing.T) {
-	err := PatchNodeDriverMajor(context.Background(), Config{APIServerURL: "https://kubernetes.default"}, 615)
+	_, err := prepare(config{APIServerURL: "https://kubernetes.default"})
 	if err == nil {
-		t.Fatal("PatchNodeDriverMajor() error = nil, expected error")
+		t.Fatal("prepare() error = nil, expected error")
 	}
 }
 
-func TestNodeLabelPatchRejectsInvalidMajor(t *testing.T) {
-	if _, err := nodeLabelPatch(0); err == nil {
-		t.Fatal("nodeLabelPatch(0) error = nil, expected error")
+func TestDriverMajorLabelPatchRejectsInvalidMajor(t *testing.T) {
+	if _, err := driverMajorLabelPatch(0); err == nil {
+		t.Fatal("driverMajorLabelPatch(0) error = nil, expected error")
 	}
+}
+
+func mustPrepare(t *testing.T, cfg config) preflight {
+	t.Helper()
+	pf, err := prepare(cfg)
+	if err != nil {
+		t.Fatalf("prepare(): %v", err)
+	}
+	return pf
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

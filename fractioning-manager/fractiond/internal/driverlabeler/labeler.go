@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -35,8 +37,8 @@ const (
 	maxErrorResponseBytes          = 4096
 )
 
-// Config carries the Kubernetes API connection details needed to patch the node.
-type Config struct {
+// config carries the Kubernetes API connection details needed to patch the node.
+type config struct {
 	NodeName     string
 	APIServerURL string
 	TokenPath    string
@@ -44,9 +46,16 @@ type Config struct {
 	HTTPClient   *http.Client
 }
 
-// ConfigFromEnv builds Config from the downward API and service environment
+type preflight struct {
+	cfg      config
+	client   *http.Client
+	endpoint string
+	token    string
+}
+
+// configFromEnv builds config from the downward API and service environment
 // variables that Kubernetes injects into pods.
-func ConfigFromEnv() Config {
+func configFromEnv() config {
 	port := os.Getenv(envKubePortHTTPS)
 	if port == "" {
 		port = os.Getenv(envKubePort)
@@ -61,7 +70,7 @@ func ConfigFromEnv() Config {
 		}).String()
 	}
 
-	return Config{
+	return config{
 		NodeName:     os.Getenv(envNodeName),
 		APIServerURL: apiServerURL,
 		TokenPath:    defaultServiceAccountTokenPath,
@@ -71,8 +80,17 @@ func ConfigFromEnv() Config {
 
 // Run reads the local NVIDIA driver version via NVML and labels the current node
 // with the parsed driver major branch.
-func Run(ctx context.Context, cfg Config) (int, string, error) {
-	driverVersion, err := DriverVersionFromNVML()
+func Run(ctx context.Context, logger *slog.Logger) (int, string, error) {
+	return run(ctx, configFromEnv(), logger)
+}
+
+func run(ctx context.Context, cfg config, logger *slog.Logger) (int, string, error) {
+	pf, err := prepare(cfg)
+	if err != nil {
+		return 0, "", err
+	}
+
+	driverVersion, err := driverVersionFromNVML(logger)
 	if err != nil {
 		return 0, "", err
 	}
@@ -82,45 +100,19 @@ func Run(ctx context.Context, cfg Config) (int, string, error) {
 		return 0, driverVersion, fmt.Errorf("parse NVIDIA driver version %q: %w", driverVersion, err)
 	}
 
-	if err := PatchNodeDriverMajor(ctx, cfg, major); err != nil {
+	if err := patchNodeDriverMajor(ctx, pf, major); err != nil {
 		return 0, driverVersion, err
 	}
 
 	return major, driverVersion, nil
 }
 
-// DriverVersionFromNVML reads the driver version reported by NVML.
-func DriverVersionFromNVML() (string, error) {
-	ret := nvml.Init()
-	if ret != nvml.SUCCESS && ret != nvml.ERROR_ALREADY_INITIALIZED {
-		return "", fmt.Errorf("initialize NVML: %s", ret.Error())
-	}
-	defer func() {
-		ret := nvml.Shutdown()
-		if ret != nvml.SUCCESS && ret != nvml.ERROR_UNINITIALIZED {
-			fmt.Fprintf(os.Stderr, "WARNING: shutdown NVML: %s\n", ret.Error())
-		}
-	}()
-
-	version, ret := nvml.SystemGetDriverVersion()
-	if ret != nvml.SUCCESS {
-		return "", fmt.Errorf("read NVIDIA driver version from NVML: %s", ret.Error())
-	}
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return "", fmt.Errorf("NVML returned an empty NVIDIA driver version")
-	}
-	return version, nil
-}
-
-// PatchNodeDriverMajor writes the gpu-fractioning-owned driver-major label on
-// the current node.
-func PatchNodeDriverMajor(ctx context.Context, cfg Config, major int) error {
+func prepare(cfg config) (preflight, error) {
 	if cfg.NodeName == "" {
-		return fmt.Errorf("%s is required", envNodeName)
+		return preflight{}, fmt.Errorf("%s is required", envNodeName)
 	}
 	if cfg.APIServerURL == "" {
-		return fmt.Errorf("kubernetes API server URL is required")
+		return preflight{}, fmt.Errorf("kubernetes API server URL is required")
 	}
 	if cfg.TokenPath == "" {
 		cfg.TokenPath = defaultServiceAccountTokenPath
@@ -129,39 +121,72 @@ func PatchNodeDriverMajor(ctx context.Context, cfg Config, major int) error {
 		cfg.CAPath = defaultServiceAccountCAPath
 	}
 
+	endpoint, err := nodePatchURL(cfg.APIServerURL, cfg.NodeName)
+	if err != nil {
+		return preflight{}, err
+	}
+
 	token, err := os.ReadFile(cfg.TokenPath)
 	if err != nil {
-		return fmt.Errorf("read service account token: %w", err)
+		return preflight{}, fmt.Errorf("read service account token: %w", err)
 	}
 
 	client := cfg.HTTPClient
 	if client == nil {
 		client, err = inClusterHTTPClient(cfg.CAPath)
 		if err != nil {
-			return err
+			return preflight{}, err
 		}
 	}
 
-	body, err := nodeLabelPatch(major)
+	return preflight{cfg: cfg, client: client, endpoint: endpoint, token: strings.TrimSpace(string(token))}, nil
+}
+
+func driverVersionFromNVML(logger *slog.Logger) (string, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	ret := nvml.Init()
+	if ret != nvml.SUCCESS && ret != nvml.ERROR_ALREADY_INITIALIZED {
+		return "", fmt.Errorf("initialize NVML: %w", ret)
+	}
+	defer func() {
+		ret := nvml.Shutdown()
+		if ret != nvml.SUCCESS && ret != nvml.ERROR_UNINITIALIZED {
+			logger.Warn("shutdown NVML", "error", ret.Error())
+		}
+	}()
+
+	version, ret := nvml.SystemGetDriverVersion()
+	if ret != nvml.SUCCESS {
+		return "", fmt.Errorf("read NVIDIA driver version from NVML: %w", ret)
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return "", fmt.Errorf("NVML returned an empty NVIDIA driver version")
+	}
+	return version, nil
+}
+
+func patchNodeDriverMajor(ctx context.Context, pf preflight, major int) error {
+	body, err := driverMajorLabelPatch(major)
 	if err != nil {
 		return err
 	}
 
-	endpoint, err := nodePatchURL(cfg.APIServerURL, cfg.NodeName)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, pf.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build node label patch request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
-	req.Header.Set("Content-Type", "application/merge-patch+json")
+	req.Header.Set("Authorization", "Bearer "+pf.token)
+	// Keep this init helper on the root module's existing Kubernetes dependency
+	// surface: use apimachinery's patch type without pulling in client-go.
+	req.Header.Set("Content-Type", string(types.MergePatchType))
 
-	resp, err := client.Do(req)
+	resp, err := pf.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("patch node %s label %q: %w", cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, err)
+		return fmt.Errorf("patch node %s label %q: %w", pf.cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -170,13 +195,13 @@ func PatchNodeDriverMajor(ctx context.Context, cfg Config, major int) error {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBytes))
 		return fmt.Errorf("patch node %s label %q: Kubernetes API returned %s: %s",
-			cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, resp.Status, strings.TrimSpace(string(responseBody)))
+			pf.cfg.NodeName, driverinfo.NVIDIADriverMajorLabel, resp.Status, strings.TrimSpace(string(responseBody)))
 	}
 
 	return nil
 }
 
-func nodeLabelPatch(major int) ([]byte, error) {
+func driverMajorLabelPatch(major int) ([]byte, error) {
 	if major <= 0 {
 		return nil, fmt.Errorf("driver major must be positive")
 	}

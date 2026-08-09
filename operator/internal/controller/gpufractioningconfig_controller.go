@@ -5,6 +5,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,17 +29,19 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/fractioningmanager/components/fractiond"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/fractioningmanager/components/mpsd"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/metrics"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
 	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/env"
 )
 
 const (
-	requeueInterval = 30 * time.Second
-	podListPageSize = 500
+	requeueInterval  = 30 * time.Second
+	podListPageSize  = 500
+	nodeListPageSize = 500
 
 	// NodeConditionCleanupFinalizer blocks GpuFractioningConfig deletion until the
-	// gpu-fractioning.nvidia.com/Ready conditions the controller patched onto nodes
-	// are removed. Without it, DaemonSets are garbage-collected via owner
-	// references but nodes keep advertising a stale Ready condition.
+	// gpu-fractioning-owned node state is removed. Without it, DaemonSets are
+	// garbage-collected via owner references but nodes keep advertising stale
+	// Ready conditions and driver-major labels.
 	NodeConditionCleanupFinalizer = "gpu-fractioning.nvidia.com/cleanup-node-conditions"
 )
 
@@ -280,11 +284,12 @@ func (r *GpuFractioningConfigReconciler) buildOptions(config *v1alpha1.GpuFracti
 }
 
 // reconcileDelete handles a GpuFractioningConfig with a non-zero deletionTimestamp:
-// it removes the gpu-fractioning.nvidia.com/Ready condition from the nodes the CR
-// targets, then releases the finalizer so deletion can complete. Any cleanup
-// error is returned with the finalizer still in place, so controller-runtime
-// requeues with backoff until cleanup converges — deletion is never unblocked
-// prematurely, but also never blocked forever by a transient failure.
+// it removes the gpu-fractioning-owned condition and driver-major label from the
+// nodes the CR targets, then releases the finalizer so deletion can complete. Any
+// cleanup error is returned with the finalizer still in place, so
+// controller-runtime requeues with backoff until cleanup converges — deletion is
+// never unblocked prematurely, but also never blocked forever by a transient
+// failure.
 func (r *GpuFractioningConfigReconciler) reconcileDelete(ctx context.Context, config *v1alpha1.GpuFractioningConfig) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -295,14 +300,75 @@ func (r *GpuFractioningConfigReconciler) reconcileDelete(ctx context.Context, co
 	if err := daemonmgr.RemoveNodeConditions(ctx, r.APIReader, r.Client, config.Spec.NodeSelector); err != nil {
 		return ctrl.Result{}, fmt.Errorf("cleaning up node conditions: %w", err)
 	}
+	if err := r.removeDriverMajorLabels(ctx, config.Spec.NodeSelector); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cleaning up driver labels: %w", err)
+	}
 
 	controllerutil.RemoveFinalizer(config, NodeConditionCleanupFinalizer)
 	if err := r.Update(ctx, config); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
 	}
 
-	log.Info("removed node conditions and finalizer, deletion can complete")
+	log.Info("removed node conditions, driver labels and finalizer; deletion can complete")
 	return ctrl.Result{}, nil
+}
+
+func (r *GpuFractioningConfigReconciler) removeDriverMajorLabels(ctx context.Context, nodeSelector map[string]string) error {
+	log := logf.FromContext(ctx)
+
+	patchBytes, err := removeDriverMajorLabelPatch()
+	if err != nil {
+		return err
+	}
+
+	listOpts := []client.ListOption{
+		client.MatchingLabels(nodeSelector),
+		client.Limit(nodeListPageSize),
+	}
+
+	var errs []error
+	for {
+		var nodeList corev1.NodeList
+		if err := r.APIReader.List(ctx, &nodeList, listOpts...); err != nil {
+			return fmt.Errorf("listing nodes: %w", err)
+		}
+
+		for i := range nodeList.Items {
+			node := &nodeList.Items[i]
+			if node.Labels[driverinfo.NVIDIADriverMajorLabel] == "" {
+				continue
+			}
+
+			patchNode := &corev1.Node{}
+			patchNode.Name = node.Name
+			if err := r.Patch(ctx, patchNode, client.RawPatch(types.MergePatchType, patchBytes)); err != nil {
+				log.Error(err, "failed to remove driver label from node", "node", node.Name)
+				errs = append(errs, fmt.Errorf("removing driver label from node %s: %w", node.Name, err))
+			}
+		}
+
+		if nodeList.Continue == "" {
+			break
+		}
+		listOpts = []client.ListOption{
+			client.MatchingLabels(nodeSelector),
+			client.Limit(nodeListPageSize),
+			client.Continue(nodeList.Continue),
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func removeDriverMajorLabelPatch() ([]byte, error) {
+	patch := map[string]any{
+		"metadata": map[string]any{
+			"labels": map[string]any{
+				driverinfo.NVIDIADriverMajorLabel: nil,
+			},
+		},
+	}
+	return json.Marshal(patch)
 }
 
 // patchNodeConditions lists all managed daemon pods (across all daemons) and

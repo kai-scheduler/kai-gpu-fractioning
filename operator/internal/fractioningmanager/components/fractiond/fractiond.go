@@ -119,6 +119,8 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	fractiondContainer, fractiondVolumes := d.buildFractiondContainer(opts.DefaultImages[daemonName])
 	podSpec.Volumes = append(podSpec.Volumes, fractiondVolumes...)
 	if d.metricsSpec != nil {
+		// These volumes are pod-level dependencies for every NVML user in the pod:
+		// metricsd when enabled, and the driver-labeler init container always.
 		podSpec.Volumes = append(podSpec.Volumes, d.metricsSpec.Volumes...)
 	}
 	podSpec.InitContainers = append(podSpec.InitContainers, d.buildDriverLabelerInitContainer(opts.DefaultImages[daemonName]))

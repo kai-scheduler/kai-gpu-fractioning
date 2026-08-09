@@ -22,6 +22,7 @@ import (
 
 	gpufractioningv1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
 )
 
 func TestPodFailureReason(t *testing.T) {
@@ -261,7 +262,11 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		}
 
 		createNode := func(name string, labels map[string]string, withCondition bool) {
-			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}}
+			nodeLabels := make(map[string]string, len(labels))
+			for key, value := range labels {
+				nodeLabels[key] = value
+			}
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: nodeLabels}}
 			ExpectWithOffset(1, k8sClient.Create(ctx, node)).To(Succeed())
 			createdNodes = append(createdNodes, name)
 			if withCondition {
@@ -353,11 +358,20 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		})
 
 		It("removes node conditions and completes deletion", func() {
-			createNode("g4-node-a", selectorLabels, true)
-			createNode("g4-node-b", selectorLabels, true)
+			createNode("g4-node-a", map[string]string{
+				"gpu-fractioning-test/target":     "true",
+				driverinfo.NVIDIADriverMajorLabel: "615",
+			}, true)
+			createNode("g4-node-b", map[string]string{
+				"gpu-fractioning-test/target":     "true",
+				driverinfo.NVIDIADriverMajorLabel: "615",
+			}, true)
 			// Outside the selector: cleanup is selector-scoped, so this node
 			// must not be touched even though it carries the condition.
-			createNode("g4-node-c", map[string]string{"gpu-fractioning-test/other": "true"}, true)
+			createNode("g4-node-c", map[string]string{
+				"gpu-fractioning-test/other":      "true",
+				driverinfo.NVIDIADriverMajorLabel: "615",
+			}, true)
 
 			createConfig(resourceName, selectorLabels)
 			Expect(reconcileName(resourceName)).To(Succeed())
@@ -382,8 +396,16 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			Expect(gpuFractioningConditionOf("g4-node-b")).To(BeNil())
 			Expect(gpuFractioningConditionOf("g4-node-c")).NotTo(BeNil())
 
-			By("preserving unrelated node conditions")
+			By("removing targeted driver labels")
 			node := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "g4-node-a"}, node)).To(Succeed())
+			Expect(node.Labels).NotTo(HaveKey(driverinfo.NVIDIADriverMajorLabel))
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "g4-node-b"}, node)).To(Succeed())
+			Expect(node.Labels).NotTo(HaveKey(driverinfo.NVIDIADriverMajorLabel))
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "g4-node-c"}, node)).To(Succeed())
+			Expect(node.Labels).To(HaveKeyWithValue(driverinfo.NVIDIADriverMajorLabel, "615"))
+
+			By("preserving unrelated node conditions")
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "g4-node-a"}, node)).To(Succeed())
 			Expect(node.Status.Conditions).To(HaveLen(1))
 			Expect(node.Status.Conditions[0].Type).To(Equal(corev1.NodeReady))

@@ -17,7 +17,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	major, version, err := driverlabeler.Run(ctx, driverlabeler.ConfigFromEnv())
+	// This helper is intentionally one-shot. Init-container restart/backoff is the
+	// retry mechanism if NVML or the Kubernetes API is temporarily unavailable.
+	major, version, err := driverlabeler.Run(ctx, slog.Default())
 	if err != nil {
 		slog.Error("failed to label node with NVIDIA driver major version", "err", err)
 		os.Exit(1)
