@@ -37,7 +37,7 @@ func TestCreateContainer(t *testing.T) {
 			containerName:   "trainer",
 			expectedNil:     false,
 			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
-			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "2147", injection.EnvGPUMemoryLimits: "4294"},
+			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "2048", injection.EnvGPUMemoryLimits: "4096"},
 			expectedMount:   true,
 		},
 		{
@@ -48,7 +48,7 @@ func TestCreateContainer(t *testing.T) {
 			containerName:   "main",
 			expectedNil:     false,
 			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
-			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "4294", injection.EnvGPUMemoryLimits: "4294"},
+			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "4096", injection.EnvGPUMemoryLimits: "4096"},
 			expectedMount:   true,
 		},
 		{
@@ -59,7 +59,7 @@ func TestCreateContainer(t *testing.T) {
 			containerName:   "worker",
 			expectedNil:     false,
 			expectedEnvKeys: []string{injection.EnvGPUMemoryRequests, injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
-			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "1073", injection.EnvGPUMemoryLimits: "1073"},
+			expectedEnvVals: map[string]string{injection.EnvGPUMemoryRequests: "1024", injection.EnvGPUMemoryLimits: "1024"},
 			expectedMount:   true,
 		},
 		{
@@ -111,7 +111,7 @@ func TestCreateContainer(t *testing.T) {
 			expectedErr:   true,
 		},
 		{
-			name: "below 1MB returns error (fail-closed)",
+			name: "below minimum returns error (fail-closed)",
 			annotations: map[string]string{
 				"nvidia.com/container.main.gpu-memory.limit": "500Ki",
 			},
@@ -339,7 +339,7 @@ func syncSnapshot() ([]*api.PodSandbox, []*api.Container) {
 		{ // injected → not a violation (limit-only annotation ⇒ request env defaulted too)
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
 			State: api.ContainerState_CONTAINER_RUNNING,
-			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4294", injection.EnvGPUMemoryRequests + "=4294"},
+			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4096", injection.EnvGPUMemoryRequests + "=4096"},
 			Mounts: []*api.Mount{{
 				Source:      configuration.DefaultMPSPipeDirectory,
 				Destination: configuration.DefaultMPSPipeDirectory,
@@ -386,7 +386,7 @@ func TestSynchronizeEnforcesMissingVisibleDevices(t *testing.T) {
 		{
 			Id: "c1", Name: "trainer", PodSandboxId: "p1",
 			State: api.ContainerState_CONTAINER_RUNNING,
-			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4294"},
+			Env:   []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryLimits + "=4096"},
 			Mounts: []*api.Mount{{
 				Source:      configuration.DefaultMPSPipeDirectory,
 				Destination: configuration.DefaultMPSPipeDirectory,

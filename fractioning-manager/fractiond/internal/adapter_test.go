@@ -85,7 +85,7 @@ func TestContainerSkippedWhenMissingID(t *testing.T) {
 
 func TestContainerLimitAnnotationRecordsRequestedMemory(t *testing.T) {
 	// Only the limit annotation is present; the container qualifies and the limit
-	// becomes RequestedMemoryMB (4Gi → 4294 decimal MB).
+	// becomes RequestedMemoryMB (4Gi -> 4096 MB).
 	info, ok := newAdapter().container(
 		gpuMemPod("trainer", "4Gi", ""),
 		&api.Container{Id: "mps-client", Name: "trainer", PodSandboxId: "pod-id"},
@@ -93,14 +93,14 @@ func TestContainerLimitAnnotationRecordsRequestedMemory(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected GPU-fractioning container to be included")
 	}
-	if info.RequestedMemoryMB != 4294 {
-		t.Fatalf("expected RequestedMemoryMB 4294, got %d", info.RequestedMemoryMB)
+	if info.RequestedMemoryMB != 4096 {
+		t.Fatalf("expected RequestedMemoryMB 4096, got %d", info.RequestedMemoryMB)
 	}
 }
 
 func TestContainerRequestAnnotationUsedWhenNoLimit(t *testing.T) {
 	// Only the request annotation is present — it qualifies and provides the
-	// requested memory (2Gi → 2147 decimal MB).
+	// requested memory (2Gi -> 2048 MB).
 	info, ok := newAdapter().container(
 		gpuMemPod("trainer", "", "2Gi"),
 		&api.Container{Id: "mps-client", Name: "trainer", PodSandboxId: "pod-id"},
@@ -108,8 +108,8 @@ func TestContainerRequestAnnotationUsedWhenNoLimit(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected GPU-fractioning container to be included")
 	}
-	if info.RequestedMemoryMB != 2147 {
-		t.Fatalf("expected RequestedMemoryMB 2147 from request, got %d", info.RequestedMemoryMB)
+	if info.RequestedMemoryMB != 2048 {
+		t.Fatalf("expected RequestedMemoryMB 2048 from request, got %d", info.RequestedMemoryMB)
 	}
 }
 
@@ -121,8 +121,8 @@ func TestContainerPrefersLimitOverRequestForMemory(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected GPU-fractioning container to be included")
 	}
-	if info.RequestedMemoryMB != 4294 {
-		t.Fatalf("expected RequestedMemoryMB to prefer the limit (4294), got %d", info.RequestedMemoryMB)
+	if info.RequestedMemoryMB != 4096 {
+		t.Fatalf("expected RequestedMemoryMB to prefer the limit (4096), got %d", info.RequestedMemoryMB)
 	}
 }
 

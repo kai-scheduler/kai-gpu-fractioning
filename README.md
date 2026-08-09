@@ -122,7 +122,7 @@ spec:
 - The container name in the annotation key selects which container the limits apply to; a pod may carry annotations for several containers.
 - **Both `request` and `limit` are optional**, but at least one must be present for the container to be treated as a shared-GPU container. If only one is set, the other defaults to it — so a request-only container is capped at its request rather than left unbounded, and a limit-only container gets its request populated for accounting.
 - **limit** is the hard memory cap the driver enforces. **request** is the workload's declared share; the GPU fraction used to normalize SM-utilization metrics is derived from the limit, falling back to the request.
-- Values are Kubernetes quantities (`8Gi`, `512Mi`, …) and must resolve to at least 1 MB. A malformed value fails container creation unless fractiond is running fail-open.
+- Values are Kubernetes quantities (`8Gi`, `512Mi`, `5G`, …) and must resolve to at least 1 MB. Binary suffixes keep their MiB count (`7680Mi` injects `7680`); decimal suffixes keep decimal scale (`5G` injects `5000`). A malformed value fails container creation unless fractiond is running fail-open.
 - The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); fractiond injects `NVIDIA_VISIBLE_DEVICES` from it.
 
 ## `GpuFractioningConfig` reference

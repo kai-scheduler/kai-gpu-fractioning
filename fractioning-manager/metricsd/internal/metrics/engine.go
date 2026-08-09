@@ -25,10 +25,10 @@ const (
 	// fullGPUFraction is the fallback used when a pod's requested fraction is
 	// unknown, treating it as if it requested the whole GPU.
 	fullGPUFraction = 1
-	// bytesPerDecimalMB converts the decimal-MB memory requests recorded by the
+	// bytesPerMemoryMB converts the memory MB requests recorded by the
 	// fractiond mapper back to bytes so they can be divided by NVML's byte-valued
-	// device total memory. Matches fractiond's annotations.bytesPerDecimalMB.
-	bytesPerDecimalMB = 1_000_000
+	// device total memory. NVIDIA reports/enforces these MB values as MiB in practice.
+	bytesPerMemoryMB = 1024 * 1024
 )
 
 type metricsEngine struct {
@@ -180,7 +180,7 @@ func (s *metricsEngine) setSnapshot(metrics []PodGPUMetric, activePodUIDs map[st
 func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
 	byPodGPU := map[podGPUKey]*PodGPUMetric{}
 	observedPodDevices := map[string]struct{}{}
-	// memByKey sums each pod×GPU's requested GPU memory (decimal MB) across its
+	// memByKey sums each pod×GPU's requested GPU memory (memory MB) across its
 	// containers, deduped by container ID so multiple GPU processes of one
 	// container are not counted more than once. The per-GPU sum is divided by the
 	// device's total memory to derive the requested fraction.
@@ -317,7 +317,7 @@ func normalizedSMUtil(smUtil, fraction float64) float64 {
 	return normalized
 }
 
-// recordRequestedMemory notes containerID's requested GPU memory (decimal MB)
+// recordRequestedMemory notes containerID's requested GPU memory (memory MB)
 // under key, deduped by container ID so repeated observations of the same
 // container (one per GPU process) do not inflate the pod's requested total.
 func recordRequestedMemory(memByKey map[podGPUKey]map[string]int64, key podGPUKey, containerID string, memMB int64) {
@@ -332,7 +332,7 @@ func recordRequestedMemory(memByKey map[podGPUKey]map[string]int64, key podGPUKe
 	byContainer[containerID] = memMB
 }
 
-// sumRequestedMemory totals the per-container requested GPU memory (decimal MB)
+// sumRequestedMemory totals the per-container requested GPU memory (memory MB)
 // recorded for a pod×GPU key.
 func sumRequestedMemory(byContainer map[string]int64) int64 {
 	var sum int64
@@ -355,7 +355,7 @@ func (s *metricsEngine) gpuFraction(gpuIndex int, requestedMB int64) float64 {
 	if totalBytes == 0 {
 		return 0
 	}
-	return (float64(requestedMB) * bytesPerDecimalMB) / float64(totalBytes)
+	return (float64(requestedMB) * bytesPerMemoryMB) / float64(totalBytes)
 }
 
 // rememberDeviceTotalMemory records each device's total memory learned from an

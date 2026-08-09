@@ -30,21 +30,24 @@ const (
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
 
-	// Minimum value in decimal MB that MPS can meaningfully enforce.
+	// Minimum memory MB value that MPS can meaningfully enforce.
 	minDecimalMB = 1
 
-	// bytesPerDecimalMB is the divisor for converting bytes to SI/decimal megabytes.
-	// NVIDIA MPS uses decimal MB (÷ 1,000,000), NOT binary MiB.
+	// bytesPerDecimalMB is the divisor for DecimalSI and bare-byte quantities.
 	bytesPerDecimalMB = 1_000_000
+
+	// bytesPerBinaryMiB is the divisor for converting BinarySI quantities to
+	// the MiB-count MB integer NVIDIA expects.
+	bytesPerBinaryMiB = 1024 * 1024
 )
 
 // GPUMemoryConfig holds the parsed GPU memory request and limit for a container.
-// Values are decimal MB strings suitable for NVIDIA MPS environment variables.
+// Values are memory MB strings suitable for NVIDIA MPS environment variables.
 // Empty string means the annotation was not present.
 //
 // This intentionally does NOT reuse resource.Quantity or a k8s resource struct:
 // the source data comes from pod annotations, not from a k8s resource spec, and
-// the values are already converted to the decimal-MB format that MPS expects.
+// the values are already converted to the memory MB format that MPS expects.
 type GPUMemoryConfig struct {
 	Request string
 	Limit   string
@@ -77,9 +80,9 @@ func (c GPUMemoryConfig) ApplyDefaults() GPUMemoryConfig {
 	return c
 }
 
-// EffectiveMemoryMB returns the container's allocated GPU memory in decimal MB:
+// EffectiveMemoryMB returns the container's allocated GPU memory in memory MB:
 // the limit if set, otherwise the request, otherwise 0. Request and Limit are
-// already decimal-MB strings (see parseToDecimalMB), so this just parses one back
+// already memory MB strings (see parseToMemoryMB), so this just parses one back
 // to an integer. It is the numerator the metrics sidecar uses to derive the GPU
 // fraction (requested memory ÷ device total memory) for SM-util normalization.
 func (c GPUMemoryConfig) EffectiveMemoryMB() int64 {
@@ -111,6 +114,8 @@ func (c GPUMemoryConfig) EffectiveMemoryMB() int64 {
 //	nvidia.com/container.trainer.gpu-memory.limit
 //
 // Values must be valid Kubernetes Quantities (e.g. "4Gi", "2048Mi", "4096M").
+// BinarySI values preserve their MiB count (7680Mi -> "7680"); DecimalSI and
+// bare-byte values are converted to decimal MB.
 // Returns an error if an annotation exists but cannot be parsed, or if the
 // resolved value is less than 1 MB.
 func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, prefix string) (GPUMemoryConfig, error) {
@@ -120,7 +125,7 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 	limitKey := containerMemoryAnnotationKey(prefix, containerName, annotationSuffixLimit)
 
 	if val, ok := annotations[requestKey]; ok {
-		mb, err := parseToDecimalMB(val)
+		mb, err := parseToMemoryMB(val)
 		if err != nil {
 			return config, fmt.Errorf("parsing annotation %q: %w", requestKey, err)
 		}
@@ -128,7 +133,7 @@ func ParseGPUMemoryAnnotations(annotations map[string]string, containerName, pre
 	}
 
 	if val, ok := annotations[limitKey]; ok {
-		mb, err := parseToDecimalMB(val)
+		mb, err := parseToMemoryMB(val)
 		if err != nil {
 			return config, fmt.Errorf("parsing annotation %q: %w", limitKey, err)
 		}
@@ -156,9 +161,11 @@ func ParseVisibleDevices(annotations map[string]string, containerName, prefix st
 	return strings.TrimSpace(annotations[containerDevicesAnnotationKey(prefix, containerName)])
 }
 
-// quantityToDecimalMB converts a Kubernetes Quantity string to decimal megabytes.
+// quantityToMemoryMB converts a Kubernetes Quantity string to the memory MB
+// value NVIDIA expects. BinarySI quantities become a MiB count; DecimalSI and
+// bare-byte quantities become decimal MB.
 // Returns an error if the value is not a valid Quantity.
-func quantityToDecimalMB(value string) (int64, error) {
+func quantityToMemoryMB(value string) (int64, error) {
 	qty, err := resource.ParseQuantity(value)
 	if err != nil {
 		return 0, fmt.Errorf("invalid quantity %q: %w", value, err)
@@ -169,13 +176,17 @@ func quantityToDecimalMB(value string) (int64, error) {
 		return 0, fmt.Errorf("negative quantity: %s", value)
 	}
 
+	if qty.Format == resource.BinarySI {
+		return bytes / bytesPerBinaryMiB, nil
+	}
+
 	return bytes / bytesPerDecimalMB, nil
 }
 
-// parseToDecimalMB converts a Kubernetes Quantity string to a decimal megabyte string.
+// parseToMemoryMB converts a Kubernetes Quantity string to a memory MB string.
 // Validates the result is at least minDecimalMB.
-func parseToDecimalMB(value string) (string, error) {
-	mb, err := quantityToDecimalMB(value)
+func parseToMemoryMB(value string) (string, error) {
+	mb, err := quantityToMemoryMB(value)
 	if err != nil {
 		return "", err
 	}

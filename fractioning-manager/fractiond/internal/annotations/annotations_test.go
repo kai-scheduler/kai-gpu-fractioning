@@ -9,25 +9,29 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/common/configuration"
 )
 
-func TestParseToDecimalMB(t *testing.T) {
+func TestParseToMemoryMB(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
 		expected    string
 		expectedErr bool
 	}{
-		{name: "4Gi to decimal MB", input: "4Gi", expected: "4294"},
-		{name: "2048Mi to decimal MB", input: "2048Mi", expected: "2147"},
-		{name: "1Gi to decimal MB", input: "1Gi", expected: "1073"},
-		{name: "512Mi to decimal MB", input: "512Mi", expected: "536"},
+		{name: "4Gi to memory MB", input: "4Gi", expected: "4096"},
+		{name: "2048Mi to memory MB", input: "2048Mi", expected: "2048"},
+		{name: "7680Mi to memory MB", input: "7680Mi", expected: "7680"},
+		{name: "1Gi to memory MB", input: "1Gi", expected: "1024"},
+		{name: "512Mi to memory MB", input: "512Mi", expected: "512"},
+		{name: "1024Ki minimum valid", input: "1024Ki", expected: "1"},
 		{name: "4096M SI megabytes", input: "4096M", expected: "4096"},
+		{name: "1024M SI megabytes", input: "1024M", expected: "1024"},
 		{name: "500M SI megabytes", input: "500M", expected: "500"},
 		{name: "1G SI gigabyte", input: "1G", expected: "1000"},
+		{name: "5G SI gigabytes", input: "5G", expected: "5000"},
 		{name: "1M minimum valid", input: "1M", expected: "1"},
 		{name: "plain integer 4Gi in bytes", input: "4294967296", expected: "4294"},
-		{name: "below 1MB is error", input: "4096", expectedErr: true},
+		{name: "plain byte value below 1 MB is error", input: "4096", expectedErr: true},
 		{name: "zero is error", input: "0", expectedErr: true},
-		{name: "500Ki below 1MB", input: "500Ki", expectedErr: true},
+		{name: "500Ki below 1MiB", input: "500Ki", expectedErr: true},
 		{name: "empty string", input: "", expectedErr: true},
 		{name: "whitespace is invalid", input: "  2048Mi  ", expectedErr: true},
 		{name: "garbage", input: "notanumber", expectedErr: true},
@@ -35,19 +39,19 @@ func TestParseToDecimalMB(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseToDecimalMB(tt.input)
+			got, err := parseToMemoryMB(tt.input)
 			if tt.expectedErr {
 				if err == nil {
-					t.Errorf("parseToDecimalMB(%q) = %q, expected error", tt.input, got)
+					t.Errorf("parseToMemoryMB(%q) = %q, expected error", tt.input, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseToDecimalMB(%q) error = %v", tt.input, err)
+				t.Errorf("parseToMemoryMB(%q) error = %v", tt.input, err)
 				return
 			}
 			if got != tt.expected {
-				t.Errorf("parseToDecimalMB(%q) = %q, expected %q", tt.input, got, tt.expected)
+				t.Errorf("parseToMemoryMB(%q) = %q, expected %q", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -126,8 +130,8 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			},
 			containerName:   "trainer",
 			prefix:          configuration.DefaultAnnotationPrefix,
-			expectedRequest: "2147",
-			expectedLimit:   "4294",
+			expectedRequest: "2048",
+			expectedLimit:   "4096",
 			expectedEmpty:   false,
 		},
 		{
@@ -148,7 +152,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			},
 			containerName:   "worker",
 			prefix:          configuration.DefaultAnnotationPrefix,
-			expectedRequest: "536",
+			expectedRequest: "512",
 			expectedLimit:   "",
 			expectedEmpty:   false,
 		},
@@ -231,7 +235,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "main",
 			prefix:          "gpu-fractioning.kai.scheduler/container.",
 			expectedRequest: "",
-			expectedLimit:   "4294",
+			expectedLimit:   "4096",
 			expectedEmpty:   false,
 		},
 		{
@@ -242,7 +246,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "main",
 			prefix:          "",
 			expectedRequest: "",
-			expectedLimit:   "4294",
+			expectedLimit:   "4096",
 			expectedEmpty:   false,
 		},
 	}

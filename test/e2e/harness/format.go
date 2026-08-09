@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -20,15 +19,14 @@ import (
 // rather than an empty string.
 const absent = "<absent>"
 
-// ExpectedDecimalMB converts a MiB value (e.g. "2048") to the decimal-MB string
-// fractiond injects: bytes(=mib*1Mi) ÷ 1e6. 2048Mi → "2147", 4096Mi → "4294".
-func ExpectedDecimalMB(t *testing.T, mib string) string {
+// ExpectedMemoryMB returns the memory MB string fractiond injects for e2e
+// annotations built as "<mib>Mi".
+func ExpectedMemoryMB(t *testing.T, mib string) string {
 	t.Helper()
-	q, err := resource.ParseQuantity(mib + "Mi")
-	if err != nil {
+	if _, err := strconv.ParseUint(mib, 10, 64); err != nil {
 		t.Fatalf("parse memory quantity %qMi: %v", mib, err)
 	}
-	return strconv.FormatInt(q.Value()/1_000_000, 10)
+	return mib
 }
 
 // CondStatus/CondReasonOf format a possibly-absent CR condition for error messages.

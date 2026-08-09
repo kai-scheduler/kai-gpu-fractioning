@@ -11,7 +11,7 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/common/mapping/store"
 )
 
-// testDeviceMemMB is the total memory (decimal MB) of the simulated GPU used by
+// testDeviceMemMB is the total memory (memory MB) of the simulated GPU used by
 // the fraction tests: a container requesting N MB on it holds N/testDeviceMemMB.
 const testDeviceMemMB = 10000
 
@@ -165,7 +165,7 @@ func TestMetricsControllerNormalizesSMUtilByRequestedFraction(t *testing.T) {
 			controller := newMetricsController(nil, fakeCgroupResolver{
 				1234: []string{"/kubepods.slice/pod.slice/container.scope/deeper"},
 			}, containerStore, 0, 0, slog.Default())
-			controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerDecimalMB})
+			controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerMemoryMB})
 
 			metrics, unmatched := controller.enrich(context.Background(), []GPUProcessMetric{
 				{PID: 1234, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: tt.smUtil},
@@ -247,7 +247,7 @@ func TestMetricsControllerSumsRequestedMemoryAcrossContainers(t *testing.T) {
 		1002: []string{"/kubepods.slice/pod.slice/container-a.scope/deeper"}, // second process, same container
 		1003: []string{"/kubepods.slice/pod.slice/container-b.scope/deeper"},
 	}, containerStore, 0, 0, slog.Default())
-	controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerDecimalMB})
+	controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerMemoryMB})
 
 	metrics, _ := controller.enrich(context.Background(), []GPUProcessMetric{
 		{PID: 1001, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: 10},
@@ -443,7 +443,7 @@ func TestWindowedSMUtilPrunesDeletedPodSeriesImmediately(t *testing.T) {
 // treats the pod as holding the whole GPU (raw SM util) rather than dividing by
 // zero or reporting a misleading spike.
 func TestGPUFraction(t *testing.T) {
-	const totalBytes = uint64(testDeviceMemMB) * bytesPerDecimalMB // a testDeviceMemMB-sized device
+	const totalBytes = uint64(testDeviceMemMB) * bytesPerMemoryMB // a testDeviceMemMB-sized device
 
 	tests := []struct {
 		name        string

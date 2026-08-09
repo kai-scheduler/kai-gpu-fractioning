@@ -37,7 +37,7 @@ func TestDetectorViolations(t *testing.T) {
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State:  api.ContainerState_CONTAINER_RUNNING,
-				Env:    []string{injection.EnvGPUMemoryLimits + "=4294", injection.EnvGPUMemoryRequests + "=4294"},
+				Env:    []string{injection.EnvGPUMemoryLimits + "=4096", injection.EnvGPUMemoryRequests + "=4096"},
 				Mounts: []*api.Mount{mpsMount()},
 			},
 			wantMissing: []string{"env:" + injection.EnvMPSPipeDirectory},
@@ -59,7 +59,7 @@ func TestDetectorViolations(t *testing.T) {
 				Id: "c", Name: "trainer", PodSandboxId: "p",
 				State: api.ContainerState_CONTAINER_RUNNING,
 				// request env present (defaulted from the limit), limit env missing.
-				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryRequests + "=4294"},
+				Env:    []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory, injection.EnvGPUMemoryRequests + "=4096"},
 				Mounts: []*api.Mount{mpsMount()},
 			},
 			wantMissing: []string{"env:" + injection.EnvGPUMemoryLimits},
@@ -277,10 +277,10 @@ func withVisibleDevices(pod *api.PodSandbox, containerName, value string) *api.P
 func injectedEnv(limit, request bool) []string {
 	env := []string{injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory}
 	if limit {
-		env = append(env, injection.EnvGPUMemoryLimits+"=4294")
+		env = append(env, injection.EnvGPUMemoryLimits+"=4096")
 	}
 	if request {
-		env = append(env, injection.EnvGPUMemoryRequests+"=2147")
+		env = append(env, injection.EnvGPUMemoryRequests+"=2048")
 	}
 	return env
 }
@@ -288,13 +288,13 @@ func injectedEnv(limit, request bool) []string {
 // injectedEqualEnv returns the fully-injected env for a container whose request
 // and limit resolve to the same value — the real post-injection state of a
 // request-only or limit-only pod after ApplyDefaults (both default to the 4Gi /
-// 4294 MB value injectedEnv uses for the limit). Use this instead of
+// 4096 MB value injectedEnv uses for the limit). Use this instead of
 // injectedEnv(true, true) for such pods so fixtures match reality.
 func injectedEqualEnv() []string {
 	return []string{
 		injection.EnvMPSPipeDirectory + "=" + configuration.DefaultMPSPipeDirectory,
-		injection.EnvGPUMemoryLimits + "=4294",
-		injection.EnvGPUMemoryRequests + "=4294",
+		injection.EnvGPUMemoryLimits + "=4096",
+		injection.EnvGPUMemoryRequests + "=4096",
 	}
 }
 
