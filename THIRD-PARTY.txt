@@ -493,7 +493,7 @@ k8s.io/apiextensions-apiserver
 k8s.io/apimachinery
     Version:      v0.36.3
     Source:       https://github.com/kubernetes/apimachinery
-    Linked into:  fractiond, operator
+    Linked into:  driver-labeler, fractiond, operator
     License:      LICENSE [text cfc7749b96f6]
 
 k8s.io/apiserver
