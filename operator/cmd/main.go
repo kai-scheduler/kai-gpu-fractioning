@@ -78,8 +78,9 @@ func main() {
 	// Nodes only in the rare unhealthy/recovery path (node-condition patching)
 	// and does so via the manager's uncached API reader, so it never maintains
 	// cluster-scale Pod/Node informers. Reconciles are driven by GpuFractioningConfig
-	// and DaemonSet events, not pod events. Only DaemonSets and the CR — small,
-	// bounded object sets — are served from the default cache.
+	// and DaemonSet/dependency metadata events, not pod events. Only DaemonSets,
+	// the CR, and metadata for GPU Operator dependency resources — small, bounded
+	// object sets — are served from the default cache.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,

@@ -95,8 +95,8 @@ rules:
     verbs:
       - get
       - list
-  # Read the NVIDIA GPU Operator ClusterPolicy to report GPU Operator
-  # readiness and version compatibility.
+  # Read and watch the NVIDIA GPU Operator ClusterPolicy to report GPU
+  # Operator readiness/version compatibility and react to version changes.
   - apiGroups:
       - nvidia.com
     resources:
@@ -104,15 +104,18 @@ rules:
     verbs:
       - get
       - list
+      - watch
   # On OpenShift, NVIDIA GPU Operator installations may not expose a
   # ClusterPolicy. Fall back to the OLM ClusterServiceVersion to discover the
-  # installed GPU Operator version. CSVs do not provide readiness, only version.
+  # installed GPU Operator version, and watch it for OLM-driven version changes.
+  # CSVs do not provide readiness, only version.
   - apiGroups:
       - operators.coreos.com
     resources:
       - clusterserviceversions
     verbs:
       - list
+      - watch
   # Emit Kubernetes Events to surface reconciliation activity
   # (e.g. "GpuFractioningConfig reconciled successfully").
   - apiGroups:

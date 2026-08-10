@@ -57,10 +57,6 @@ func NewGpuOperatorDependencyChecker(reader client.Reader) GpuOperatorDependency
 }
 
 func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha1.GpuFractioningConfig, ready metav1.Condition) (metav1.Condition, error) {
-	if ready.Status != metav1.ConditionFalse {
-		return ready, nil
-	}
-
 	clusterPolicy, err := c.clusterPolicy(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -70,13 +66,16 @@ func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha
 			fmt.Sprintf("unable to read NVIDIA GPU Operator ClusterPolicy: %v", err)), nil
 	}
 	if clusterPolicy == nil {
-		version, err := c.clusterServiceVersionGPUOperatorVersion(ctx)
+		version, found, err := c.clusterServiceVersionGPUOperatorVersion(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ready, err
 			}
 			return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady,
 				fmt.Sprintf("unable to discover NVIDIA GPU Operator version from ClusterPolicy or ClusterServiceVersion: %v", err)), nil
+		}
+		if !found {
+			return ready, nil
 		}
 		// OpenShift installations may not expose the NVIDIA ClusterPolicy CR.
 		// In that case the OLM ClusterServiceVersion can tell us the installed
@@ -90,13 +89,15 @@ func (c GpuOperatorDependencyChecker) Check(ctx context.Context, config *v1alpha
 		return ready, nil
 	}
 
-	if msg := clusterPolicyReadinessFailureMessage(clusterPolicy); msg != "" {
-		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady, msg), nil
-	}
-
 	version := gpuOperatorVersionFromClusterPolicy(clusterPolicy)
 	if msg := gpuOperatorVersionFailureMessage(version, fmt.Sprintf("ClusterPolicy label %q", clusterPolicyVersionLabel)); msg != "" {
 		return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorVersionUnsupported, msg), nil
+	}
+
+	if ready.Status == metav1.ConditionFalse {
+		if msg := clusterPolicyReadinessFailureMessage(clusterPolicy); msg != "" {
+			return gpuOperatorReadyCondition(config.Generation, daemonmgr.ReasonGPUOperatorNotReady, msg), nil
+		}
 	}
 
 	return ready, nil
@@ -138,7 +139,7 @@ func (c GpuOperatorDependencyChecker) clusterPolicy(ctx context.Context) (*unstr
 	list.SetGroupVersionKind(clusterPolicyGVK.GroupVersion().WithKind(clusterPolicyGVK.Kind + "List"))
 
 	if err := c.reader.List(ctx, list); err != nil {
-		if meta.IsNoMatchError(err) {
+		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -150,25 +151,25 @@ func (c GpuOperatorDependencyChecker) clusterPolicy(ctx context.Context) (*unstr
 	return &list.Items[0], nil
 }
 
-func (c GpuOperatorDependencyChecker) clusterServiceVersionGPUOperatorVersion(ctx context.Context) (string, error) {
+func (c GpuOperatorDependencyChecker) clusterServiceVersionGPUOperatorVersion(ctx context.Context) (version string, found bool, err error) {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(clusterServiceVersionGVK.GroupVersion().WithKind(clusterServiceVersionGVK.Kind + "List"))
 
 	if err := c.reader.List(ctx, list); err != nil {
 		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
-			return "", fmt.Errorf("ClusterServiceVersion API was not found")
+			return "", false, nil
 		}
-		return "", fmt.Errorf("failed to list ClusterServiceVersions: %w", err)
+		return "", false, fmt.Errorf("failed to list ClusterServiceVersions: %w", err)
 	}
 
 	for _, csv := range list.Items {
 		if strings.HasPrefix(csv.GetName(), clusterServiceVersionPrefix) {
 			version, _, _ := unstructured.NestedString(csv.Object, "spec", "version")
-			return strings.TrimSpace(version), nil
+			return strings.TrimSpace(version), true, nil
 		}
 	}
 
-	return "", fmt.Errorf("no gpu-operator ClusterServiceVersion found")
+	return "", false, nil
 }
 
 func clusterPolicyReadinessFailureMessage(clusterPolicy *unstructured.Unstructured) string {
