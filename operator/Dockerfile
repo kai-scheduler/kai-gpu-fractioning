@@ -30,7 +30,7 @@ RUN cd operator && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-am
 # NVIDIA-approved distroless base pulled from NGC (OSRB requires an approved
 # NVIDIA base container; gcr.io/distroless is not one). Adds no OS packages of
 # our own — the image is the base plus the static manager binary.
-FROM nvcr.io/nvidia/distroless/go:v4.0.8
+FROM nvcr.io/nvidia/distroless/go:v4.0.9
 WORKDIR /
 COPY --from=builder /workspace/operator/manager .
 # Attribution for the third-party code statically linked into the binary.
