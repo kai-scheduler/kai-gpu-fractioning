@@ -1,0 +1,76 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Validate PR Issue References
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Open issue reference
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Require at least one existing open issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const body = (context.payload.pull_request.body || '')
+              .replace(/<!--[\s\S]*?-->/g, '');
+            const numbers = [...new Set(
+              [...body.matchAll(/(?:^|[\s(])#([1-9]\d*)\b/gm)].map((match) => Number(match[1]))
+            )];
+
+            if (numbers.length === 0) {
+              core.setFailed(
+                'Every ready pull request must reference an existing open issue in this repository. ' +
+                'Use `Fixes #123` when the pull request should close the issue, or `Refs #123` ' +
+                'when the issue should remain open.'
+              );
+              return;
+            }
+
+            const failures = [];
+            for (const issueNumber of numbers) {
+              try {
+                const response = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                });
+
+                if (response.data.pull_request) {
+                  failures.push(`#${issueNumber} is a pull request, not an issue`);
+                  continue;
+                }
+                if (response.data.state !== 'open') {
+                  failures.push(`#${issueNumber} is closed`);
+                  continue;
+                }
+
+                core.info(`Validated open issue #${issueNumber}.`);
+                return;
+              } catch (error) {
+                if (error.status === 404) {
+                  failures.push(`#${issueNumber} does not exist`);
+                  continue;
+                }
+                throw error;
+              }
+            }
+
+            core.setFailed(
+              `None of the referenced numbers is an existing open issue: ${failures.join('; ')}. ` +
+              'Use `Fixes #123` or `Refs #123` to reference an open issue in this repository.'
+            );

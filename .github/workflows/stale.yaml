@@ -1,0 +1,48 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Stale Issues
+
+on:
+  schedule:
+    - cron: "21 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Log intended changes without modifying issues
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  stale:
+    name: Apply 90+30 issue policy
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      issues: write
+    steps:
+      - name: Process inactive issues
+        uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-issue-stale: 90
+          days-before-issue-close: 30
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          stale-issue-label: lifecycle/stale
+          exempt-issue-labels: lifecycle/frozen
+          stale-issue-message: >-
+            This issue has had no activity for 90 days and is now marked stale.
+            It will close automatically after another 30 days without activity.
+            A maintainer may add `lifecycle/frozen` to exempt it from this policy.
+          close-issue-message: >-
+            This issue was closed automatically after 120 days without activity.
+            If the problem is still relevant, open a new issue with current details.
+          close-issue-reason: not_planned
+          remove-issue-stale-when-updated: true
+          operations-per-run: 1000
+          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

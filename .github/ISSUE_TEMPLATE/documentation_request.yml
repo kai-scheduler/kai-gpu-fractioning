@@ -1,0 +1,76 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Documentation request or correction
+description: Request new documentation or report unclear, incorrect, or outdated content
+title: "[Docs]: "
+labels:
+  - kind/documentation
+  - triage/needs-triage
+body:
+  - type: dropdown
+    id: request-type
+    attributes:
+      label: Request type
+      options:
+        - Incorrect documentation
+        - Outdated documentation
+        - Unclear documentation
+        - Missing documentation
+        - New example or tutorial
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link to the affected page or file when one exists.
+      placeholder: https://github.com/kai-scheduler/kai-gpu-fractioning/blob/main/README.md
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Installation and Helm chart
+        - Operator and API
+        - fractiond
+        - metricsd
+        - mpsd
+        - Development and contribution
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current documentation
+      description: Explain what is missing, incorrect, outdated, or unclear.
+    validations:
+      required: true
+
+  - type: textarea
+    id: requested-change
+    attributes:
+      label: Requested change
+      description: Describe the information or correction that should be provided.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add examples, error output, screenshots, or related documentation.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched open and closed issues and did not find a duplicate.
+          required: true
+        - label: I agree to follow this project's Code of Conduct.
+          required: true

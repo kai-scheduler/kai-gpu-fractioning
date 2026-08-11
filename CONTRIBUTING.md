@@ -65,10 +65,16 @@ Scopes: `operator`, `mpsd`, `fractiond`, `fractioning-manager`, `deps`
 ## Pull Requests
 
 - One logical change per PR
+- Every ready PR references at least one existing open issue
+  - Use `Fixes #123` when merging the PR fully resolves and should close the issue
+  - Use `Refs #123` when the PR addresses only part of the issue or the issue should
+    remain open
 - PR title must follow Conventional Commits
 - Every commit is signed off (DCO)
 - All CI checks must pass
 - At least one approval required
+- Use **Request changes** for blocking review feedback; maintainers may also add
+  `do-not-merge/hold` when a PR must remain blocked for a non-review reason
 - Update [CHANGELOG.md](CHANGELOG.md) under `## [Unreleased]` for user-visible
   changes
 

@@ -1,0 +1,25 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Do Not Merge
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  hold:
+    name: Do Not Merge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce maintainer hold
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'do-not-merge/hold') }}
+        run: |
+          echo "The do-not-merge/hold label is present. A maintainer must remove it before merge."
+          exit 1
+      - name: Confirm no hold is present
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'do-not-merge/hold') }}
+        run: echo "No do-not-merge/hold label is present."
