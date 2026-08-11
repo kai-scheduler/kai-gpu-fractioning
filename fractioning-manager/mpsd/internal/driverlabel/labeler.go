@@ -85,7 +85,7 @@ func driverVersionFromNVML(logger *slog.Logger) (string, error) {
 
 func patchNodeDriverMajor(ctx context.Context, nodes corev1client.NodeInterface, nodeName string, major int) error {
 	if nodes == nil {
-		return fmt.Errorf("Kubernetes node client is required")
+		return fmt.Errorf("kubernetes node client is required")
 	}
 	if nodeName == "" {
 		return fmt.Errorf("%s is required", envNodeName)

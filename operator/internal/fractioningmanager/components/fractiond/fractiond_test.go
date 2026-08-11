@@ -529,14 +529,6 @@ func containerByName(t *testing.T, containers []corev1.Container, name string) c
 	return corev1.Container{}
 }
 
-func envMapOf(envVars []corev1.EnvVar) map[string]string {
-	result := make(map[string]string, len(envVars))
-	for _, e := range envVars {
-		result[e.Name] = e.Value
-	}
-	return result
-}
-
 func hasMount(mounts []corev1.VolumeMount, name, path string, readOnly bool) bool {
 	for _, m := range mounts {
 		if m.Name == name && m.MountPath == path && m.ReadOnly == readOnly {
