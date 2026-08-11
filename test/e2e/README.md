@@ -120,11 +120,11 @@ test/e2e/hack/create-cluster.py --skip-fake-gpu-operator   # cluster only, e.g. 
 Requires `k3d`, `kubectl`, `docker`, `helm` (unless `--skip-fake-gpu-operator`),
 and Python 3.9+ on PATH.
 
-The script installs `nvml-mock` by default. The driver-labeler init container
-needs it to read a fake driver version before fractiond starts, and the metrics
-suite uses it to feed metricsd deterministic GPU process state. Pass
-`--skip-gpu-mock` only when iterating on cluster setup pieces that do not deploy
-the gpu-fractioning stack.
+The script installs `nvml-mock` by default. The fake-mps image bakes in the mock
+library so mpsd can read a fake driver version before starting, and the metrics
+suite uses the test-controlled ConfigMap to feed metricsd deterministic GPU
+process state. Pass `--skip-gpu-mock` only when iterating on cluster setup pieces
+that do not deploy the gpu-fractioning stack.
 
 ## Makefile targets
 

@@ -122,9 +122,9 @@ type MetricsAgentSpec struct {
 	// +optional
 	Path string `json:"path,omitempty"`
 
-	// runtimeClassName sets the RuntimeClass for the fractiond pod so the NVIDIA
-	// container runtime injects libnvidia-ml.so (required by the driver-labeler
-	// init container and metricsd).
+	// runtimeClassName sets the RuntimeClass for the fractiond pod when metricsd
+	// is enabled, so the NVIDIA container runtime injects libnvidia-ml.so
+	// (required by metricsd).
 	// Defaults to "nvidia". Set to "" to use the node's default runtime class
 	// (only safe when the default runtime already injects NVIDIA driver libraries).
 	// +optional
@@ -136,9 +136,8 @@ type MetricsAgentSpec struct {
 	// +optional
 	Volumes []corev1.Volume `json:"volumes,omitempty"`
 
-	// volumeMounts are additional volume mounts to add to the driver-labeler init
-	// container and metricsd container. Each entry must reference a volume name
-	// declared in Volumes.
+	// volumeMounts are additional volume mounts to add to the metricsd container.
+	// Each entry must reference a volume name declared in Volumes.
 	// +optional
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 

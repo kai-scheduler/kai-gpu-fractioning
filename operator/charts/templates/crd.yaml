@@ -128,10 +128,10 @@ spec:
                       type: string
                     runtimeClassName:
                       description: >-
-                        runtimeClassName sets the RuntimeClass for the fractiond pod.
-                        Defaults to "nvidia" when unset. Set to "" to use the node
-                        default (only safe when the default runtime already injects
-                        NVIDIA driver libraries).
+                        runtimeClassName sets the RuntimeClass for the fractiond pod
+                        when metricsd is enabled. Defaults to "nvidia" when unset.
+                        Set to "" to use the node default (only safe when the default
+                        runtime already injects NVIDIA driver libraries).
                       type: string
                     volumes:
                       description: volumes are additional volumes to add to the fractiond pod.
@@ -140,7 +140,7 @@ spec:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
                     volumeMounts:
-                      description: volumeMounts are additional volume mounts to add to the driver-labeler init container and metricsd container.
+                      description: volumeMounts are additional volume mounts to add to the metricsd container.
                       type: array
                       items:
                         type: object

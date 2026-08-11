@@ -116,7 +116,7 @@ func main() {
 	mpsdAuditLog := env.Bool("MPSD_AUDIT_LOG", true)
 	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
 
-	// ── Daemon pod API identity (Helm-injected; used by fractiond init containers) ──
+	// ── Daemon pod API identity (Helm-injected; used by mpsd startup labeling) ──
 	daemonServiceAccountName := env.String("DAEMON_SERVICE_ACCOUNT_NAME", "")
 	setupLog.Info("daemon service account", "serviceAccountName", daemonServiceAccountName)
 

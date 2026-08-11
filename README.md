@@ -62,11 +62,11 @@ helm install gpu-operator nvidia/gpu-operator \
   --set driver.version=615.<patch>   # any r615 release
 ```
 
-The fractiond DaemonSet labels each GPU node with the node-local NVIDIA driver major version at startup (`gpu-fractioning.kai.scheduler/nvidia-driver-version.major`) and the dependency check requires major **≥ 615**, so any `r615` release satisfies it.
+The mpsd DaemonSet labels each GPU node with the node-local NVIDIA driver major version at startup (`gpu-fractioning.kai.scheduler/nvidia-driver-version.major`) and the dependency check requires major **>= 615**, so any `r615` release satisfies it.
 
-Driver-version diagnostics intentionally use this gpu-fractioning-owned label rather than the GPU Operator label `nvidia.com/cuda.driver-version.major`. The GPU Operator label can be missing, stale, or unavailable when the NVIDIA driver is installed by another mechanism, such as managed cloud images or custom node images. Reading the actual node-local driver version through NVML keeps the reported reason tied to the driver state that fractiond will run against.
+Driver-version diagnostics intentionally use this gpu-fractioning-owned label rather than the GPU Operator label `nvidia.com/cuda.driver-version.major`. The GPU Operator label can be missing, stale, or unavailable when the NVIDIA driver is installed by another mechanism, such as managed cloud images or custom node images. Reading the actual node-local driver version through NVML keeps the reported reason tied to the driver state that the node daemons run against.
 
-The label is written by a one-shot init container. NVIDIA GPU Operator driver upgrades drain and reschedule the fractiond pod, so the label is refreshed after those supported upgrades. If you change the driver out of band without recreating the pod, delete the fractiond pod on that node so the init container reruns and refreshes the label.
+The label is written by mpsd during startup. NVIDIA GPU Operator driver upgrades drain and reschedule the mpsd pod, so the label is refreshed after those supported upgrades. If you change the driver out of band without recreating the pod, delete the mpsd pod on that node so startup reruns and refreshes the label.
 
 Use v26.7.1 rather than v26.7.0: on v26.7.1 the bundled device-plugin and container-toolkit versions are already the ones GPU fractioning needs, and the driver is the only thing you have to override. On v26.7.0 the device-plugin and toolkit had to be overridden as well.
 
@@ -95,7 +95,7 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 | Value | Default | Purpose |
 |-------|---------|---------|
 | `metricsAgent.enabled` | `true` | run the metricsd metrics sidecar |
-| `metricsAgent.runtimeClassName` | `nvidia` | RuntimeClass for the fractiond pod's NVML users (`driver-labeler`, metricsd) |
+| `metricsAgent.runtimeClassName` | `nvidia` | RuntimeClass for the fractiond pod when metricsd needs NVML |
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
 | `nodeSelector` | `{}` | scheduling constraint for the **controller** Deployment |
@@ -177,7 +177,7 @@ With the Prometheus Operator installed, set `prometheus.enabled=true` to have th
 ## Development
 
 ```sh
-make build      # build the operator, mpsd, fractiond and driver-labeler binaries
+make build      # build the operator, mpsd, and fractiond binaries
 make test       # run unit tests
 make validate   # format, vet, and lint
 ```

@@ -227,7 +227,7 @@ func gpuOperatorVersionFailureMessage(rawVersion, source string) string {
 }
 
 func gpuDriverFailureReason(node *corev1.Node) (reason, message string, found bool) {
-	// Use the gpu-fractioning-owned label written by the fractiond init container,
+	// Use the gpu-fractioning-owned label written by mpsd during startup,
 	// not nvidia.com/cuda.driver-version.major. The GPU Operator label can be
 	// missing, stale, or absent entirely when the driver is installed by a managed
 	// cloud image or other non-GPU-Operator mechanism.

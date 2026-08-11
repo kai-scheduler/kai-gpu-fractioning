@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	// NVIDIADriverMajorLabel is written by the fractiond DaemonSet's node-local
-	// driver-labeler init container after reading the actual driver version via NVML.
+	// NVIDIADriverMajorLabel is written by the mpsd DaemonSet after reading the
+	// node-local driver version via NVML during startup.
 	NVIDIADriverMajorLabel = "gpu-fractioning.kai.scheduler/nvidia-driver-version.major"
 )
 

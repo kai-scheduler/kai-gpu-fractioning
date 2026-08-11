@@ -78,8 +78,8 @@ type GpuFractioningConfigReconciler struct {
 	DefaultImages map[string]daemonmgr.ImageSpec
 
 	// DaemonServiceAccountName is the ServiceAccount assigned to daemon pods that
-	// need limited Kubernetes API access, such as the fractiond driver-labeler init
-	// container patching its own node label.
+	// need limited Kubernetes API access, such as mpsd patching its own node label
+	// during startup.
 	DaemonServiceAccountName string
 
 	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct

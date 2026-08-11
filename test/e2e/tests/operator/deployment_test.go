@@ -190,6 +190,9 @@ func verifyFractiondPodSpec(ctx context.Context, t *testing.T) {
 // and a control-socket readiness probe.
 func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 	ds := h.GetDaemonSet(ctx, t, harness.ComponentMpsd)
+	if ds.Spec.Template.Spec.ServiceAccountName == "" {
+		t.Error("mpsd pod: serviceAccountName is empty")
+	}
 	rc := ds.Spec.Template.Spec.RuntimeClassName
 	if rc == nil || *rc != nvidiaRuntimeClass {
 		t.Errorf("mpsd pod: runtimeClassName = %v, want %q", rc, nvidiaRuntimeClass)
@@ -201,6 +204,15 @@ func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 	if mp.SecurityContext == nil || mp.SecurityContext.Privileged == nil || !*mp.SecurityContext.Privileged {
 		t.Error("mpsd container is not privileged")
 	}
+	if got := envFieldRef(mp.Env, "NODE_NAME"); got != "spec.nodeName" {
+		t.Errorf("mpsd NODE_NAME fieldRef = %q, want spec.nodeName", got)
+	}
+	if got := envValue(mp.Env, "NVIDIA_VISIBLE_DEVICES"); got != "all" {
+		t.Errorf("mpsd NVIDIA_VISIBLE_DEVICES = %q, want all", got)
+	}
+	if got := envValue(mp.Env, "NVIDIA_DRIVER_CAPABILITIES"); got != "compute,utility" {
+		t.Errorf("mpsd NVIDIA_DRIVER_CAPABILITIES = %q, want compute,utility", got)
+	}
 	mounts := daemonset.HostPathMounts(ds, containerMpsd)
 	if !mounts[harness.MPSPipeDir] {
 		t.Errorf("mpsd: missing MPS pipe hostPath mount %s (mounts=%v)", harness.MPSPipeDir, mounts)
@@ -209,6 +221,24 @@ func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 		!containsArg(mp.ReadinessProbe.Exec.Command, mpsControlSocket) {
 		t.Errorf("mpsd: readiness probe is not the control-socket check (probe=%+v)", mp.ReadinessProbe)
 	}
+}
+
+func envValue(env []corev1.EnvVar, name string) string {
+	for _, e := range env {
+		if e.Name == name {
+			return e.Value
+		}
+	}
+	return ""
+}
+
+func envFieldRef(env []corev1.EnvVar, name string) string {
+	for _, e := range env {
+		if e.Name == name && e.ValueFrom != nil && e.ValueFrom.FieldRef != nil {
+			return e.ValueFrom.FieldRef.FieldPath
+		}
+	}
+	return ""
 }
 
 // ReconcileIdempotent — steady-state idempotency: no DaemonSet/CR

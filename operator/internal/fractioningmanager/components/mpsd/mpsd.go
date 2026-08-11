@@ -25,6 +25,9 @@ const (
 	volumeMPSLog  = "mps-log"
 
 	nvidiaRuntimeClass = "nvidia"
+	envNodeName        = "NODE_NAME"
+	envVisibleDevices  = "NVIDIA_VISIBLE_DEVICES"
+	envCapabilities    = "NVIDIA_DRIVER_CAPABILITIES"
 
 	// Resource requests/limits for the mpsd container. See daemonmgr.DaemonResources
 	// for the requests-plus-memory-limit rationale.
@@ -55,8 +58,9 @@ func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog bool) daemonmgr.Manage
 func (d *daemon) Name() string { return daemonName }
 
 // BuildDaemonSet constructs the desired DaemonSet for mpsd.
-// The pod runs privileged with the nvidia runtime class so it has
-// access to GPU devices and the nvidia-cuda-mps-control binary.
+// The pod runs privileged with the nvidia runtime class so it can label the
+// node with the local NVIDIA driver major version via NVML, then start the
+// nvidia-cuda-mps-control binary.
 // Two host paths are mounted:
 //   - The MPS pipe directory, shared with fractiond and GPU workload containers.
 //   - The MPS log directory, for nvidia-cuda-mps-control daemon logs.
@@ -64,6 +68,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result := daemonmgr.BaseDaemonSet(daemonName, opts.Namespace)
 
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
+	result.Spec.Template.Spec.ServiceAccountName = opts.ServiceAccountName
 	result.Spec.Template.Spec.RuntimeClassName = ptr.To(nvidiaRuntimeClass)
 	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
 	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
@@ -72,10 +77,17 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To(d.terminationGraceSeconds())
 
 	container, volumes := d.buildContainer(opts.DefaultImages[daemonName])
-	container.Env = append(container.Env, corev1.EnvVar{
-		Name:  "MPS_MEMACCT_AUDIT_LOG",
-		Value: strconv.FormatBool(d.auditLog),
-	})
+	container.Env = append(container.Env,
+		corev1.EnvVar{
+			Name: envNodeName,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+			},
+		},
+		corev1.EnvVar{Name: envVisibleDevices, Value: "all"},
+		corev1.EnvVar{Name: envCapabilities, Value: "compute,utility"},
+		corev1.EnvVar{Name: "MPS_MEMACCT_AUDIT_LOG", Value: strconv.FormatBool(d.auditLog)},
+	)
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, container)
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)
 

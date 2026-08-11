@@ -9,8 +9,8 @@ metadata:
   labels:
     {{- include "gpu-fractioning.labels" . | nindent 4 }}
 rules:
-  # The fractiond driver-labeler init container patches only its own node's
-  # gpu-fractioning-owned NVIDIA driver-major label.
+  # The mpsd container patches only its own node's gpu-fractioning-owned NVIDIA
+  # driver-major label during startup.
   - apiGroups:
       - ""
     resources:

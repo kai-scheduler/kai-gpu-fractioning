@@ -36,16 +36,16 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	if !spec.HostPID {
 		t.Error("expected HostPID=true")
 	}
-	if spec.ServiceAccountName != "gpu-fractioning-daemon" {
-		t.Errorf("serviceAccountName = %q, expected gpu-fractioning-daemon", spec.ServiceAccountName)
+	if spec.ServiceAccountName != "" {
+		t.Errorf("serviceAccountName = %q, expected empty", spec.ServiceAccountName)
 	}
 
 	// Node selector
 	if spec.NodeSelector == nil || spec.NodeSelector["nvidia.com/gpu.present"] != "true" {
 		t.Errorf("NodeSelector = %v, expected nvidia.com/gpu.present=true", spec.NodeSelector)
 	}
-	if len(spec.InitContainers) != 1 {
-		t.Fatalf("expected 1 init container (driver-labeler), got %d", len(spec.InitContainers))
+	if len(spec.InitContainers) != 0 {
+		t.Fatalf("expected no init containers, got %d", len(spec.InitContainers))
 	}
 
 	// Two containers: fractiond (the NRI plugin) + metricsd (the metrics sidecar).
@@ -143,8 +143,8 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 
 	// Pod must opt into the nvidia RuntimeClass so the NVIDIA container runtime
-	// injects libnvidia-ml.so — without this NVML returns ERROR_LIBRARY_NOT_FOUND
-	// for both the driver-labeler init container and metricsd.
+	// injects libnvidia-ml.so for metricsd; without this NVML returns
+	// ERROR_LIBRARY_NOT_FOUND.
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
 		t.Errorf("runtimeClassName = %v, expected \"nvidia\"", spec.RuntimeClassName)
 	}
@@ -161,47 +161,11 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 	if envMap["NVIDIA_DRIVER_CAPABILITIES"] != "utility" {
 		t.Errorf("NVIDIA_DRIVER_CAPABILITIES = %q, expected \"utility\"", envMap["NVIDIA_DRIVER_CAPABILITIES"])
 	}
-
-	labeler := initContainerByName(t, spec.InitContainers, "driver-labeler")
-	labelerEnv := envMapOf(labeler.Env)
-	if labelerEnv["NVIDIA_VISIBLE_DEVICES"] != "all" {
-		t.Errorf("driver-labeler NVIDIA_VISIBLE_DEVICES = %q, expected \"all\"", labelerEnv["NVIDIA_VISIBLE_DEVICES"])
-	}
-	if labelerEnv["NVIDIA_DRIVER_CAPABILITIES"] != "utility" {
-		t.Errorf("driver-labeler NVIDIA_DRIVER_CAPABILITIES = %q, expected \"utility\"", labelerEnv["NVIDIA_DRIVER_CAPABILITIES"])
-	}
 }
 
-func TestDaemon_BuildDaemonSet_DriverLabelerInitContainer(t *testing.T) {
-	d := NewFractiondDaemon(nil, nil)
-	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
-
-	labeler := initContainerByName(t, spec.InitContainers, "driver-labeler")
-	if labeler.Image != "fake.io/org/fractiond:v0.1.0" {
-		t.Errorf("driver-labeler image = %q, want %q", labeler.Image, "fake.io/org/fractiond:v0.1.0")
-	}
-	if len(labeler.Command) != 1 || labeler.Command[0] != "/driver-labeler" {
-		t.Errorf("driver-labeler command = %v, want [/driver-labeler]", labeler.Command)
-	}
-	if labeler.SecurityContext == nil || labeler.SecurityContext.Privileged == nil || !*labeler.SecurityContext.Privileged {
-		t.Error("expected driver-labeler privileged=true")
-	}
-	assertDaemonResources(t, labeler, driverLabelerMemLimit)
-
-	var nodeNameFieldRef string
-	for _, envVar := range labeler.Env {
-		if envVar.Name == "NODE_NAME" && envVar.ValueFrom != nil && envVar.ValueFrom.FieldRef != nil {
-			nodeNameFieldRef = envVar.ValueFrom.FieldRef.FieldPath
-		}
-	}
-	if nodeNameFieldRef != "spec.nodeName" {
-		t.Errorf("NODE_NAME fieldRef = %q, want spec.nodeName", nodeNameFieldRef)
-	}
-}
-
-func TestDaemon_BuildDaemonSet_DriverLabelerExtraNVMLVolumes(t *testing.T) {
+func TestDaemon_BuildDaemonSet_MetricsExtraNVMLVolumesOnlyWhenMetricsEnabled(t *testing.T) {
 	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{
-		Enabled: false,
+		Enabled: true,
 		Volumes: []corev1.Volume{
 			{
 				Name:         "nvml-config",
@@ -224,9 +188,25 @@ func TestDaemon_BuildDaemonSet_DriverLabelerExtraNVMLVolumes(t *testing.T) {
 		t.Fatalf("expected metricsAgent volume to be available to the pod, got %v", spec.Volumes)
 	}
 
-	labeler := initContainerByName(t, spec.InitContainers, "driver-labeler")
-	if !hasMount(labeler.VolumeMounts, "nvml-config", "/etc/nvml-mock", true) {
-		t.Fatalf("expected driver-labeler to mount metricsAgent volume, got %v", labeler.VolumeMounts)
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+	if !hasMount(metricsd.VolumeMounts, "nvml-config", "/etc/nvml-mock", true) {
+		t.Fatalf("expected metricsd to mount metricsAgent volume, got %v", metricsd.VolumeMounts)
+	}
+
+	d = NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{
+		Enabled: false,
+		Volumes: []corev1.Volume{
+			{
+				Name:         "nvml-config",
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			},
+		},
+	})
+	spec = d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	for _, v := range spec.Volumes {
+		if v.Name == "nvml-config" {
+			t.Fatalf("metricsAgent volume should be absent when metricsd is disabled, got %v", spec.Volumes)
+		}
 	}
 }
 
@@ -278,8 +258,8 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
 
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
-	if len(spec.InitContainers) != 1 {
-		t.Fatalf("expected the driver-labeler init container when metrics disabled, got %d", len(spec.InitContainers))
+	if len(spec.InitContainers) != 0 {
+		t.Fatalf("expected no init containers when metrics disabled, got %d", len(spec.InitContainers))
 	}
 	if len(spec.Containers) != 1 {
 		t.Fatalf("expected only the fractiond container when metrics disabled, got %d", len(spec.Containers))
@@ -287,8 +267,8 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	if spec.Containers[0].Name != "fractiond" {
 		t.Errorf("expected sole container to be fractiond, got %q", spec.Containers[0].Name)
 	}
-	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
-		t.Errorf("runtimeClassName = %v, expected \"nvidia\" for driver-labeler NVML access", spec.RuntimeClassName)
+	if spec.RuntimeClassName != nil {
+		t.Errorf("runtimeClassName = %v, expected nil when only fractiond runs", spec.RuntimeClassName)
 	}
 }
 
@@ -536,17 +516,6 @@ func defaultOpts() daemonmgr.BuildOptions {
 			},
 		},
 	}
-}
-
-func initContainerByName(t *testing.T, containers []corev1.Container, name string) corev1.Container {
-	t.Helper()
-	for _, c := range containers {
-		if c.Name == name {
-			return c
-		}
-	}
-	t.Fatalf("init container %q not found", name)
-	return corev1.Container{}
 }
 
 func containerByName(t *testing.T, containers []corev1.Container, name string) corev1.Container {

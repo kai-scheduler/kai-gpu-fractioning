@@ -1,0 +1,41 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+version: "1.0"
+system:
+  driver_version: "615.43.04"
+  nvml_version: "13.615.43.04"
+  cuda_version: "13.0"
+  cuda_version_major: 13
+  cuda_version_minor: 0
+device_defaults:
+  name: "NVIDIA A100-SXM4-40GB"
+  brand: "nvidia"
+  architecture: "ampere"
+  compute_capability:
+    major: 8
+    minor: 0
+  memory:
+    total_bytes: 42949672960
+    reserved_bytes: 611319808
+    free_bytes: 42338353152
+    used_bytes: 0
+  utilization:
+    gpu: 0
+    memory: 0
+  compute_mode: "default"
+  persistence_mode: "enabled"
+  performance_state: "P0"
+  ecc:
+    mode_current: "enabled"
+  mig:
+    mode_current: "disabled"
+    max_gpu_instances: 7
+  processes: []
+devices:
+  - index: 0
+    uuid: "2881be89-519e-4b30-8d25-b9032893e6f9"
+    pci:
+      bus_id: "0000:07:00.0"
+    minor_number: 0
+    processes: []

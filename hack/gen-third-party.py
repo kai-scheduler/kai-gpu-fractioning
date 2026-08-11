@@ -38,7 +38,6 @@ OUTPUT = REPO / "THIRD-PARTY.txt"
 BINARIES = [
     ("operator", "operator", "./cmd/..."),
     ("fractiond", ".", "./fractioning-manager/fractiond/cmd"),
-    ("driver-labeler", ".", "./fractioning-manager/fractiond/cmd/driver-labeler"),
     ("mpsd", ".", "./fractioning-manager/mpsd/cmd"),
     ("metricsd", "fractioning-manager/metricsd", "./cmd"),
 ]
@@ -190,7 +189,7 @@ def render() -> str:
     out.append("Components not listed here, and why:")
     out.append("")
     out.append(
-        "  * NVML (libnvidia-ml.so.1) is dynamically loaded by driver-labeler"
+        "  * NVML (libnvidia-ml.so.1) is dynamically loaded by mpsd"
     )
     out.append(
         "    and metricsd at runtime."
