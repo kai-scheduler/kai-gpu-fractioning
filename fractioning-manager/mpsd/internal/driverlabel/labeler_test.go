@@ -21,9 +21,7 @@ func TestPatchNodeDriverMajor(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 	})
 
-	err := patchNodeDriverMajor(context.Background(), nodeClient{
-		nodes: clientset.CoreV1().Nodes(),
-	}, "node-a", 615)
+	err := patchNodeDriverMajor(context.Background(), clientset.CoreV1().Nodes(), "node-a", 615)
 	if err != nil {
 		t.Fatalf("PatchNodeDriverMajor() error = %v", err)
 	}
@@ -60,9 +58,7 @@ func TestPatchNodeDriverMajor(t *testing.T) {
 func TestPatchNodeDriverMajorRequiresNodeName(t *testing.T) {
 	clientset := fake.NewSimpleClientset()
 
-	err := patchNodeDriverMajor(context.Background(), nodeClient{
-		nodes: clientset.CoreV1().Nodes(),
-	}, "", 615)
+	err := patchNodeDriverMajor(context.Background(), clientset.CoreV1().Nodes(), "", 615)
 	if err == nil {
 		t.Fatal("PatchNodeDriverMajor() error = nil, expected error")
 	}

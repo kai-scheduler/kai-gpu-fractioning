@@ -128,13 +128,14 @@ spec:
                       type: string
                     runtimeClassName:
                       description: >-
-                        runtimeClassName sets the RuntimeClass for the fractiond pod
-                        when metricsd is enabled. Defaults to "nvidia" when unset.
+                        runtimeClassName sets the RuntimeClass for the fractiond
+                        DaemonSet pod when metricsd is enabled. It does not configure
+                        the separate mpsd DaemonSet. Defaults to "nvidia" when unset.
                         Set to "" to use the node default (only safe when the default
                         runtime already injects NVIDIA driver libraries).
                       type: string
                     volumes:
-                      description: volumes are additional volumes to add to the fractiond pod.
+                      description: volumes are additional volumes to add to the fractiond DaemonSet pod.
                       type: array
                       items:
                         type: object

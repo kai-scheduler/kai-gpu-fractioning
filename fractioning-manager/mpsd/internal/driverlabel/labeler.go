@@ -26,50 +26,17 @@ const (
 	defaultRequestTimeout = 10 * time.Second
 )
 
-type nodePatchClient interface {
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) error
-}
-
-// config carries the Kubernetes API connection details needed to patch the node.
-type config struct {
-	NodeName string
-	Nodes    nodePatchClient
-}
-
 // LabelCurrentNode reads the local NVIDIA driver version via NVML and labels
 // the current node with the parsed driver major branch.
 func LabelCurrentNode(ctx context.Context, logger *slog.Logger) (int, string, error) {
-	cfg, err := configFromEnv()
-	if err != nil {
-		return 0, "", err
-	}
-	return labelCurrentNode(ctx, cfg, logger)
-}
-
-// configFromEnv builds config from the downward API and in-cluster Kubernetes
-// client configuration that Kubernetes injects into pods.
-func configFromEnv() (config, error) {
 	nodeName := os.Getenv(envNodeName)
 	if nodeName == "" {
-		return config{}, fmt.Errorf("%s is required", envNodeName)
-	}
-
-	nodes, err := inClusterNodeClient()
-	if err != nil {
-		return config{}, err
-	}
-	return config{
-		NodeName: nodeName,
-		Nodes:    nodes,
-	}, nil
-}
-
-func labelCurrentNode(ctx context.Context, cfg config, logger *slog.Logger) (int, string, error) {
-	if cfg.NodeName == "" {
 		return 0, "", fmt.Errorf("%s is required", envNodeName)
 	}
-	if cfg.Nodes == nil {
-		return 0, "", fmt.Errorf("Kubernetes node client is required")
+
+	nodes, err := inClusterNodeInterface()
+	if err != nil {
+		return 0, "", err
 	}
 
 	driverVersion, err := driverVersionFromNVML(logger)
@@ -82,7 +49,7 @@ func labelCurrentNode(ctx context.Context, cfg config, logger *slog.Logger) (int
 		return 0, driverVersion, fmt.Errorf("parse NVIDIA driver version %q: %w", driverVersion, err)
 	}
 
-	if err := patchNodeDriverMajor(ctx, cfg.Nodes, cfg.NodeName, major); err != nil {
+	if err := patchNodeDriverMajor(ctx, nodes, nodeName, major); err != nil {
 		return 0, driverVersion, err
 	}
 
@@ -116,7 +83,7 @@ func driverVersionFromNVML(logger *slog.Logger) (string, error) {
 	return version, nil
 }
 
-func patchNodeDriverMajor(ctx context.Context, nodes nodePatchClient, nodeName string, major int) error {
+func patchNodeDriverMajor(ctx context.Context, nodes corev1client.NodeInterface, nodeName string, major int) error {
 	if nodes == nil {
 		return fmt.Errorf("Kubernetes node client is required")
 	}
@@ -129,7 +96,7 @@ func patchNodeDriverMajor(ctx context.Context, nodes nodePatchClient, nodeName s
 		return err
 	}
 
-	if err := nodes.Patch(ctx, nodeName, types.MergePatchType, body, metav1.PatchOptions{}); err != nil {
+	if _, err := nodes.Patch(ctx, nodeName, types.MergePatchType, body, metav1.PatchOptions{}); err != nil {
 		return fmt.Errorf("patch node %s label %q: %w", nodeName, driverinfo.NVIDIADriverMajorLabel, err)
 	}
 	return nil
@@ -150,7 +117,7 @@ func driverMajorLabelPatch(major int) ([]byte, error) {
 	return json.Marshal(patch)
 }
 
-func inClusterNodeClient() (nodePatchClient, error) {
+func inClusterNodeInterface() (corev1client.NodeInterface, error) {
 	restCfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load in-cluster Kubernetes config: %w", err)
@@ -161,14 +128,5 @@ func inClusterNodeClient() (nodePatchClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes CoreV1 client: %w", err)
 	}
-	return nodeClient{nodes: coreClient.Nodes()}, nil
-}
-
-type nodeClient struct {
-	nodes corev1client.NodeInterface
-}
-
-func (c nodeClient) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions, subresources ...string) error {
-	_, err := c.nodes.Patch(ctx, name, pt, data, opts, subresources...)
-	return err
+	return coreClient.Nodes(), nil
 }
