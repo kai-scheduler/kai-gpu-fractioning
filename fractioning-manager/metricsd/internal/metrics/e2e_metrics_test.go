@@ -46,11 +46,11 @@ const (
 	e2eSMUtilPodA uint32 = 30
 	e2eSMUtilPodB uint32 = 50
 
-	// The simulated device's total memory (decimal MB). Each pod requests half of
+	// The simulated device's total memory (MiB). Each pod requests half of
 	// it, so its derived GPU fraction is 0.5.
-	e2eDeviceTotalMemMB = 10000
-	// GPU memory each pod requests (decimal MB) — half the device.
-	e2eRequestedMemoryMB int64 = e2eDeviceTotalMemMB / 2
+	e2eDeviceTotalMemMiB = 10000
+	// GPU memory each pod requests (MiB) — half the device.
+	e2eRequestedMemoryMiB int64 = e2eDeviceTotalMemMiB / 2
 
 	// Each pod requested half of the shared GPU, so normalized SM utilization is
 	// SMUtil ÷ 0.5: pod-a -> 60, pod-b -> 100 (capped).
@@ -103,7 +103,7 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 		Namespace:         e2eNamespace,
 		PodUID:            "uid-pod-a",
 		GPUDevices:        []store.GPUDevice{{Index: e2eGPUIndex}},
-		RequestedMemoryMB: e2eRequestedMemoryMB,
+		RequestedMemoryMiB: e2eRequestedMemoryMiB,
 	}
 	podB := store.ContainerInfo{
 		ContainerID:       "ctr-pod-b",
@@ -112,7 +112,7 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 		Namespace:         e2eNamespace,
 		PodUID:            "uid-pod-b",
 		GPUDevices:        []store.GPUDevice{{Index: e2eGPUIndex}},
-		RequestedMemoryMB: e2eRequestedMemoryMB,
+		RequestedMemoryMiB: e2eRequestedMemoryMiB,
 	}
 
 	pods := &e2ePodSource{
@@ -140,7 +140,7 @@ func twoFractionalPodsFixture(t *testing.T) *Runtime {
 				},
 			},
 			DeviceUUIDs:            map[int]string{e2eGPUIndex: e2eGPUUUID},
-			DeviceTotalMemoryBytes: map[int]uint64{e2eGPUIndex: e2eDeviceTotalMemMB * bytesPerDecimalMB},
+			DeviceTotalMemoryBytes: map[int]uint64{e2eGPUIndex: e2eDeviceTotalMemMiB * bytesPerMiB},
 		},
 	}
 

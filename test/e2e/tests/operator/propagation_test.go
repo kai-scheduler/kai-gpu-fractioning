@@ -80,7 +80,7 @@ func caseCustomAnnotationPrefix(ctx context.Context, t *testing.T) {
 			h.AnnKey(harness.WorkloadContainer, "request"): "9999Mi",
 		})
 		env := h.GetPodEnv(ctx, t, pod, harness.WorkloadContainer)
-		want := harness.ExpectedDecimalMB(t, mib)
+		want := mib
 		if env[harness.EnvGPUMemRequests] != want {
 			t.Errorf("custom-prefix injection: %s = %q, want %q (default-prefix value must be ignored)", harness.EnvGPUMemRequests, env[harness.EnvGPUMemRequests], want)
 		}

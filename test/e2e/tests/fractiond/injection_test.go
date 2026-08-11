@@ -19,13 +19,13 @@ import (
 )
 
 // InjectsMemoryEnv — fractiond injects the GPU-memory env vars and MPS
-// pipe dir into an annotated container (request/limit converted to decimal MB).
+// pipe dir into an annotated container (request/limit normalized to MiB).
 func caseInjectsMemoryEnv(ctx context.Context, t *testing.T) {
 	pod := h.ApplyRunningWorkload(ctx, t, "d1-inject", h.DefaultWorkloadAnnotations())
 	env := h.GetPodEnv(ctx, t, pod, harness.WorkloadContainer)
 
-	wantReq := harness.ExpectedDecimalMB(t, harness.MemRequestMiB)
-	wantLim := harness.ExpectedDecimalMB(t, harness.MemLimitMiB)
+	wantReq := harness.MemRequestMiB
+	wantLim := harness.MemLimitMiB
 	if env[harness.EnvGPUMemRequests] != wantReq {
 		t.Errorf("%s = %q, want %q", harness.EnvGPUMemRequests, env[harness.EnvGPUMemRequests], wantReq)
 	}
@@ -99,8 +99,8 @@ func caseMultiContainerInjection(ctx context.Context, t *testing.T) {
 	}
 	pod := applyRunningMultiContainer(ctx, t, "inject-multi-container", []string{ctrA, ctrB}, annotations)
 
-	wantA := harness.ExpectedDecimalMB(t, memA)
-	wantB := harness.ExpectedDecimalMB(t, memB)
+	wantA := memA
+	wantB := memB
 
 	envA := h.GetPodEnv(ctx, t, pod, ctrA)
 	if envA[harness.EnvGPUMemLimits] != wantA || envA[harness.EnvGPUMemRequests] != wantA {
@@ -136,7 +136,7 @@ func caseSkipsUnannotatedContainer(ctx context.Context, t *testing.T) {
 // is populated.
 func caseRequestOrLimitOnly(ctx context.Context, t *testing.T) {
 	t.Run("request-only", func(t *testing.T) {
-		want := harness.ExpectedDecimalMB(t, harness.MemRequestMiB)
+		want := harness.MemRequestMiB
 		pod := h.ApplyRunningWorkload(ctx, t, "d4-req", map[string]string{
 			h.AnnKey(harness.WorkloadContainer, "request"): harness.MemRequestMiB + "Mi",
 		})
@@ -146,7 +146,7 @@ func caseRequestOrLimitOnly(ctx context.Context, t *testing.T) {
 		}
 	})
 	t.Run("limit-only", func(t *testing.T) {
-		want := harness.ExpectedDecimalMB(t, harness.MemLimitMiB)
+		want := harness.MemLimitMiB
 		pod := h.ApplyRunningWorkload(ctx, t, "d4-lim", map[string]string{
 			h.AnnKey(harness.WorkloadContainer, "limit"): harness.MemLimitMiB + "Mi",
 		})

@@ -41,9 +41,9 @@ type record struct {
 	Namespace     string            `json:"namespace"`
 	PodUID        string            `json:"podUID"`
 	GPUDevices    []store.GPUDevice `json:"gpuDevices"`
-	// RequestedMemoryMB is the container's allocated GPU memory (decimal MB),
-	// used by the metrics sidecar to derive the GPU fraction for SM-util normalization.
-	RequestedMemoryMB int64 `json:"requestedMemoryMB,omitempty"`
+	// RequestedMemoryMiB is the container's allocated GPU memory in MiB, used by
+	// the metrics sidecar to derive the GPU fraction for SM-util normalization.
+	RequestedMemoryMiB int64 `json:"requestedMemoryMiB,omitempty"`
 }
 
 // newRecord projects a store.ContainerInfo onto the minimal on-disk schema. The
@@ -52,12 +52,12 @@ type record struct {
 // extracted from /proc/<pid>/cgroup.
 func newRecord(info store.ContainerInfo) record {
 	return record{
-		SchemaVersion:     schemaVersion,
-		Pod:               info.Pod,
-		Namespace:         info.Namespace,
-		PodUID:            info.PodUID,
-		GPUDevices:        info.GPUDevices,
-		RequestedMemoryMB: info.RequestedMemoryMB,
+		SchemaVersion:      schemaVersion,
+		Pod:                info.Pod,
+		Namespace:          info.Namespace,
+		PodUID:             info.PodUID,
+		GPUDevices:         info.GPUDevices,
+		RequestedMemoryMiB: info.RequestedMemoryMiB,
 	}
 }
 
@@ -67,12 +67,12 @@ func newRecord(info store.ContainerInfo) record {
 // does not need the mapper's cgroup string.
 func (r record) toContainer(containerID string) store.ContainerInfo {
 	return store.ContainerInfo{
-		ContainerID:       containerID,
-		Pod:               r.Pod,
-		Namespace:         r.Namespace,
-		PodUID:            r.PodUID,
-		GPUDevices:        r.GPUDevices,
-		RequestedMemoryMB: r.RequestedMemoryMB,
+		ContainerID:        containerID,
+		Pod:                r.Pod,
+		Namespace:          r.Namespace,
+		PodUID:             r.PodUID,
+		GPUDevices:         r.GPUDevices,
+		RequestedMemoryMiB: r.RequestedMemoryMiB,
 	}
 }
 
