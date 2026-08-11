@@ -32,6 +32,8 @@ const (
 	clusterPolicyErrorCondition = "Error"
 	clusterServiceVersionPrefix = "gpu-operator"
 
+	// minGPUDriverMajor is the minimum NVIDIA driver major version that supports
+	// the MPS memory and compute limit behavior gpu-fractioning depends on.
 	minGPUDriverMajor = 615
 )
 

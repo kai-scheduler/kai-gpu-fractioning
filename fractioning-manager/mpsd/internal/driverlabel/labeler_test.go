@@ -6,6 +6,8 @@ package driverlabel
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
@@ -21,7 +23,7 @@ func TestPatchNodeDriverMajor(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 	})
 
-	err := patchNodeDriverMajor(context.Background(), clientset.CoreV1().Nodes(), "node-a", 615)
+	err := patchNodeDriverMajorWithClient(context.Background(), clientset.CoreV1().Nodes(), "node-a", 615)
 	if err != nil {
 		t.Fatalf("PatchNodeDriverMajor() error = %v", err)
 	}
@@ -55,19 +57,11 @@ func TestPatchNodeDriverMajor(t *testing.T) {
 	}
 }
 
-func TestPatchNodeDriverMajorRequiresNodeName(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
-
-	err := patchNodeDriverMajor(context.Background(), clientset.CoreV1().Nodes(), "", 615)
+func TestLabelCurrentNodeRequiresNodeName(t *testing.T) {
+	t.Setenv(envNodeName, "")
+	err := LabelCurrentNode(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err == nil {
-		t.Fatal("PatchNodeDriverMajor() error = nil, expected error")
-	}
-}
-
-func TestPatchNodeDriverMajorRequiresNodeClient(t *testing.T) {
-	err := patchNodeDriverMajor(context.Background(), nil, "node-a", 615)
-	if err == nil {
-		t.Fatal("PatchNodeDriverMajor() error = nil, expected error")
+		t.Fatal("LabelCurrentNode() error = nil, expected error")
 	}
 }
 

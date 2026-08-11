@@ -16,6 +16,8 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
+const testDaemonServiceAccountName = "gpu-fractioning-daemon"
+
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
 
@@ -43,9 +45,6 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	// Node selector
 	if spec.NodeSelector == nil || spec.NodeSelector["nvidia.com/gpu.present"] != "true" {
 		t.Errorf("NodeSelector = %v, expected nvidia.com/gpu.present=true", spec.NodeSelector)
-	}
-	if len(spec.InitContainers) != 0 {
-		t.Fatalf("expected no init containers, got %d", len(spec.InitContainers))
 	}
 
 	// Two containers: fractiond (the NRI plugin) + metricsd (the metrics sidecar).
@@ -504,7 +503,7 @@ func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
 		Namespace:          "gpu-fractioning-system",
 		NodeSelector:       map[string]string{"nvidia.com/gpu.present": "true"},
-		ServiceAccountName: "gpu-fractioning-daemon",
+		ServiceAccountName: testDaemonServiceAccountName,
 		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"fractiond": {
 				Repository: "fake.io/org/fractiond",

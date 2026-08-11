@@ -17,7 +17,8 @@ const (
 )
 
 // ParseDriverVersionMajor extracts the major branch from an NVML driver version
-// string such as "615.43.02".
+// string such as "615.43.02". NVIDIA driver versions look like dotted versions,
+// but they are not a semver contract, so we only parse the major branch we need.
 func ParseDriverVersionMajor(version string) (int, error) {
 	version = strings.TrimSpace(version)
 	if version == "" {

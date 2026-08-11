@@ -28,39 +28,38 @@ const (
 
 // LabelCurrentNode reads the local NVIDIA driver version via NVML and labels
 // the current node with the parsed driver major branch.
-func LabelCurrentNode(ctx context.Context, logger *slog.Logger) (int, string, error) {
-	nodeName := os.Getenv(envNodeName)
-	if nodeName == "" {
-		return 0, "", fmt.Errorf("%s is required", envNodeName)
-	}
-
-	nodes, err := inClusterNodeInterface()
-	if err != nil {
-		return 0, "", err
-	}
-
-	driverVersion, err := driverVersionFromNVML(logger)
-	if err != nil {
-		return 0, "", err
-	}
-
-	major, err := driverinfo.ParseDriverVersionMajor(driverVersion)
-	if err != nil {
-		return 0, driverVersion, fmt.Errorf("parse NVIDIA driver version %q: %w", driverVersion, err)
-	}
-
-	if err := patchNodeDriverMajor(ctx, nodes, nodeName, major); err != nil {
-		return 0, driverVersion, err
-	}
-
-	return major, driverVersion, nil
-}
-
-func driverVersionFromNVML(logger *slog.Logger) (string, error) {
+func LabelCurrentNode(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
+	nodeName := os.Getenv(envNodeName)
+	if nodeName == "" {
+		return fmt.Errorf("%s is required", envNodeName)
+	}
+
+	driverVersion, err := driverVersionFromNVML(logger)
+	if err != nil {
+		return err
+	}
+
+	major, err := driverinfo.ParseDriverVersionMajor(driverVersion)
+	if err != nil {
+		return fmt.Errorf("parse NVIDIA driver version %q: %w", driverVersion, err)
+	}
+
+	if err := patchNodeDriverMajor(ctx, nodeName, major); err != nil {
+		return err
+	}
+
+	logger.Info("labeled node with NVIDIA driver major version",
+		"driverVersion", driverVersion,
+		"driverMajor", major,
+	)
+	return nil
+}
+
+func driverVersionFromNVML(logger *slog.Logger) (string, error) {
 	ret := nvml.Init()
 	if ret != nvml.SUCCESS && ret != nvml.ERROR_ALREADY_INITIALIZED {
 		return "", fmt.Errorf("initialize NVML: %w", ret)
@@ -83,20 +82,21 @@ func driverVersionFromNVML(logger *slog.Logger) (string, error) {
 	return version, nil
 }
 
-func patchNodeDriverMajor(ctx context.Context, nodes corev1client.NodeInterface, nodeName string, major int) error {
-	if nodes == nil {
-		return fmt.Errorf("kubernetes node client is required")
+func patchNodeDriverMajor(ctx context.Context, nodeName string, major int) error {
+	client, err := inClusterNodeInterface()
+	if err != nil {
+		return err
 	}
-	if nodeName == "" {
-		return fmt.Errorf("%s is required", envNodeName)
-	}
+	return patchNodeDriverMajorWithClient(ctx, client, nodeName, major)
+}
 
+func patchNodeDriverMajorWithClient(ctx context.Context, client corev1client.NodeInterface, nodeName string, major int) error {
 	body, err := driverMajorLabelPatch(major)
 	if err != nil {
 		return err
 	}
 
-	if _, err := nodes.Patch(ctx, nodeName, types.MergePatchType, body, metav1.PatchOptions{}); err != nil {
+	if _, err := client.Patch(ctx, nodeName, types.MergePatchType, body, metav1.PatchOptions{}); err != nil {
 		return fmt.Errorf("patch node %s label %q: %w", nodeName, driverinfo.NVIDIADriverMajorLabel, err)
 	}
 	return nil

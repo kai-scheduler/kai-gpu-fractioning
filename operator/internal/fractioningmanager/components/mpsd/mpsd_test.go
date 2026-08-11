@@ -15,6 +15,8 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
+const testDaemonServiceAccountName = "gpu-fractioning-daemon"
+
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	d := NewMpsdDaemon(nil, true)
 
@@ -33,8 +35,8 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 
 	spec := ds.Spec.Template.Spec
 
-	if spec.ServiceAccountName != "gpu-fractioning-daemon" {
-		t.Errorf("serviceAccountName = %q, expected gpu-fractioning-daemon", spec.ServiceAccountName)
+	if spec.ServiceAccountName != testDaemonServiceAccountName {
+		t.Errorf("serviceAccountName = %q, expected %s", spec.ServiceAccountName, testDaemonServiceAccountName)
 	}
 
 	// RuntimeClassName
@@ -233,7 +235,7 @@ func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
 		Namespace:          "gpu-fractioning-system",
 		NodeSelector:       map[string]string{"nvidia.com/gpu.present": "true"},
-		ServiceAccountName: "gpu-fractioning-daemon",
+		ServiceAccountName: testDaemonServiceAccountName,
 		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"mpsd": {
 				Repository: "fake.io/org/mpsd",
