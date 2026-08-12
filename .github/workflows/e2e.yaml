@@ -40,7 +40,7 @@ jobs:
     # tests). 20 min cut the last test off mid-run; 25 clears it with margin.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Decide whether this change actually needs the e2e suite. The suite tests
       # the daemon runtime (metricsd/mpsd/fractiond) via the e2e harness + skaffold
@@ -48,7 +48,7 @@ jobs:
       # this — when false, the job is a fast, green no-op.
       - name: Detect e2e-relevant changes
         id: changes
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           filters: |
             e2e:
@@ -141,7 +141,7 @@ jobs:
     # goroutine stacks instead of being killed at the job limit.
     timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The operator suite exercises the controller itself, so operator/** and the
       # chart/API are e2e-relevant here. fractioning-manager/fractiond/** is
@@ -156,7 +156,7 @@ jobs:
       # exit-0-when-irrelevant pattern so this stays cheap.
       - name: Detect e2e-relevant changes
         id: changes
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           filters: |
             e2e:
@@ -230,7 +230,7 @@ jobs:
     # killed at the job limit.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The fractiond suite exercises the fractiond NRI data plane, so only the
       # fractiond module, the API it shares, and the e2e harness/build inputs are
@@ -239,7 +239,7 @@ jobs:
       # pattern as the other jobs so this stays a cheap required check.
       - name: Detect e2e-relevant changes
         id: changes
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
           filters: |
             e2e:
