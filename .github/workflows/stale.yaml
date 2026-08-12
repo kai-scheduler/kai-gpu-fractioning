@@ -45,4 +45,4 @@ jobs:
           close-issue-reason: not_planned
           remove-issue-stale-when-updated: true
           operations-per-run: 1000
-          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}

@@ -7,5 +7,5 @@ contact_links:
     url: https://github.com/kai-scheduler/kai-gpu-fractioning/discussions
     about: Ask usage and support questions in GitHub Discussions.
   - name: Report a security vulnerability
-    url: https://github.com/kai-scheduler/kai-gpu-fractioning/security/advisories/new
-    about: Submit a private vulnerability report; review SECURITY.md first and do not open a public issue.
+    url: https://github.com/kai-scheduler/kai-gpu-fractioning/security/policy
+    about: Review the private reporting options in SECURITY.md; do not open a public issue.

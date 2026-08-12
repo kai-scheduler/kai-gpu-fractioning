@@ -29,7 +29,7 @@ jobs:
             const body = (context.payload.pull_request.body || '')
               .replace(/<!--[\s\S]*?-->/g, '');
             const numbers = [...new Set(
-              [...body.matchAll(/(?:^|[\s(])#([1-9]\d*)\b/gm)].map((match) => Number(match[1]))
+              [...body.matchAll(/(?:^|[\s([])#([1-9]\d*)\b/gm)].map((match) => Number(match[1]))
             )];
 
             if (numbers.length === 0) {
