@@ -15,6 +15,8 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
+const testDaemonServiceAccountName = "gpu-fractioning-daemon"
+
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	d := NewMpsdDaemon(nil, true)
 
@@ -32,6 +34,10 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	}
 
 	spec := ds.Spec.Template.Spec
+
+	if spec.ServiceAccountName != testDaemonServiceAccountName {
+		t.Errorf("serviceAccountName = %q, expected %s", spec.ServiceAccountName, testDaemonServiceAccountName)
+	}
 
 	// RuntimeClassName
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
@@ -129,6 +135,15 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	if got := envValue(ctr.Env, "MPS_MEMACCT_AUDIT_LOG"); got != "true" {
 		t.Errorf("MPS_MEMACCT_AUDIT_LOG env = %q, want %q", got, "true")
 	}
+	if got := envFieldRef(ctr.Env, "NODE_NAME"); got != "spec.nodeName" {
+		t.Errorf("NODE_NAME fieldRef = %q, want spec.nodeName", got)
+	}
+	if got := envValue(ctr.Env, "NVIDIA_VISIBLE_DEVICES"); got != "all" {
+		t.Errorf("NVIDIA_VISIBLE_DEVICES env = %q, want %q", got, "all")
+	}
+	if got := envValue(ctr.Env, "NVIDIA_DRIVER_CAPABILITIES"); got != "compute,utility" {
+		t.Errorf("NVIDIA_DRIVER_CAPABILITIES env = %q, want %q", got, "compute,utility")
+	}
 }
 
 func TestDaemon_BuildDaemonSet_AuditLogDisabled(t *testing.T) {
@@ -144,6 +159,15 @@ func envValue(env []corev1.EnvVar, name string) string {
 	for _, e := range env {
 		if e.Name == name {
 			return e.Value
+		}
+	}
+	return ""
+}
+
+func envFieldRef(env []corev1.EnvVar, name string) string {
+	for _, e := range env {
+		if e.Name == name && e.ValueFrom != nil && e.ValueFrom.FieldRef != nil {
+			return e.ValueFrom.FieldRef.FieldPath
 		}
 	}
 	return ""
@@ -209,8 +233,9 @@ func TestDaemon_BuildDaemonSet_TerminationGrace(t *testing.T) {
 
 func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
-		Namespace:    "gpu-fractioning-system",
-		NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
+		Namespace:          "gpu-fractioning-system",
+		NodeSelector:       map[string]string{"nvidia.com/gpu.present": "true"},
+		ServiceAccountName: testDaemonServiceAccountName,
 		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"mpsd": {
 				Repository: "fake.io/org/mpsd",

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -11,27 +12,50 @@
 #
 # Build from the REPO ROOT (context must include go.mod, pkg/, fractioning-manager/, hack/):
 #   docker build -f hack/fake-mps/Dockerfile -t <name>:<tag> .
-FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS builder
+FROM --platform=$TARGETPLATFORM golang:1.26.4-bookworm AS mpsd-builder
+ARG TARGETOS=linux
 ARG TARGETARCH
 WORKDIR /workspace
 
-# Real mpsd supervisor (identical build to fractioning-manager/mpsd/build/Dockerfile).
+# Real mpsd supervisor (same code as fractioning-manager/mpsd/build/Dockerfile).
 # pkg/ is copied before `go mod download` because the root go.mod has
 # `replace github.com/kai-scheduler/kai-gpu-fractioning/pkg => ./pkg`.
 COPY go.mod go.sum ./
 COPY pkg/ pkg/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY fractioning-manager/common/ fractioning-manager/common/
 COPY fractioning-manager/mpsd/ fractioning-manager/mpsd/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./fractioning-manager/mpsd/cmd
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath -ldflags="-s -w" -o /mpsd ./fractioning-manager/mpsd/cmd
 
 # Fake nvidia-cuda-mps-control — standalone std-lib-only module (hack/fake-mps).
+FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS fake-builder
+ARG TARGETOS=linux
+ARG TARGETARCH
 COPY hack/fake-mps/ /fake-mps-src/
 RUN cd /fake-mps-src && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GOTOOLCHAIN=local go build -o /fake-mps .
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOTOOLCHAIN=local go build \
+    -trimpath -ldflags="-s -w" -o /fake-mps .
 
-# Runtime: alpine's busybox provides `test` (supports -S) for the readiness probe.
-FROM alpine:3.20
-COPY --from=builder /mpsd /usr/local/bin/mpsd
-COPY --from=builder /fake-mps /usr/bin/nvidia-cuda-mps-control
+# Extract libnvidia-ml.so from the nvml-mock image so mpsd can read a fake
+# driver version before it starts the fake MPS control binary.
+FROM ghcr.io/nvidia/nvml-mock:latest AS nvml-mock
+RUN cp /usr/local/lib/libnvidia-ml.so.1 /libnvidia-ml.so.1 && \
+    chmod 755 /libnvidia-ml.so.1 && \
+    test -x /libnvidia-ml.so.1
+
+# Runtime: Debian slim provides glibc for the cgo-built mpsd and `test -S` for
+# the readiness/liveness probes.
+FROM debian:bookworm-slim
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV LD_LIBRARY_PATH=/usr/lib/nvml-mock
+ENV MOCK_NVML_CONFIG=/etc/nvml-mock/config.yaml
+
+COPY --from=mpsd-builder /mpsd /usr/local/bin/mpsd
+COPY --from=fake-builder /fake-mps /usr/bin/nvidia-cuda-mps-control
+COPY --from=nvml-mock /libnvidia-ml.so.1 /usr/lib/nvml-mock/libnvidia-ml.so.1
+COPY hack/fake-mps/nvml-mock-config.yaml /etc/nvml-mock/config.yaml
 ENTRYPOINT ["/usr/local/bin/mpsd"]

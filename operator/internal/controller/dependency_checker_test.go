@@ -20,6 +20,7 @@ import (
 
 	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
 )
 
 func TestGpuOperatorDependencyChecker(t *testing.T) {
@@ -303,7 +304,7 @@ func TestGpuDriverDependencyChecker(t *testing.T) {
 		{
 			name:           "not ready condition is enriched when driver version is too old",
 			status:         corev1.ConditionFalse,
-			labels:         map[string]string{gpuDriverMajorLabel: "614"},
+			labels:         map[string]string{driverinfo.NVIDIADriverMajorLabel: "614"},
 			initialReason:  "CrashLoopBackOff",
 			expectedStatus: corev1.ConditionFalse,
 			expectedReason: daemonmgr.ReasonGPUDriverVersionUnsupported,
@@ -311,7 +312,7 @@ func TestGpuDriverDependencyChecker(t *testing.T) {
 		{
 			name:           "not ready condition keeps pod failure when driver version is supported",
 			status:         corev1.ConditionFalse,
-			labels:         map[string]string{gpuDriverMajorLabel: "615"},
+			labels:         map[string]string{driverinfo.NVIDIADriverMajorLabel: "615"},
 			initialReason:  "CrashLoopBackOff",
 			expectedStatus: corev1.ConditionFalse,
 			expectedReason: "CrashLoopBackOff",
@@ -370,25 +371,31 @@ func TestGpuDriverFailureReason(t *testing.T) {
 		},
 		{
 			name:           "invalid label",
-			labels:         map[string]string{gpuDriverMajorLabel: "615.34"},
+			labels:         map[string]string{driverinfo.NVIDIADriverMajorLabel: "615.34"},
 			expectedFound:  true,
 			expectedReason: daemonmgr.ReasonGPUDriverVersionInvalid,
 		},
 		{
 			name:           "too old",
-			labels:         map[string]string{gpuDriverMajorLabel: "614"},
+			labels:         map[string]string{driverinfo.NVIDIADriverMajorLabel: "614"},
 			expectedFound:  true,
 			expectedReason: daemonmgr.ReasonGPUDriverVersionUnsupported,
 		},
 		{
 			name:          "minimum supported",
-			labels:        map[string]string{gpuDriverMajorLabel: "615"},
+			labels:        map[string]string{driverinfo.NVIDIADriverMajorLabel: "615"},
 			expectedFound: false,
 		},
 		{
 			name:          "newer supported",
-			labels:        map[string]string{gpuDriverMajorLabel: "620"},
+			labels:        map[string]string{driverinfo.NVIDIADriverMajorLabel: "620"},
 			expectedFound: false,
+		},
+		{
+			name:           "GPU Operator label is ignored",
+			labels:         map[string]string{"nvidia.com/cuda.driver-version.major": "615"},
+			expectedFound:  true,
+			expectedReason: daemonmgr.ReasonGPUDriverVersionMissing,
 		},
 	}
 

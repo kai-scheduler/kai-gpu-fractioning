@@ -15,6 +15,7 @@ import (
 
 	v1alpha1 "github.com/kai-scheduler/kai-gpu-fractioning/api/v1alpha1"
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
+	"github.com/kai-scheduler/kai-gpu-fractioning/pkg/driverinfo"
 )
 
 func upgradeTestNode(name string, labels map[string]string) *corev1.Node {
@@ -133,5 +134,60 @@ func TestEvaluateDriverUpgrade(t *testing.T) {
 				t.Errorf("evaluateDriverUpgrade = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRemoveDriverMajorLabels(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	targetWithLabel := upgradeTestNode("gpu-a", map[string]string{
+		"nvidia.com/gpu.present":          "true",
+		driverinfo.NVIDIADriverMajorLabel: "615",
+	})
+	targetWithoutLabel := upgradeTestNode("gpu-b", map[string]string{
+		"nvidia.com/gpu.present": "true",
+		"keep":                   "me",
+	})
+	untargetedWithLabel := upgradeTestNode("cpu-a", map[string]string{
+		"nvidia.com/gpu.present":          "false",
+		driverinfo.NVIDIADriverMajorLabel: "615",
+	})
+
+	fc := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(targetWithLabel, targetWithoutLabel, untargetedWithLabel).
+		Build()
+	r := &GpuFractioningConfigReconciler{APIReader: fc, Client: fc}
+
+	if err := r.removeDriverMajorLabels(context.Background(), map[string]string{"nvidia.com/gpu.present": "true"}); err != nil {
+		t.Fatalf("removeDriverMajorLabels: %v", err)
+	}
+
+	var got corev1.Node
+	if err := fc.Get(context.Background(), client.ObjectKey{Name: "gpu-a"}, &got); err != nil {
+		t.Fatalf("get gpu-a: %v", err)
+	}
+	if _, found := got.Labels[driverinfo.NVIDIADriverMajorLabel]; found {
+		t.Fatalf("gpu-a still has driver label: %v", got.Labels)
+	}
+	if got.Labels["nvidia.com/gpu.present"] != "true" {
+		t.Fatalf("gpu-a target label was not preserved: %v", got.Labels)
+	}
+
+	if err := fc.Get(context.Background(), client.ObjectKey{Name: "gpu-b"}, &got); err != nil {
+		t.Fatalf("get gpu-b: %v", err)
+	}
+	if got.Labels["keep"] != "me" {
+		t.Fatalf("gpu-b unrelated label was not preserved: %v", got.Labels)
+	}
+
+	if err := fc.Get(context.Background(), client.ObjectKey{Name: "cpu-a"}, &got); err != nil {
+		t.Fatalf("get cpu-a: %v", err)
+	}
+	if got.Labels[driverinfo.NVIDIADriverMajorLabel] != "615" {
+		t.Fatalf("cpu-a driver label was changed: %v", got.Labels)
 	}
 }

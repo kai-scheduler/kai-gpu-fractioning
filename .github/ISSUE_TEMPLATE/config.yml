@@ -1,0 +1,11 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and support
+    url: https://github.com/kai-scheduler/kai-gpu-fractioning/discussions
+    about: Ask usage and support questions in GitHub Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/kai-scheduler/kai-gpu-fractioning/security/policy
+    about: Review the private reporting options in SECURITY.md; do not open a public issue.

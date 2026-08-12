@@ -11,6 +11,7 @@ import (
 
 	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/common/configuration"
 	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/mpsd/internal"
+	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/mpsd/internal/driverlabel"
 )
 
 func main() {
@@ -37,6 +38,13 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+
+	// Label the node before starting MPS so operator dependency diagnostics use
+	// the driver version mpsd sees locally through NVML.
+	if err := driverlabel.LabelCurrentNode(ctx, logger); err != nil {
+		logger.Error("label node with NVIDIA driver major version", "error", err)
+		os.Exit(1)
+	}
 
 	supervisor := internal.NewSupervisor(internal.SupervisorConfig{
 		MPSBinary:         flags.mpsBinary,

@@ -1,23 +1,28 @@
+# syntax=docker/dockerfile:1.7
 # Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Build stage
-FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder
+# Build mpsd on the TARGET platform: it links go-nvml via cgo, and
+# cross-compiling cgo needs a target cross-toolchain. Running this stage as
+# $TARGETPLATFORM uses the native compiler for that platform (emulated by
+# buildx/qemu when host != target).
+FROM --platform=$TARGETPLATFORM golang:1.26.5-bookworm AS builder
+ARG TARGETOS=linux
 ARG TARGETARCH
 
 WORKDIR /workspace
 
-# Cache dependencies
 COPY go.mod go.sum ./
 COPY pkg/ pkg/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# Copy source
 COPY fractioning-manager/common/ fractioning-manager/common/
 COPY fractioning-manager/mpsd/ fractioning-manager/mpsd/
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./fractioning-manager/mpsd/cmd
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    -trimpath -ldflags="-s -w" -o /mpsd ./fractioning-manager/mpsd/cmd
 
 # Runtime stage — nvidia/cuda base provides nvidia-cuda-mps-control which mpsd
 # needs to exec. The NVIDIA container runtime only injects device access, not
@@ -26,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /mpsd ./fractioning-
 # This is an OSRB-approved NVIDIA base container (the public NVIDIA CUDA images
 # on Docker Hub are explicitly exempt from the "must be pulled from an NVIDIA
 # managed repository" rule). No `apt install` layer is added on top of it, so
-# this image adds no OS packages — only the static mpsd binary.
+# this image adds no OS packages — only the mpsd binary.
 FROM nvidia/cuda:13.3.1-base-ubuntu24.04
 
 COPY --from=builder /mpsd /usr/local/bin/mpsd

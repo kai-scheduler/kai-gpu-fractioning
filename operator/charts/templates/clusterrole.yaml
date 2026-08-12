@@ -66,9 +66,10 @@ rules:
       - update
       - watch
   # Read individual nodes to preserve LastTransitionTime when patching
-  # conditions, and list targeted nodes during finalizer cleanup on CR
-  # deletion. Both go through the uncached API reader, not a cached
-  # list/watch informer, so no "watch" verb.
+  # conditions, list targeted nodes during finalizer cleanup on CR deletion,
+  # and remove the gpu-fractioning-owned driver-major label during that cleanup.
+  # Reads go through the uncached API reader, not a cached list/watch informer,
+  # so no "watch" verb.
   - apiGroups:
       - ""
     resources:
@@ -76,6 +77,7 @@ rules:
     verbs:
       - get
       - list
+      - patch
   # Patch the gpu-fractioning.nvidia.com/Ready condition on GPU nodes.
   - apiGroups:
       - ""

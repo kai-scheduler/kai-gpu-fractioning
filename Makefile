@@ -42,7 +42,7 @@ build-operator:
 	$(MAKE) -C operator build
 
 build-mpsd:
-	go build -o bin/mpsd ./fractioning-manager/mpsd/cmd
+	CGO_ENABLED=1 go build -o bin/mpsd ./fractioning-manager/mpsd/cmd
 
 build-fractiond:
 	go build -o bin/fractiond ./fractioning-manager/fractiond/cmd
@@ -212,9 +212,9 @@ docker-push-fractiond:
 #   make docker-buildx-operator DOCKER_BUILDX_OUTPUT=--load \
 #     DOCKER_BUILD_PLATFORM=linux/amd64                         # single-arch, local
 #
-# NOTE: operator/mpsd/fractiond are CGO_ENABLED=0 and cross-compile natively on the
-# build host; metricsd links NVML via cgo, so its non-native arch is built under
-# qemu emulation (slower).
+# NOTE: operator and fractiond are CGO_ENABLED=0 and cross-compile natively on
+# the build host. mpsd and metricsd link NVML via cgo, so their non-native arch
+# stages run under qemu emulation (slower).
 
 # Comma-separated platform list. GPU nodes may be amd64 or arm64 (e.g. GB200 is
 # arm64), so releases build both — the release workflow passes the full list. The
