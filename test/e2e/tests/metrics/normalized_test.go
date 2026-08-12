@@ -167,7 +167,7 @@ func TestE2E_NormalizedSMUtilIsProportional(t *testing.T) {
 	t.Logf("%s: got %.2f (fraction≈0.5, smUtil=%d)", normMetricName, got, wantSMUtil)
 
 	// Normalized = smUtil / fraction ≈ 40 / 0.5 = 80. Assert a tight band
-	// [75, 90] — wide enough for decimal/binary MB rounding in gpuFraction,
+	// [75, 90] — wide enough for integer MiB rounding in gpuFraction,
 	// tight enough to catch formula errors (e.g. not normalizing, or clamping
 	// when it shouldn't). The 100-cap is not triggered at this injection level.
 	const wantNorm = 80.0

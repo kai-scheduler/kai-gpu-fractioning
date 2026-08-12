@@ -11,9 +11,9 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/common/mapping/store"
 )
 
-// testDeviceMemMB is the total memory (decimal MB) of the simulated GPU used by
-// the fraction tests: a container requesting N MB on it holds N/testDeviceMemMB.
-const testDeviceMemMB = 10000
+// testDeviceMemMiB is the total memory (MiB) of the simulated GPU used by the
+// fraction tests: a container requesting N MiB on it holds N/testDeviceMemMiB.
+const testDeviceMemMiB = 10000
 
 type fakeCgroupResolver map[uint32][]string
 
@@ -147,25 +147,25 @@ func TestMetricsControllerNormalizesSMUtilByRequestedFraction(t *testing.T) {
 		{name: "unknown request still capped at 100", fraction: 0, smUtil: 150, wantNormalized: 100},
 	}
 	// The requested fraction is derived as requested memory ÷ device total memory.
-	// With a testDeviceMemMB-sized device, a container requesting fraction*device
-	// MB yields exactly that fraction.
+	// With a testDeviceMemMiB-sized device, a container requesting
+	// fraction*device MiB yields exactly that fraction.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			containerStore := store.FakeStore{Containers: []store.ContainerInfo{{
-				ContainerID:       "container-id",
-				Container:         "container",
-				Pod:               "pod",
-				Namespace:         "default",
-				PodUID:            "pod-uid",
-				CgroupPath:        "/kubepods.slice/pod.slice/container.scope",
-				GPUDevices:        []store.GPUDevice{{Index: 0}},
-				RequestedMemoryMB: int64(tt.fraction * testDeviceMemMB),
+				ContainerID:        "container-id",
+				Container:          "container",
+				Pod:                "pod",
+				Namespace:          "default",
+				PodUID:             "pod-uid",
+				CgroupPath:         "/kubepods.slice/pod.slice/container.scope",
+				GPUDevices:         []store.GPUDevice{{Index: 0}},
+				RequestedMemoryMiB: int64(tt.fraction * testDeviceMemMiB),
 			}}}
 
 			controller := newMetricsController(nil, fakeCgroupResolver{
 				1234: []string{"/kubepods.slice/pod.slice/container.scope/deeper"},
 			}, containerStore, 0, 0, slog.Default())
-			controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerDecimalMB})
+			controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMiB * bytesPerMiB})
 
 			metrics, unmatched := controller.enrich(context.Background(), []GPUProcessMetric{
 				{PID: 1234, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: tt.smUtil},
@@ -218,27 +218,27 @@ func TestNormalizedSMUtil(t *testing.T) {
 // one fraction, and each container is counted once even when it has multiple GPU
 // processes.
 func TestMetricsControllerSumsRequestedMemoryAcrossContainers(t *testing.T) {
-	// Each container requests a quarter of the device (testDeviceMemMB/4 MB), so
+	// Each container requests a quarter of the device (testDeviceMemMiB/4 MiB), so
 	// the pod's fraction on the GPU is 0.5.
-	quarterMB := int64(testDeviceMemMB / 4)
+	quarterMiB := int64(testDeviceMemMiB / 4)
 	containerStore := store.FakeStore{Containers: []store.ContainerInfo{
 		{
-			ContainerID:       "container-a",
-			Pod:               "pod",
-			Namespace:         "default",
-			PodUID:            "pod-uid",
-			CgroupPath:        "/kubepods.slice/pod.slice/container-a.scope",
-			GPUDevices:        []store.GPUDevice{{Index: 0}},
-			RequestedMemoryMB: quarterMB,
+			ContainerID:        "container-a",
+			Pod:                "pod",
+			Namespace:          "default",
+			PodUID:             "pod-uid",
+			CgroupPath:         "/kubepods.slice/pod.slice/container-a.scope",
+			GPUDevices:         []store.GPUDevice{{Index: 0}},
+			RequestedMemoryMiB: quarterMiB,
 		},
 		{
-			ContainerID:       "container-b",
-			Pod:               "pod",
-			Namespace:         "default",
-			PodUID:            "pod-uid",
-			CgroupPath:        "/kubepods.slice/pod.slice/container-b.scope",
-			GPUDevices:        []store.GPUDevice{{Index: 0}},
-			RequestedMemoryMB: quarterMB,
+			ContainerID:        "container-b",
+			Pod:                "pod",
+			Namespace:          "default",
+			PodUID:             "pod-uid",
+			CgroupPath:         "/kubepods.slice/pod.slice/container-b.scope",
+			GPUDevices:         []store.GPUDevice{{Index: 0}},
+			RequestedMemoryMiB: quarterMiB,
 		},
 	}}
 
@@ -247,7 +247,7 @@ func TestMetricsControllerSumsRequestedMemoryAcrossContainers(t *testing.T) {
 		1002: []string{"/kubepods.slice/pod.slice/container-a.scope/deeper"}, // second process, same container
 		1003: []string{"/kubepods.slice/pod.slice/container-b.scope/deeper"},
 	}, containerStore, 0, 0, slog.Default())
-	controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMB * bytesPerDecimalMB})
+	controller.rememberDeviceTotalMemory(map[int]uint64{0: testDeviceMemMiB * bytesPerMiB})
 
 	metrics, _ := controller.enrich(context.Background(), []GPUProcessMetric{
 		{PID: 1001, GPUUUID: "GPU-1", GPUIndex: 0, SMUtilizationPercent: 10},
@@ -443,24 +443,24 @@ func TestWindowedSMUtilPrunesDeletedPodSeriesImmediately(t *testing.T) {
 // treats the pod as holding the whole GPU (raw SM util) rather than dividing by
 // zero or reporting a misleading spike.
 func TestGPUFraction(t *testing.T) {
-	const totalBytes = uint64(testDeviceMemMB) * bytesPerDecimalMB // a testDeviceMemMB-sized device
+	const totalBytes = uint64(testDeviceMemMiB) * bytesPerMiB // a testDeviceMemMiB-sized device
 
 	tests := []struct {
-		name        string
-		requestedMB int64
-		deviceTotal map[int]uint64
-		want        float64
+		name         string
+		requestedMiB int64
+		deviceTotal  map[int]uint64
+		want         float64
 	}{
-		{name: "half the device", requestedMB: testDeviceMemMB / 2, deviceTotal: map[int]uint64{0: totalBytes}, want: 0.5},
-		{name: "quarter the device", requestedMB: testDeviceMemMB / 4, deviceTotal: map[int]uint64{0: totalBytes}, want: 0.25},
-		{name: "no request yields zero", requestedMB: 0, deviceTotal: map[int]uint64{0: totalBytes}, want: 0},
-		{name: "unknown device memory yields zero", requestedMB: testDeviceMemMB / 2, deviceTotal: map[int]uint64{}, want: 0},
+		{name: "half the device", requestedMiB: testDeviceMemMiB / 2, deviceTotal: map[int]uint64{0: totalBytes}, want: 0.5},
+		{name: "quarter the device", requestedMiB: testDeviceMemMiB / 4, deviceTotal: map[int]uint64{0: totalBytes}, want: 0.25},
+		{name: "no request yields zero", requestedMiB: 0, deviceTotal: map[int]uint64{0: totalBytes}, want: 0},
+		{name: "unknown device memory yields zero", requestedMiB: testDeviceMemMiB / 2, deviceTotal: map[int]uint64{}, want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &metricsEngine{deviceTotalMemoryBytes: tt.deviceTotal}
-			if got := s.gpuFraction(0, tt.requestedMB); got != tt.want {
-				t.Fatalf("gpuFraction(0, %d) = %g, want %g", tt.requestedMB, got, tt.want)
+			if got := s.gpuFraction(0, tt.requestedMiB); got != tt.want {
+				t.Fatalf("gpuFraction(0, %d) = %g, want %g", tt.requestedMiB, got, tt.want)
 			}
 		})
 	}

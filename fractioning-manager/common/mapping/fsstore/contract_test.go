@@ -17,7 +17,7 @@ import (
 // the JSON shape is a cross-container contract. This test freezes it: any change
 // to the record's fields or JSON tags must be a deliberate schemaVersion bump,
 // which forces this golden to be updated in lockstep.
-const goldenRecordV1 = `{"schemaVersion":1,"pod":"trainer-7d9f","namespace":"team-ml","podUID":"3f2a-uid","gpuDevices":[{"index":0,"minorNumber":0},{"index":3,"minorNumber":0}],"requestedMemoryMB":2048}`
+const goldenRecordV1 = `{"schemaVersion":1,"pod":"trainer-7d9f","namespace":"team-ml","podUID":"3f2a-uid","gpuDevices":[{"index":0,"minorNumber":0},{"index":3,"minorNumber":0}],"requestedMemoryMiB":2048}`
 
 // TestWriterProducesFrozenSchema asserts the Writer emits exactly the frozen v1
 // wire format for a representative container mapping.
@@ -26,14 +26,14 @@ func TestWriterProducesFrozenSchema(t *testing.T) {
 	w := NewWriter(dir, nil)
 
 	w.Upsert(store.ContainerInfo{
-		ContainerID:       "abc",
-		Container:         "trainer", // intentionally not persisted
-		CgroupPath:        "/not/persisted",
-		Pod:               "trainer-7d9f",
-		Namespace:         "team-ml",
-		PodUID:            "3f2a-uid",
-		GPUDevices:        []store.GPUDevice{{Index: 0}, {Index: 3}},
-		RequestedMemoryMB: 2048,
+		ContainerID:        "abc",
+		Container:          "trainer", // intentionally not persisted
+		CgroupPath:         "/not/persisted",
+		Pod:                "trainer-7d9f",
+		Namespace:          "team-ml",
+		PodUID:             "3f2a-uid",
+		GPUDevices:         []store.GPUDevice{{Index: 0}, {Index: 3}},
+		RequestedMemoryMiB: 2048,
 	})
 
 	data, err := os.ReadFile(filepath.Join(dir, "abc.json"))

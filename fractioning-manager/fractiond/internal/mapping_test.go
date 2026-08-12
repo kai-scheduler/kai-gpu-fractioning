@@ -94,9 +94,8 @@ func TestCreateContainerRecordsGPUMapping(t *testing.T) {
 	if len(info.GPUDevices) != 2 {
 		t.Fatalf("expected two GPU devices recorded, got %#v", info.GPUDevices)
 	}
-	// 4Gi = 4294967296 bytes → 4294 decimal MB.
-	if info.RequestedMemoryMB != 4294 {
-		t.Fatalf("expected RequestedMemoryMB 4294, got %d", info.RequestedMemoryMB)
+	if info.RequestedMemoryMiB != 4096 {
+		t.Fatalf("expected RequestedMemoryMiB 4096, got %d", info.RequestedMemoryMiB)
 	}
 }
 

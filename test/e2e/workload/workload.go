@@ -67,7 +67,7 @@ func AnnotationKey(container, suffix string) string {
 // FractionalAnnotations builds the standard request+limit fractional-GPU
 // annotation pair for a container. Values are MiB and get the "Mi" suffix:
 // fractiond parses them as k8s resource.Quantity, so a bare "2048" would be read
-// as 2048 bytes (→ 0 MB) and rejected.
+// as 2048 bytes and rejected as below the 1 MiB minimum.
 func FractionalAnnotations(container, requestMiB, limitMiB string) map[string]string {
 	return map[string]string{
 		AnnotationKey(container, "request"): requestMiB + "Mi",
