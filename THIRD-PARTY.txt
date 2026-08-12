@@ -41,7 +41,7 @@ github.com/NVIDIA/go-nvml
     License:      LICENSE [text cfc7749b96f6]
 
 github.com/antlr4-go/antlr/v4
-    Version:      v4.13.0
+    Version:      v4.13.1
     Source:       https://github.com/antlr4-go/antlr/v4
     Linked into:  operator
     License:      LICENSE [text 683fcd416d83]
@@ -161,7 +161,7 @@ github.com/go-openapi/swag
     License:      LICENSE [text cfc7749b96f6]
 
 github.com/google/cel-go
-    Version:      v0.26.0
+    Version:      v0.29.0
     Source:       https://github.com/google/cel-go
     Linked into:  operator
     License:      LICENSE [text 4cdb9af102df]
@@ -279,12 +279,6 @@ github.com/spf13/pflag
     Source:       https://github.com/spf13/pflag
     Linked into:  operator
     License:      LICENSE [text b8514c577c1c]
-
-github.com/stoewer/go-strcase
-    Version:      v1.3.0
-    Source:       https://github.com/stoewer/go-strcase
-    Linked into:  operator
-    License:      LICENSE [text 73524a55beda]
 
 github.com/tetratelabs/wazero
     Version:      v1.11.0
@@ -2165,7 +2159,7 @@ text 4bbe3b885e8c — applies to:
 
 ------------------------------------------------------------------------------
 text 4cdb9af102df — applies to:
-    github.com/google/cel-go@v0.26.0 (LICENSE)
+    github.com/google/cel-go@v0.29.0 (LICENSE)
 ------------------------------------------------------------------------------
 
 
@@ -2960,7 +2954,7 @@ SoundCloud Ltd. (http://soundcloud.com/).
 
 ------------------------------------------------------------------------------
 text 683fcd416d83 — applies to:
-    github.com/antlr4-go/antlr/v4@v4.13.0 (LICENSE)
+    github.com/antlr4-go/antlr/v4@v4.13.1 (LICENSE)
 ------------------------------------------------------------------------------
 
 Copyright (c) 2012-2023 The ANTLR Project. All rights reserved.
@@ -3051,33 +3045,6 @@ Copyright 2012-2015 The Prometheus Authors
 
 This product includes software developed at
 SoundCloud Ltd. (http://soundcloud.com/).
-
-------------------------------------------------------------------------------
-text 73524a55beda — applies to:
-    github.com/stoewer/go-strcase@v1.3.0 (LICENSE)
-------------------------------------------------------------------------------
-
-The MIT License (MIT)
-
-Copyright (c) 2017, Adrian Stoewer <adrian.stoewer@rz.ifi.lmu.de>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
 ------------------------------------------------------------------------------
 text 73ba74dfaa52 — applies to:
