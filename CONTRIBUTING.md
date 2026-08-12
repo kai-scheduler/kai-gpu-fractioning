@@ -69,6 +69,11 @@ Scopes: `operator`, `mpsd`, `fractiond`, `fractioning-manager`, `deps`
   - Use `Fixes #123` when merging the PR fully resolves and should close the issue
   - Use `Refs #123` when the PR addresses only part of the issue or the issue should
     remain open
+  - Dependabot-authored dependency updates are exempt because they are generated
+    automatically; maintainers must still review and approve them
+- Dependency updates must regenerate `THIRD-PARTY.txt` with `make third-party`
+  before merging; Dependabot cannot update this generated attribution file
+  automatically, so a maintainer must add it to the bot's PR
 - PR title must follow Conventional Commits
 - Every commit is signed off (DCO)
 - All CI checks must pass
