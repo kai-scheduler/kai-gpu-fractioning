@@ -16,6 +16,8 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/operator/internal/common/daemonmgr"
 )
 
+const testDaemonServiceAccountName = "gpu-fractioning-daemon"
+
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
 
@@ -35,6 +37,9 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	spec := ds.Spec.Template.Spec
 	if !spec.HostPID {
 		t.Error("expected HostPID=true")
+	}
+	if spec.ServiceAccountName != "" {
+		t.Errorf("serviceAccountName = %q, expected empty", spec.ServiceAccountName)
 	}
 
 	// Node selector
@@ -137,7 +142,8 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 
 	// Pod must opt into the nvidia RuntimeClass so the NVIDIA container runtime
-	// injects libnvidia-ml.so — without this NVML returns ERROR_LIBRARY_NOT_FOUND.
+	// injects libnvidia-ml.so for metricsd; without this NVML returns
+	// ERROR_LIBRARY_NOT_FOUND.
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
 		t.Errorf("runtimeClassName = %v, expected \"nvidia\"", spec.RuntimeClassName)
 	}
@@ -153,6 +159,53 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 	}
 	if envMap["NVIDIA_DRIVER_CAPABILITIES"] != "utility" {
 		t.Errorf("NVIDIA_DRIVER_CAPABILITIES = %q, expected \"utility\"", envMap["NVIDIA_DRIVER_CAPABILITIES"])
+	}
+}
+
+func TestDaemon_BuildDaemonSet_MetricsExtraNVMLVolumesOnlyWhenMetricsEnabled(t *testing.T) {
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{
+		Enabled: true,
+		Volumes: []corev1.Volume{
+			{
+				Name:         "nvml-config",
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "nvml-config", MountPath: "/etc/nvml-mock", ReadOnly: true},
+		},
+	})
+	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+
+	var foundVolume bool
+	for _, v := range spec.Volumes {
+		if v.Name == "nvml-config" {
+			foundVolume = true
+		}
+	}
+	if !foundVolume {
+		t.Fatalf("expected metricsAgent volume to be available to the pod, got %v", spec.Volumes)
+	}
+
+	metricsd := containerByName(t, spec.Containers, "metricsd")
+	if !hasMount(metricsd.VolumeMounts, "nvml-config", "/etc/nvml-mock", true) {
+		t.Fatalf("expected metricsd to mount metricsAgent volume, got %v", metricsd.VolumeMounts)
+	}
+
+	d = NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{
+		Enabled: false,
+		Volumes: []corev1.Volume{
+			{
+				Name:         "nvml-config",
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			},
+		},
+	})
+	spec = d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	for _, v := range spec.Volumes {
+		if v.Name == "nvml-config" {
+			t.Fatalf("metricsAgent volume should be absent when metricsd is disabled, got %v", spec.Volumes)
+		}
 	}
 }
 
@@ -204,11 +257,17 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
 
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	if len(spec.InitContainers) != 0 {
+		t.Fatalf("expected no init containers when metrics disabled, got %d", len(spec.InitContainers))
+	}
 	if len(spec.Containers) != 1 {
 		t.Fatalf("expected only the fractiond container when metrics disabled, got %d", len(spec.Containers))
 	}
 	if spec.Containers[0].Name != "fractiond" {
 		t.Errorf("expected sole container to be fractiond, got %q", spec.Containers[0].Name)
+	}
+	if spec.RuntimeClassName != nil {
+		t.Errorf("runtimeClassName = %v, expected nil when only fractiond runs", spec.RuntimeClassName)
 	}
 }
 
@@ -442,8 +501,9 @@ func TestDaemon_BuildDaemonSet_EnforcementDisabled(t *testing.T) {
 
 func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
-		Namespace:    "gpu-fractioning-system",
-		NodeSelector: map[string]string{"nvidia.com/gpu.present": "true"},
+		Namespace:          "gpu-fractioning-system",
+		NodeSelector:       map[string]string{"nvidia.com/gpu.present": "true"},
+		ServiceAccountName: testDaemonServiceAccountName,
 		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"fractiond": {
 				Repository: "fake.io/org/fractiond",

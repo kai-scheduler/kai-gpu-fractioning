@@ -50,6 +50,11 @@ serviceAccount:
   name: ""
   annotations: {}
 
+daemonServiceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
 # metrics configures the controller's Prometheus metrics endpoint, served over
 # plain HTTP on `port` (matching the metricsd GPU metrics and KAI-Scheduler).
 metrics:

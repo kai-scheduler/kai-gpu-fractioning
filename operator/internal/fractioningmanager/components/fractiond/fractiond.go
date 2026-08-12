@@ -78,21 +78,20 @@ func NewFractiondDaemon(spec *v1alpha1.FractioningAgentSpec, metrics *v1alpha1.M
 
 func (d *daemon) Name() string { return daemonName }
 
-// BuildDaemonSet constructs the desired DaemonSet. It is a single DaemonSet with
-// two containers:
+// BuildDaemonSet constructs the desired DaemonSet. It is a single DaemonSet pod
+// with one or two regular containers:
 //
 //   - fractiond: the NRI plugin. Runs privileged with host PID visibility so it can
 //     register with the host containerd's NRI endpoint and observe container
-//     lifecycle. It writes the container→pod mapping to a shared emptyDir.
+//     lifecycle. It writes the container→pod mapping to a shared hostPath.
 //   - metricsd: the metrics sidecar. Reads the same mapping (read-only) and exports
 //     per-pod GPU metrics on :2112. It relies on the pod's host PID namespace to
 //     resolve NVML-reported host PIDs to cgroups (so no /host/proc mount is
 //     needed), and runs privileged for NVML device access.
 //
 // Host paths mounted: the NRI socket directory (fractiond) and the MPS pipe
-// directory (shared with mpsd). The map directory is an emptyDir shared between
-// the two containers — a single pod owns both writer and reader, and the mapping
-// is rebuilt on every NRI (re)connect, so it need not survive a pod restart.
+// directory (shared with mpsd). The map directory is a hostPath shared between
+// fractiond and metricsd so the mapping can survive fractiond pod restarts.
 func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result := daemonmgr.BaseDaemonSet(daemonName, opts.Namespace)
 

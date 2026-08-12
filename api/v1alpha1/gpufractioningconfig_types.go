@@ -122,15 +122,16 @@ type MetricsAgentSpec struct {
 	// +optional
 	Path string `json:"path,omitempty"`
 
-	// runtimeClassName sets the RuntimeClass for the fractiond+metricsd pod so
-	// the NVIDIA container runtime injects libnvidia-ml.so (required for NVML).
+	// runtimeClassName sets the RuntimeClass for the fractiond DaemonSet pod when
+	// metricsd is enabled, so the NVIDIA container runtime injects libnvidia-ml.so
+	// (required by metricsd). It does not configure the separate mpsd DaemonSet.
 	// Defaults to "nvidia". Set to "" to use the node's default runtime class
 	// (only safe when the default runtime already injects NVIDIA driver libraries).
 	// +optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
 
-	// volumes are additional volumes to add to the metricsd pod. Use this to
-	// inject environment-specific config (e.g. an alternative NVML backend in
+	// volumes are additional volumes to add to the fractiond DaemonSet pod. Use this
+	// to inject environment-specific config (e.g. an alternative NVML backend in
 	// test clusters) without encoding test knowledge in the operator itself.
 	// +optional
 	Volumes []corev1.Volume `json:"volumes,omitempty"`

@@ -39,21 +39,19 @@ concerns — the suite only connects and asserts, it deploys nothing:
 | Verify GPU nodes | `test/e2e/suite` (`nodes.VerifyGPUNodes`) | precondition check, no mutation |
 | Run test assertions | `test/e2e/tests` | scrape the metricsd sidecar `/metrics`, assert |
 
-> **mpsd on k3d:** the operator always creates an `mpsd` DaemonSet too, and its
-> pods set `runtimeClassName: nvidia`, which a plain k3d cluster has no runtime
-> for — so mpsd stays unschedulable and the operator's aggregate `Ready`
-> condition is `False`. That's expected and out of scope for the metrics suite:
-> `e2e-deploy` waits on the **fractiond DaemonSet** rollout, not the CR's
-> aggregate readiness.
+> **RuntimeClass on k3d:** `create-cluster.py` rewires the `nvidia` RuntimeClass
+> to the default runc handler so the daemon pods can start on fake-GPU nodes.
+> The e2e fractiond and metricsd images bake in nvml-mock for the NVML calls that
+> would normally be served by the NVIDIA runtime on a real cluster.
 
 ## Build + deploy (`skaffold.yaml`)
 
 Skaffold builds all four images and deploys them through the operator Helm chart
 in one flow — the "4 images, use Skaffold + Helm" direction:
 
-- **Default profile** builds prod-style images (no e2e build tag).
-- **`e2e` profile** adds metricsd's `GO_TAGS=e2e` (fake-GPU detection — never
-  ship to prod) and `pullPolicy=Never` for the locally loaded images. It also
+- **Default profile** builds prod-style images.
+- **`e2e` profile** uses fractiond's `e2e` Docker target and metricsd's
+  `Dockerfile.e2e`, both with nvml-mock baked in for fake-GPU clusters. It also
   passes metricsd's `TARGETARCH` (from `E2E_ARCH`, exported by the Makefile)
   because that Dockerfile hardcodes `ARG TARGETARCH=amd64`.
 
@@ -122,13 +120,11 @@ test/e2e/hack/create-cluster.py --skip-fake-gpu-operator   # cluster only, e.g. 
 Requires `k3d`, `kubectl`, `docker`, `helm` (unless `--skip-fake-gpu-operator`),
 and Python 3.9+ on PATH.
 
-**Not installed by this script:** `nvml-mock` (NVIDIA's real-NVML simulator).
-Without it, `metricsd`'s NVML calls report zero memory/SM
-utilization. If a later test needs real-looking values, install
-`fractioning-manager/metricsd/deploy/fake-gpu-cluster/nvml-mock.yaml` manually and
-set `LD_LIBRARY_PATH` per its comments; this adds privileged host mounts and
-hardcoded PID matching, so it's opt-in rather than part of the default e2e
-cluster.
+The script installs `nvml-mock` by default. The fake-mps image bakes in the mock
+library so mpsd can read a fake driver version before starting, and the metrics
+suite uses the test-controlled ConfigMap to feed metricsd deterministic GPU
+process state. Pass `--skip-gpu-mock` only when iterating on cluster setup pieces
+that do not deploy the gpu-fractioning stack.
 
 ## Makefile targets
 

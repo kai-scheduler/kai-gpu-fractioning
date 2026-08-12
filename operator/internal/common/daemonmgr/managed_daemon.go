@@ -58,9 +58,10 @@ type ManagedDaemon interface {
 
 // BuildOptions carries the context needed by ManagedDaemon.BuildDaemonSet.
 type BuildOptions struct {
-	Namespace     string               // namespace for the DaemonSet
-	NodeSelector  map[string]string    // selects which nodes the daemon targets
-	DefaultImages map[string]ImageSpec // Helm-injected default images keyed by daemon name
+	Namespace          string               // namespace for the DaemonSet
+	NodeSelector       map[string]string    // selects which nodes the daemon targets
+	ServiceAccountName string               // service account for daemon pods that need API access
+	DefaultImages      map[string]ImageSpec // Helm-injected default images keyed by daemon name
 }
 
 // DaemonHealth holds the observed health of a ManagedDaemon after reconciliation.
