@@ -99,8 +99,7 @@ jobs:
       # Skaffold builds the four images, loads them into k3d, and helm-installs
       # the operator chart; the operator then creates the fractiond DaemonSet
       # (with the metricsd sidecar under test). Waits on the fractiond DaemonSet
-      # rollout, not the operator's aggregate Ready (mpsd can't schedule on k3d —
-      # no "nvidia" RuntimeClass — and is out of scope).
+      # rollout, not the operator's aggregate Ready.
       - name: Build, load and deploy the stack (skaffold + helm)
         if: ${{ steps.changes.outputs.e2e == 'true' }}
         run: make e2e-deploy
@@ -191,9 +190,8 @@ jobs:
           cluster-name: ${{ env.E2E_CLUSTER_NAME }}
           fake-gpu-operator-version: ${{ env.E2E_FAKE_GPU_OPERATOR_VERSION }}
 
-      # Same deploy as the metrics job. Under the e2e profile mpsd runs the
-      # fake-mps image on the runc-backed "nvidia" RuntimeClass, so the operator
-      # reaches aggregate Ready; the suite's assertSteady waits that out.
+      # Same deploy as the metrics job. The operator suite waits for aggregate
+      # Ready and asserts both managed DaemonSets.
       - name: Build, load and deploy the stack (skaffold + helm)
         if: ${{ steps.changes.outputs.e2e == 'true' }}
         run: make e2e-deploy

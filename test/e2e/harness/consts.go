@@ -15,8 +15,8 @@ import "fmt"
 // with the operator/fractioning-manager source.
 //
 // Only genuinely cross-suite identifiers live here; suite-specific ones (e.g.
-// the operator's per-daemon status reasons, mpsd runtime class / container
-// names) stay in that suite's package.
+// the operator's per-daemon status reasons and DaemonSet container names) stay
+// in that suite's package.
 const (
 	// Node condition the operator sets on each targeted node (daemonmgr.NodeConditionType).
 	NodeConditionType = "gpu-fractioning.nvidia.com/Ready"

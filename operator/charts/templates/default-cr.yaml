@@ -14,6 +14,9 @@ metadata:
 spec:
   nodeSelector:
     nvidia.com/gpu.present: "true"
+  {{- if hasKey .Values "runtimeClassName" }}
+  runtimeClassName: {{ .Values.runtimeClassName | quote }}
+  {{- end }}
   # Present (even if empty) so the API server applies field-level defaults such
   # as fractioningAgent.retroactiveEnforcement=true.
   {{- if and .Values.fractioningAgent .Values.fractioningAgent.logLevel }}
@@ -24,9 +27,6 @@ spec:
   {{- end }}
   metricsAgent:
     enabled: {{ .Values.metricsAgent.enabled }}
-    {{- if hasKey .Values.metricsAgent "runtimeClassName" }}
-    runtimeClassName: {{ .Values.metricsAgent.runtimeClassName | quote }}
-    {{- end }}
     {{- if .Values.metricsAgent.logLevel }}
     logLevel: {{ .Values.metricsAgent.logLevel | quote }}
     {{- end }}
@@ -42,7 +42,3 @@ spec:
     volumeMounts:
       {{- toYaml .Values.metricsAgent.volumeMounts | nindent 6 }}
     {{- end }}
-  {{- if hasKey .Values.mpsd "runtimeClassName" }}
-  mpsDaemon:
-    runtimeClassName: {{ .Values.mpsd.runtimeClassName | quote }}
-  {{- end }}

@@ -24,10 +24,9 @@ const (
 	volumeMPSPipe = "mps-pipe"
 	volumeMPSLog  = "mps-log"
 
-	nvidiaRuntimeClass = "nvidia"
-	envNodeName        = "NODE_NAME"
-	envVisibleDevices  = "NVIDIA_VISIBLE_DEVICES"
-	envCapabilities    = "NVIDIA_DRIVER_CAPABILITIES"
+	envNodeName       = "NODE_NAME"
+	envVisibleDevices = "NVIDIA_VISIBLE_DEVICES"
+	envCapabilities   = "NVIDIA_DRIVER_CAPABILITIES"
 
 	// Resource requests/limits for the mpsd container. See daemonmgr.DaemonResources
 	// for the requests-plus-memory-limit rationale.
@@ -69,7 +68,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
 	result.Spec.Template.Spec.ServiceAccountName = opts.ServiceAccountName
-	result.Spec.Template.Spec.RuntimeClassName = d.runtimeClassName()
+	result.Spec.Template.Spec.RuntimeClassName = opts.RuntimeClassName
 	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
 	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
 	// 30s default, shorter than the graceful stop delay, defeating the graceful
@@ -92,19 +91,6 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)
 
 	return result
-}
-
-// runtimeClassName returns the RuntimeClass to set on the pod. Nil in the spec
-// defaults to "nvidia"; a pointer to "" explicitly clears the runtime class
-// (use the node default); any other value is used as-is.
-func (d *daemon) runtimeClassName() *string {
-	if d.spec == nil || d.spec.RuntimeClassName == nil {
-		return ptr.To(nvidiaRuntimeClass)
-	}
-	if *d.spec.RuntimeClassName == "" {
-		return nil
-	}
-	return d.spec.RuntimeClassName
 }
 
 // terminationGraceSeconds is the effective --graceful-stop-delay (the CR value,

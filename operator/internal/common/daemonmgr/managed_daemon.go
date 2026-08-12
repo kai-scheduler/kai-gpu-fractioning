@@ -8,12 +8,14 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
-	LabelManagedBy = "app.kubernetes.io/managed-by"
-	LabelComponent = "app.kubernetes.io/component"
-	ManagedByValue = "gpu-fractioning"
+	LabelManagedBy          = "app.kubernetes.io/managed-by"
+	LabelComponent          = "app.kubernetes.io/component"
+	ManagedByValue          = "gpu-fractioning"
+	DefaultRuntimeClassName = "nvidia"
 )
 
 // ImageSpec holds a container image reference injected by the Helm chart.
@@ -61,7 +63,21 @@ type BuildOptions struct {
 	Namespace          string               // namespace for the DaemonSet
 	NodeSelector       map[string]string    // selects which nodes the daemon targets
 	ServiceAccountName string               // service account for daemon pods that need API access
+	RuntimeClassName   *string              // resolved RuntimeClass for daemon pods that need NVIDIA GPU/NVML access
 	DefaultImages      map[string]ImageSpec // Helm-injected default images keyed by daemon name
+}
+
+// ResolveRuntimeClassName returns the RuntimeClass to set on daemon pods that
+// need NVIDIA GPU/NVML access. Nil defaults to "nvidia"; "" omits
+// runtimeClassName so the pod uses the node default runtime.
+func ResolveRuntimeClassName(runtimeClassName *string) *string {
+	if runtimeClassName == nil {
+		return ptr.To(DefaultRuntimeClassName)
+	}
+	if *runtimeClassName == "" {
+		return nil
+	}
+	return runtimeClassName
 }
 
 // DaemonHealth holds the observed health of a ManagedDaemon after reconciliation.

@@ -40,7 +40,7 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	}
 
 	// RuntimeClassName
-	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
+	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != daemonmgr.DefaultRuntimeClassName {
 		t.Errorf("RuntimeClassName = %v, want nvidia", spec.RuntimeClassName)
 	}
 
@@ -157,38 +157,34 @@ func TestDaemon_BuildDaemonSet_AuditLogDisabled(t *testing.T) {
 
 func TestDaemon_BuildDaemonSet_RuntimeClass(t *testing.T) {
 	custom := "custom-nvidia"
-	empty := ""
 
 	tests := []struct {
-		name string
-		spec *v1alpha1.MpsDaemonSpec
-		want *string
+		name             string
+		runtimeClassName *string
+		want             *string
 	}{
 		{
-			name: "nil spec defaults to nvidia",
-			spec: nil,
-			want: ptr.To(nvidiaRuntimeClass),
+			name:             "default runtime class is propagated",
+			runtimeClassName: ptr.To(daemonmgr.DefaultRuntimeClassName),
+			want:             ptr.To(daemonmgr.DefaultRuntimeClassName),
 		},
 		{
-			name: "nil runtime class defaults to nvidia",
-			spec: &v1alpha1.MpsDaemonSpec{},
-			want: ptr.To(nvidiaRuntimeClass),
+			name:             "custom runtime class is propagated",
+			runtimeClassName: &custom,
+			want:             &custom,
 		},
 		{
-			name: "custom runtime class is propagated",
-			spec: &v1alpha1.MpsDaemonSpec{RuntimeClassName: &custom},
-			want: &custom,
-		},
-		{
-			name: "empty runtime class uses node default",
-			spec: &v1alpha1.MpsDaemonSpec{RuntimeClassName: &empty},
-			want: nil,
+			name:             "nil runtime class uses node default",
+			runtimeClassName: nil,
+			want:             nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spec := NewMpsdDaemon(tt.spec, true).BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+			opts := defaultOpts()
+			opts.RuntimeClassName = tt.runtimeClassName
+			spec := NewMpsdDaemon(nil, true).BuildDaemonSet(opts).Spec.Template.Spec
 			if tt.want == nil {
 				if spec.RuntimeClassName != nil {
 					t.Fatalf("RuntimeClassName = %q, want nil", *spec.RuntimeClassName)
@@ -283,6 +279,7 @@ func defaultOpts() daemonmgr.BuildOptions {
 		Namespace:          "gpu-fractioning-system",
 		NodeSelector:       map[string]string{"nvidia.com/gpu.present": "true"},
 		ServiceAccountName: testDaemonServiceAccountName,
+		RuntimeClassName:   ptr.To(daemonmgr.DefaultRuntimeClassName),
 		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"mpsd": {
 				Repository: "fake.io/org/mpsd",

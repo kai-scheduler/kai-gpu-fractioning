@@ -185,17 +185,13 @@ func verifyFractiondPodSpec(ctx context.Context, t *testing.T) {
 	}
 }
 
-// MpsdPodSpec — mpsd pod spec: privileged, RuntimeClass "nvidia"
-// (hardcoded by the operator, cluster-agnostic), MPS pipe + log hostPath mounts,
-// and a control-socket readiness probe.
+// MpsdPodSpec — mpsd pod spec: privileged, service-accounted for node labeling,
+// MPS pipe + log hostPath mounts, and a control-socket readiness probe.
+// RuntimeClass is install-dependent, so the e2e suite does not assert it.
 func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 	ds := h.GetDaemonSet(ctx, t, harness.ComponentMpsd)
 	if ds.Spec.Template.Spec.ServiceAccountName == "" {
 		t.Error("mpsd pod: serviceAccountName is empty")
-	}
-	rc := ds.Spec.Template.Spec.RuntimeClassName
-	if rc == nil || *rc != nvidiaRuntimeClass {
-		t.Errorf("mpsd pod: runtimeClassName = %v, want %q", rc, nvidiaRuntimeClass)
 	}
 	mp, ok := daemonset.Container(ds, containerMpsd)
 	if !ok {
