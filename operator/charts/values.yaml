@@ -26,6 +26,11 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# runtimeClassName sets the RuntimeClass for daemon pods that need NVIDIA
+# GPU/NVML access. Set to "" to use the node's default runtime when it already
+# provides NVIDIA GPU/NVML access.
+runtimeClassName: "nvidia"
+
 # mpsd configures the MPS daemon (mpsd) managed by the operator.
 mpsd:
   # auditLog toggles features.memacct.audit_log in the generated MPS
@@ -35,7 +40,6 @@ mpsd:
 
 metricsAgent:
   enabled: true
-  runtimeClassName: "nvidia"
   # metricNames overrides the exported Prometheus metric names. Leave empty to
   # keep the built-in gpu_fractioning_* names. Set them to integrate with a consumer
   # that expects specific names. Labels are fixed: namespace, pod, pod_uuid,

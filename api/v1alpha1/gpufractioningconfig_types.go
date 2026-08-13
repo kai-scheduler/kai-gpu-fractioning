@@ -23,6 +23,13 @@ type GpuFractioningConfigSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="nodeSelector is immutable; delete and recreate the GpuFractioningConfig to change it"
 	NodeSelector map[string]string `json:"nodeSelector"`
 
+	// runtimeClassName sets the RuntimeClass for daemon pods that need NVIDIA
+	// GPU/NVML access. Defaults to "nvidia". Set to "" to use the node's default
+	// runtime class (only safe when the default runtime already provides NVIDIA
+	// GPU/NVML access).
+	// +optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
 	// fractioningAgent configures the NRI-based fractioning agent (fractiond).
 	// +optional
 	FractioningAgent *FractioningAgentSpec `json:"fractioningAgent,omitempty"`
@@ -121,14 +128,6 @@ type MetricsAgentSpec struct {
 	// path is the HTTP path on which metrics are served. Default: /metrics.
 	// +optional
 	Path string `json:"path,omitempty"`
-
-	// runtimeClassName sets the RuntimeClass for the fractiond DaemonSet pod when
-	// metricsd is enabled, so the NVIDIA container runtime injects libnvidia-ml.so
-	// (required by metricsd). It does not configure the separate mpsd DaemonSet.
-	// Defaults to "nvidia". Set to "" to use the node's default runtime class
-	// (only safe when the default runtime already injects NVIDIA driver libraries).
-	// +optional
-	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
 
 	// volumes are additional volumes to add to the fractiond DaemonSet pod. Use this
 	// to inject environment-specific config (e.g. an alternative NVML backend in
