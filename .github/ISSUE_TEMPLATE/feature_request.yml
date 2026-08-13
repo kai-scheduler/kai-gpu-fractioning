@@ -1,0 +1,74 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature request
+description: Propose an enhancement to kai-gpu-fractioning
+title: "[Feature]: "
+labels:
+  - kind/feature
+  - triage/needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem before proposing a solution. Questions belong in [GitHub Discussions](https://github.com/kai-scheduler/kai-gpu-fractioning/discussions).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - operator
+        - fractiond
+        - metricsd
+        - mpsd
+        - Helm chart
+        - CI or release automation
+        - Documentation
+        - Cross-component or new component
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What user need or limitation should this feature address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Explain the desired behavior without assuming a specific implementation where possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe existing workarounds or alternative designs.
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Compatibility and operational impact
+      description: Note API, configuration, upgrade, performance, security, or documentation implications.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add examples, design references, or related issues.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched open and closed issues and did not find a duplicate.
+          required: true
+        - label: I agree to follow this project's Code of Conduct.
+          required: true

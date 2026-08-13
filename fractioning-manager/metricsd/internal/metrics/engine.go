@@ -25,10 +25,10 @@ const (
 	// fullGPUFraction is the fallback used when a pod's requested fraction is
 	// unknown, treating it as if it requested the whole GPU.
 	fullGPUFraction = 1
-	// bytesPerDecimalMB converts the decimal-MB memory requests recorded by the
-	// fractiond mapper back to bytes so they can be divided by NVML's byte-valued
-	// device total memory. Matches fractiond's annotations.bytesPerDecimalMB.
-	bytesPerDecimalMB = 1_000_000
+	// bytesPerMiB converts the memory values recorded by the fractiond mapper
+	// back to bytes so they can be divided by NVML's byte-valued device total
+	// memory. The stored value is an integer MiB count.
+	bytesPerMiB = 1024 * 1024
 )
 
 type metricsEngine struct {
@@ -180,7 +180,7 @@ func (s *metricsEngine) setSnapshot(metrics []PodGPUMetric, activePodUIDs map[st
 func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric, pods podSource) ([]PodGPUMetric, int) {
 	byPodGPU := map[podGPUKey]*PodGPUMetric{}
 	observedPodDevices := map[string]struct{}{}
-	// memByKey sums each pod×GPU's requested GPU memory (decimal MB) across its
+	// memByKey sums each pod×GPU's requested GPU memory (MiB) across its
 	// containers, deduped by container ID so multiple GPU processes of one
 	// container are not counted more than once. The per-GPU sum is divided by the
 	// device's total memory to derive the requested fraction.
@@ -207,7 +207,7 @@ func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric
 			GPUIndex:  process.GPUIndex,
 		}
 		observePodDevice(observedPodDevices, key)
-		recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMB)
+		recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMiB)
 		metric := byPodGPU[key]
 		if metric == nil {
 			metric = &PodGPUMetric{
@@ -230,7 +230,7 @@ func (s *metricsEngine) enrich(ctx context.Context, processes []GPUProcessMetric
 			if !ok {
 				continue
 			}
-			recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMB)
+			recordRequestedMemory(memByKey, key, container.ContainerID, container.RequestedMemoryMiB)
 			if _, ok := byPodGPU[key]; ok {
 				continue
 			}
@@ -317,11 +317,11 @@ func normalizedSMUtil(smUtil, fraction float64) float64 {
 	return normalized
 }
 
-// recordRequestedMemory notes containerID's requested GPU memory (decimal MB)
+// recordRequestedMemory notes containerID's requested GPU memory (MiB)
 // under key, deduped by container ID so repeated observations of the same
 // container (one per GPU process) do not inflate the pod's requested total.
-func recordRequestedMemory(memByKey map[podGPUKey]map[string]int64, key podGPUKey, containerID string, memMB int64) {
-	if memMB <= 0 || containerID == "" {
+func recordRequestedMemory(memByKey map[podGPUKey]map[string]int64, key podGPUKey, containerID string, memMiB int64) {
+	if memMiB <= 0 || containerID == "" {
 		return
 	}
 	byContainer := memByKey[key]
@@ -329,15 +329,15 @@ func recordRequestedMemory(memByKey map[podGPUKey]map[string]int64, key podGPUKe
 		byContainer = map[string]int64{}
 		memByKey[key] = byContainer
 	}
-	byContainer[containerID] = memMB
+	byContainer[containerID] = memMiB
 }
 
-// sumRequestedMemory totals the per-container requested GPU memory (decimal MB)
+// sumRequestedMemory totals the per-container requested GPU memory (MiB)
 // recorded for a pod×GPU key.
 func sumRequestedMemory(byContainer map[string]int64) int64 {
 	var sum int64
-	for _, memMB := range byContainer {
-		sum += memMB
+	for _, memMiB := range byContainer {
+		sum += memMiB
 	}
 	return sum
 }
@@ -347,15 +347,15 @@ func sumRequestedMemory(byContainer map[string]int64) int64 {
 // device's total memory has not been learned from NVML yet — in which case
 // normalizeSMUtil falls back to treating the pod as holding the whole GPU (so the
 // normalized value equals the raw SM utilization rather than a misleading spike).
-func (s *metricsEngine) gpuFraction(gpuIndex int, requestedMB int64) float64 {
-	if requestedMB <= 0 {
+func (s *metricsEngine) gpuFraction(gpuIndex int, requestedMiB int64) float64 {
+	if requestedMiB <= 0 {
 		return 0
 	}
 	totalBytes := s.deviceTotalMemoryBytes[gpuIndex]
 	if totalBytes == 0 {
 		return 0
 	}
-	return (float64(requestedMB) * bytesPerDecimalMB) / float64(totalBytes)
+	return (float64(requestedMiB) * bytesPerMiB) / float64(totalBytes)
 }
 
 // rememberDeviceTotalMemory records each device's total memory learned from an

@@ -61,8 +61,8 @@ const (
 	// GPU-memory request/limit the fractiond-injection cases stamp onto the
 	// annotated workload (MiB, no unit suffix). These are arbitrary test
 	// inputs, not a cluster property: fractiond parses them as k8s Quantities
-	// and deterministically re-emits decimal MB regardless of the underlying
-	// GPU (2048Mi→2147MB, 4096Mi→4294MB; see ExpectedDecimalMB).
+	// and re-emits the integer MiB value NVIDIA consumes (2048Mi -> 2048,
+	// 4096Mi -> 4096).
 	MemRequestMiB = "2048"
 	MemLimitMiB   = "4096"
 

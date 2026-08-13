@@ -31,11 +31,11 @@ type ContainerInfo struct {
 	PodUID      string
 	CgroupPath  string
 	GPUDevices  []GPUDevice
-	// RequestedMemoryMB is the GPU memory (decimal MB) the container was allocated
+	// RequestedMemoryMiB is the integer MiB GPU memory the container was allocated
 	// via the gpu-memory annotation (the limit, else the request). The metrics
 	// sidecar divides this by the device's total memory to derive the GPU fraction
 	// used to normalize SM utilization. Zero when no memory request is known.
-	RequestedMemoryMB int64
+	RequestedMemoryMiB int64
 }
 
 // Writer is the write side of the container->pod mapping storage, used by the

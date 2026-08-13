@@ -9,25 +9,34 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/common/configuration"
 )
 
-func TestParseToDecimalMB(t *testing.T) {
+func TestParseToMemoryMiB(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
 		expected    string
 		expectedErr bool
 	}{
-		{name: "4Gi to decimal MB", input: "4Gi", expected: "4294"},
-		{name: "2048Mi to decimal MB", input: "2048Mi", expected: "2147"},
-		{name: "1Gi to decimal MB", input: "1Gi", expected: "1073"},
-		{name: "512Mi to decimal MB", input: "512Mi", expected: "536"},
-		{name: "4096M SI megabytes", input: "4096M", expected: "4096"},
-		{name: "500M SI megabytes", input: "500M", expected: "500"},
-		{name: "1G SI gigabyte", input: "1G", expected: "1000"},
-		{name: "1M minimum valid", input: "1M", expected: "1"},
-		{name: "plain integer 4Gi in bytes", input: "4294967296", expected: "4294"},
-		{name: "below 1MB is error", input: "4096", expectedErr: true},
+		{name: "4Gi to NVIDIA MiB", input: "4Gi", expected: "4096"},
+		{name: "2048Mi to NVIDIA MiB", input: "2048Mi", expected: "2048"},
+		{name: "7680Mi to NVIDIA MiB", input: "7680Mi", expected: "7680"},
+		{name: "1Gi to NVIDIA MiB", input: "1Gi", expected: "1024"},
+		{name: "512Mi to NVIDIA MiB", input: "512Mi", expected: "512"},
+		{name: "100Mi remains 100 MiB", input: "100Mi", expected: "100"},
+		{name: "1000Mi remains 1000 MiB", input: "1000Mi", expected: "1000"},
+		{name: "100M rounds up to MiB", input: "100M", expected: "96"},
+		{name: "1024Ki minimum valid", input: "1024Ki", expected: "1"},
+		{name: "4096M SI megabytes rounds up to MiB", input: "4096M", expected: "3907"},
+		{name: "1024M SI megabytes rounds up to MiB", input: "1024M", expected: "977"},
+		{name: "1000M SI megabytes rounds up to MiB", input: "1000M", expected: "954"},
+		{name: "500M SI megabytes rounds up to MiB", input: "500M", expected: "477"},
+		{name: "1G SI gigabyte rounds up to MiB", input: "1G", expected: "954"},
+		{name: "5G SI gigabytes rounds up to MiB", input: "5G", expected: "4769"},
+		{name: "1M below 1 MiB is error", input: "1M", expectedErr: true},
+		{name: "plain integer 4Gi in bytes", input: "4294967296", expected: "4096"},
+		{name: "plain byte value below 1 MiB is error", input: "4096", expectedErr: true},
 		{name: "zero is error", input: "0", expectedErr: true},
-		{name: "500Ki below 1MB", input: "500Ki", expectedErr: true},
+		{name: "500Ki below 1 MiB", input: "500Ki", expectedErr: true},
+		{name: "one byte below 1 MiB is error", input: "1048575", expectedErr: true},
 		{name: "empty string", input: "", expectedErr: true},
 		{name: "whitespace is invalid", input: "  2048Mi  ", expectedErr: true},
 		{name: "garbage", input: "notanumber", expectedErr: true},
@@ -35,19 +44,19 @@ func TestParseToDecimalMB(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseToDecimalMB(tt.input)
+			got, err := parseToMemoryMiB(tt.input)
 			if tt.expectedErr {
 				if err == nil {
-					t.Errorf("parseToDecimalMB(%q) = %q, expected error", tt.input, got)
+					t.Errorf("parseToMemoryMiB(%q) = %q, expected error", tt.input, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("parseToDecimalMB(%q) error = %v", tt.input, err)
+				t.Errorf("parseToMemoryMiB(%q) error = %v", tt.input, err)
 				return
 			}
 			if got != tt.expected {
-				t.Errorf("parseToDecimalMB(%q) = %q, expected %q", tt.input, got, tt.expected)
+				t.Errorf("parseToMemoryMiB(%q) = %q, expected %q", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -126,8 +135,8 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			},
 			containerName:   "trainer",
 			prefix:          configuration.DefaultAnnotationPrefix,
-			expectedRequest: "2147",
-			expectedLimit:   "4294",
+			expectedRequest: "2048",
+			expectedLimit:   "4096",
 			expectedEmpty:   false,
 		},
 		{
@@ -138,7 +147,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "main",
 			prefix:          configuration.DefaultAnnotationPrefix,
 			expectedRequest: "",
-			expectedLimit:   "1024",
+			expectedLimit:   "977",
 			expectedEmpty:   false,
 		},
 		{
@@ -148,7 +157,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			},
 			containerName:   "worker",
 			prefix:          configuration.DefaultAnnotationPrefix,
-			expectedRequest: "536",
+			expectedRequest: "512",
 			expectedLimit:   "",
 			expectedEmpty:   false,
 		},
@@ -191,7 +200,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			expectedErr:   true,
 		},
 		{
-			name: "value below 1MB",
+			name: "value below 1 MiB",
 			annotations: map[string]string{
 				"nvidia.com/container.main.gpu-memory.limit": "500Ki",
 			},
@@ -209,7 +218,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "main",
 			prefix:          configuration.DefaultAnnotationPrefix,
 			expectedRequest: "",
-			expectedLimit:   "4096",
+			expectedLimit:   "3907",
 			expectedEmpty:   false,
 		},
 		{
@@ -220,7 +229,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "my-training-job",
 			prefix:          configuration.DefaultAnnotationPrefix,
 			expectedRequest: "",
-			expectedLimit:   "2048",
+			expectedLimit:   "1954",
 			expectedEmpty:   false,
 		},
 		{
@@ -231,7 +240,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "main",
 			prefix:          "gpu-fractioning.kai.scheduler/container.",
 			expectedRequest: "",
-			expectedLimit:   "4294",
+			expectedLimit:   "4096",
 			expectedEmpty:   false,
 		},
 		{
@@ -242,7 +251,7 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 			containerName:   "main",
 			prefix:          "",
 			expectedRequest: "",
-			expectedLimit:   "4294",
+			expectedLimit:   "4096",
 			expectedEmpty:   false,
 		},
 	}
@@ -281,7 +290,7 @@ func TestApplyDefaults(t *testing.T) {
 		wantLimit   string
 	}{
 		{"both set unchanged", GPUMemoryConfig{Request: "3221", Limit: "6442"}, "3221", "6442"},
-		{"request only defaults limit", GPUMemoryConfig{Request: "4294"}, "4294", "4294"},
+		{"request only defaults limit", GPUMemoryConfig{Request: "4096"}, "4096", "4096"},
 		{"limit only defaults request", GPUMemoryConfig{Limit: "6442"}, "6442", "6442"},
 		{"empty stays empty", GPUMemoryConfig{}, "", ""},
 	}
