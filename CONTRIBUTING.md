@@ -71,9 +71,9 @@ Scopes: `operator`, `mpsd`, `fractiond`, `fractioning-manager`, `deps`
     remain open
   - Dependabot-authored dependency updates are exempt because they are generated
     automatically; maintainers must still review and approve them
-- Dependency updates must regenerate `THIRD-PARTY.txt` with `make third-party`
-  before merging; Dependabot cannot update this generated attribution file
-  automatically, so a maintainer must add it to the bot's PR
+- Dependency updates must pass `make third-party-check`. If it fails, a
+  maintainer must run `make third-party` and commit the updated
+  `THIRD-PARTY.txt` to the Dependabot PR before merging
 - PR title must follow Conventional Commits
 - Every commit is signed off (DCO)
 - All CI checks must pass
