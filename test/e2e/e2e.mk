@@ -139,10 +139,8 @@ e2e-kubeconfig-unmerge:
 #
 # It then waits on the fractiond DaemonSet specifically (which hosts the metricsd
 # sidecar under test), NOT the operator's aggregate CR Ready condition. The chart
-# also creates the mpsd DaemonSet; under the e2e profile that runs the fake-mps
-# image (hack/fake-mps) on the runc-backed "nvidia" RuntimeClass, so mpsd does
-# reach Ready here — but the metrics suite doesn't depend on it, so we keep the
-# wait scoped to fractiond and let the operator E2E suite assert mpsd/CR Ready.
+# also creates the mpsd DaemonSet; under the e2e profile the shared runtime class
+# is cleared and fake images provide the NVIDIA/NVML behavior needed by tests.
 E2E_SKAFFOLD_FLAGS = --platform=linux/$(E2E_ARCH) --default-repo=localhost:$(E2E_REGISTRY_PORT) --cache-artifacts=false --verbosity=error
 
 e2e-deploy:

@@ -24,10 +24,9 @@ const (
 	volumeMPSPipe = "mps-pipe"
 	volumeMPSLog  = "mps-log"
 
-	nvidiaRuntimeClass = "nvidia"
-	envNodeName        = "NODE_NAME"
-	envVisibleDevices  = "NVIDIA_VISIBLE_DEVICES"
-	envCapabilities    = "NVIDIA_DRIVER_CAPABILITIES"
+	envNodeName       = "NODE_NAME"
+	envVisibleDevices = "NVIDIA_VISIBLE_DEVICES"
+	envCapabilities   = "NVIDIA_DRIVER_CAPABILITIES"
 
 	// Resource requests/limits for the mpsd container. See daemonmgr.DaemonResources
 	// for the requests-plus-memory-limit rationale.
@@ -58,7 +57,7 @@ func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog bool) daemonmgr.Manage
 func (d *daemon) Name() string { return daemonName }
 
 // BuildDaemonSet constructs the desired DaemonSet for mpsd.
-// The pod runs privileged with the nvidia runtime class so it can label the
+// The pod runs privileged with the configured runtime class so it can label the
 // node with the local NVIDIA driver major version via NVML, then start the
 // nvidia-cuda-mps-control binary.
 // Two host paths are mounted:
@@ -69,7 +68,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
 	result.Spec.Template.Spec.ServiceAccountName = opts.ServiceAccountName
-	result.Spec.Template.Spec.RuntimeClassName = ptr.To(nvidiaRuntimeClass)
+	result.Spec.Template.Spec.RuntimeClassName = opts.RuntimeClassName
 	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
 	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
 	// 30s default, shorter than the graceful stop delay, defeating the graceful

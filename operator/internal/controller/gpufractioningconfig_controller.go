@@ -290,6 +290,7 @@ func (r *GpuFractioningConfigReconciler) buildOptions(config *v1alpha1.GpuFracti
 		Namespace:          r.Namespace,
 		NodeSelector:       config.Spec.NodeSelector,
 		ServiceAccountName: r.DaemonServiceAccountName,
+		RuntimeClassName:   daemonmgr.ResolveRuntimeClassName(config.Spec.RuntimeClassName),
 		DefaultImages:      r.DefaultImages,
 	}
 }

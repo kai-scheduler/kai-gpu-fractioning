@@ -4,10 +4,11 @@
 fractioningAgent:
   logLevel: debug
 
+# k3d has no real "nvidia" runtime; clear it so daemon pods use the node default.
+# The e2e images provide the fake NVIDIA/NVML pieces they need.
+runtimeClassName: ""
+
 metricsAgent:
-  # k3d has no real "nvidia" runtime; clear it so fractiond pods schedule.
-  # metricsd gets NVML from the e2e image's baked-in nvml-mock.
-  runtimeClassName: ""
   logLevel: debug
   # Mount the nvml-mock config so the baked-in libnvidia-ml.so reads the
   # test-controlled driver/process state via MOCK_NVML_CONFIG at nvmlInit time.

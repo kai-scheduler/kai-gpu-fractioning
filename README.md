@@ -47,7 +47,7 @@ It is designed to run alongside [KAI Scheduler](https://github.com/kai-scheduler
 
 - Kubernetes 1.28+
 - containerd 2.0+ with **NRI enabled**, or CRI-O with NRI support
-- [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer**, which provides the `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) that mpsd and metricsd run under
+- [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer**, which provides the default `nvidia` [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/) for daemon GPU/NVML access
 - **NVIDIA driver `r615` or newer (CUDA 13.4)** on the GPU nodes — see below, this is *not* the GPU Operator default
 - A scheduler that assigns fractional GPUs — designed to run alongside [KAI Scheduler](https://github.com/kai-scheduler/KAI-Scheduler)
 
@@ -94,8 +94,8 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 
 | Value | Default | Purpose |
 |-------|---------|---------|
+| `runtimeClassName` | `nvidia` | RuntimeClass for daemon pods that need NVIDIA GPU/NVML access; set `""` to use a node default runtime with NVIDIA GPU/NVML access |
 | `metricsAgent.enabled` | `true` | run the metricsd metrics sidecar |
-| `metricsAgent.runtimeClassName` | `nvidia` | RuntimeClass for the fractiond pod when metricsd needs NVML |
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
 | `nodeSelector` | `{}` | scheduling constraint for the **controller** Deployment |
@@ -136,8 +136,9 @@ A single cluster-scoped CR configures the whole stack. Field docs are authoritat
 | Field | Description |
 |-------|-------------|
 | `spec.nodeSelector` *(required)* | Which nodes the fractiond/mpsd DaemonSets target. **Immutable** — set once at creation. |
+| `spec.runtimeClassName` | RuntimeClass for daemon pods that need NVIDIA GPU/NVML access. Defaults to `nvidia`; set `""` to use the node default runtime. |
 | `spec.fractioningAgent` | fractiond options (annotation prefix, log level, fail-open, retroactive enforcement). |
-| `spec.metricsAgent` | fractiond-pod NVML/runtime settings plus metricsd options (`enabled`, metric-name overrides). |
+| `spec.metricsAgent` | metricsd options (`enabled`, metric-name overrides, extra NVML volumes/mounts). |
 | `spec.mpsDaemon` | mpsd supervisor options (e.g. `gracefulStopDelay`). |
 
 Status is surfaced as conditions on the CR:

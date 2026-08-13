@@ -39,10 +39,9 @@ concerns — the suite only connects and asserts, it deploys nothing:
 | Verify GPU nodes | `test/e2e/suite` (`nodes.VerifyGPUNodes`) | precondition check, no mutation |
 | Run test assertions | `test/e2e/tests` | scrape the metricsd sidecar `/metrics`, assert |
 
-> **RuntimeClass on k3d:** `create-cluster.py` rewires the `nvidia` RuntimeClass
-> to the default runc handler so the daemon pods can start on fake-GPU nodes.
-> The e2e fractiond and metricsd images bake in nvml-mock for the NVML calls that
-> would normally be served by the NVIDIA runtime on a real cluster.
+> **RuntimeClass on k3d:** the e2e chart values clear `runtimeClassName` so daemon
+> pods use k3d's default runtime. The e2e images provide the fake NVIDIA/NVML
+> behavior needed by the tests.
 
 ## Build + deploy (`skaffold.yaml`)
 

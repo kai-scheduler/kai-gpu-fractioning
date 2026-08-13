@@ -141,10 +141,9 @@ func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
 	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 
-	// Pod must opt into the nvidia RuntimeClass so the NVIDIA container runtime
-	// injects libnvidia-ml.so for metricsd; without this NVML returns
-	// ERROR_LIBRARY_NOT_FOUND.
-	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "nvidia" {
+	// Pod must opt into the RuntimeClass so the NVIDIA container runtime injects
+	// libnvidia-ml.so for metricsd; without this NVML returns ERROR_LIBRARY_NOT_FOUND.
+	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != daemonmgr.DefaultRuntimeClassName {
 		t.Errorf("runtimeClassName = %v, expected \"nvidia\"", spec.RuntimeClassName)
 	}
 
@@ -237,17 +236,22 @@ func TestDaemon_BuildDaemonSet_MetricNamesArgs(t *testing.T) {
 
 func TestDaemon_BuildDaemonSet_MetricsRuntimeClassOverride(t *testing.T) {
 	custom := "custom-nvidia"
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &custom})
-	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	opts := defaultOpts()
+	opts.RuntimeClassName = &custom
+
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	spec := d.BuildDaemonSet(opts).Spec.Template.Spec
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "custom-nvidia" {
 		t.Errorf("runtimeClassName = %v, expected %q", spec.RuntimeClassName, custom)
 	}
 }
 
 func TestDaemon_BuildDaemonSet_MetricsRuntimeClassEmpty(t *testing.T) {
-	empty := ""
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true, RuntimeClassName: &empty})
-	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
+	opts := defaultOpts()
+	opts.RuntimeClassName = nil
+
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	spec := d.BuildDaemonSet(opts).Spec.Template.Spec
 	if spec.RuntimeClassName != nil {
 		t.Errorf("runtimeClassName = %v, expected nil (node default)", spec.RuntimeClassName)
 	}
@@ -504,6 +508,7 @@ func defaultOpts() daemonmgr.BuildOptions {
 		Namespace:          "gpu-fractioning-system",
 		NodeSelector:       map[string]string{"nvidia.com/gpu.present": "true"},
 		ServiceAccountName: testDaemonServiceAccountName,
+		RuntimeClassName:   ptr.To(daemonmgr.DefaultRuntimeClassName),
 		DefaultImages: map[string]daemonmgr.ImageSpec{
 			"fractiond": {
 				Repository: "fake.io/org/fractiond",

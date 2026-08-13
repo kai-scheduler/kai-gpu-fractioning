@@ -17,15 +17,11 @@ import (
 )
 
 const (
-	daemonName   = "fractiond"
-	metricsdName = "metricsd"
-	// defaultMetricsRuntimeClassName is the RuntimeClass applied to the
-	// fractiond+metricsd pod when metricsAgent.runtimeClassName is unset. The NVIDIA
-	// runtime injects libnvidia-ml.so, which metricsd needs to call NVML.
-	defaultMetricsRuntimeClassName = "nvidia"
-	defaultMPSPipeDir              = "/run/nvidia-mps"
-	defaultNRISocketDir            = "/var/run/nri"
-	defaultCRISocketPath           = "/run/containerd/containerd.sock"
+	daemonName           = "fractiond"
+	metricsdName         = "metricsd"
+	defaultMPSPipeDir    = "/run/nvidia-mps"
+	defaultNRISocketDir  = "/var/run/nri"
+	defaultCRISocketPath = "/run/containerd/containerd.sock"
 	// containerPodMapDir is the shared handoff directory: fractiond writes the
 	// container→pod mapping here and the metricsd sidecar reads it. Must match
 	// fractiond's and metricsd's built-in default (fsstore.DefaultMapDir).
@@ -109,7 +105,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 		vol, mount := metricsSharedVolume()
 		podSpec.Volumes = append(podSpec.Volumes, vol)
 		fractiondContainer.VolumeMounts = append(fractiondContainer.VolumeMounts, mount)
-		podSpec.RuntimeClassName = d.runtimeClassName()
+		podSpec.RuntimeClassName = opts.RuntimeClassName
 	}
 	// fractiondContainer is a value type: append must happen after the map-dir mount
 	// is added so the VolumeMount is included in the copy placed into the slice.
@@ -358,19 +354,6 @@ func (d *daemon) buildMetricsdContainer(image daemonmgr.ImageSpec) corev1.Contai
 		c.VolumeMounts = append(c.VolumeMounts, d.metricsSpec.VolumeMounts...)
 	}
 	return c
-}
-
-// runtimeClassName returns the RuntimeClass to set on the pod when metricsd is
-// enabled. Nil in the spec defaults to "nvidia"; a pointer to "" explicitly
-// clears the runtime class (use the node default); any other value is used as-is.
-func (d *daemon) runtimeClassName() *string {
-	if d.metricsSpec == nil || d.metricsSpec.RuntimeClassName == nil {
-		return new(defaultMetricsRuntimeClassName)
-	}
-	if *d.metricsSpec.RuntimeClassName == "" {
-		return nil
-	}
-	return d.metricsSpec.RuntimeClassName
 }
 
 func (d *daemon) buildMetricsdArgs() []string {
