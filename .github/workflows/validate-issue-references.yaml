@@ -21,7 +21,12 @@ jobs:
       issues: read
       pull-requests: read
     steps:
+      - name: Allow Dependabot dependency updates without a tracking issue
+        if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+        run: echo "Dependabot-authored pull requests are exempt from the issue-reference requirement."
+
       - name: Require at least one existing open issue
+        if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
