@@ -159,12 +159,13 @@ func verifySchedulingScope(ctx context.Context, t *testing.T) {
 
 // FractiondPodSpec — fractiond pod spec: hostPID, privileged main
 // container, the metricsd sidecar, and the NRI-socket + MPS-pipe hostPath mounts.
-// RuntimeClass is deliberately NOT asserted (it's install-dependent: cleared on
-// the fake cluster, "nvidia" on a real one) — the suite is cluster-agnostic.
 func verifyFractiondPodSpec(ctx context.Context, t *testing.T) {
 	ds := h.GetDaemonSet(ctx, t, harness.ComponentFractiond)
 	if !ds.Spec.Template.Spec.HostPID {
 		t.Error("fractiond pod: hostPID = false, want true")
+	}
+	if ds.Spec.Template.Spec.RuntimeClassName != nil {
+		t.Errorf("fractiond pod: runtimeClassName = %q, want unset", *ds.Spec.Template.Spec.RuntimeClassName)
 	}
 	sh, ok := daemonset.Container(ds, containerFractiond)
 	if !ok {
@@ -187,11 +188,13 @@ func verifyFractiondPodSpec(ctx context.Context, t *testing.T) {
 
 // MpsdPodSpec — mpsd pod spec: privileged, service-accounted for node labeling,
 // MPS pipe + log hostPath mounts, and a control-socket readiness probe.
-// RuntimeClass is install-dependent, so the e2e suite does not assert it.
 func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 	ds := h.GetDaemonSet(ctx, t, harness.ComponentMpsd)
 	if ds.Spec.Template.Spec.ServiceAccountName == "" {
 		t.Error("mpsd pod: serviceAccountName is empty")
+	}
+	if ds.Spec.Template.Spec.RuntimeClassName != nil {
+		t.Errorf("mpsd pod: runtimeClassName = %q, want unset", *ds.Spec.Template.Spec.RuntimeClassName)
 	}
 	mp, ok := daemonset.Container(ds, containerMpsd)
 	if !ok {

@@ -3,12 +3,13 @@
 
 package daemonmgr
 
-import "testing"
+import (
+	"testing"
+
+	"k8s.io/utils/ptr"
+)
 
 func TestResolveRuntimeClassName(t *testing.T) {
-	custom := "custom-nvidia"
-	empty := ""
-
 	tests := []struct {
 		name string
 		in   *string
@@ -17,16 +18,16 @@ func TestResolveRuntimeClassName(t *testing.T) {
 		{
 			name: "nil defaults to nvidia",
 			in:   nil,
-			want: stringPtr(DefaultRuntimeClassName),
+			want: ptr.To(DefaultRuntimeClassName),
 		},
 		{
 			name: "custom is propagated",
-			in:   &custom,
-			want: &custom,
+			in:   ptr.To("custom-nvidia"),
+			want: ptr.To("custom-nvidia"),
 		},
 		{
 			name: "empty uses node default",
-			in:   &empty,
+			in:   ptr.To(""),
 			want: nil,
 		},
 	}
@@ -45,8 +46,4 @@ func TestResolveRuntimeClassName(t *testing.T) {
 			}
 		})
 	}
-}
-
-func stringPtr(s string) *string {
-	return &s
 }
