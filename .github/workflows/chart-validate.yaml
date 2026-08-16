@@ -44,12 +44,16 @@ jobs:
         run: |
           set -euo pipefail
           # Validate both the default render and the monitors-enabled render.
+          # Advertise the Prometheus Operator API so Helm renders ServiceMonitor
+          # and PodMonitor when prometheus.enabled=true, as it would on a cluster
+          # where the corresponding CRDs are installed.
           # -ignore-missing-schemas skips CRs whose CRD schemas aren't published
           # (our GpuFractioningConfig, plus ServiceMonitor/PodMonitor from the
           # Prometheus Operator) rather than failing on them.
           for extra in "" "--set prometheus.enabled=true"; do
             echo "== helm template ${extra:-(defaults)} =="
             helm template gpu-fractioning operator/charts $extra \
+              --api-versions monitoring.coreos.com/v1 \
               | kubeconform -strict -summary -ignore-missing-schemas \
                   -kubernetes-version 1.31.0
           done

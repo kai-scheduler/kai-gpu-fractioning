@@ -192,7 +192,7 @@ Planned work lives in the [issue tracker](https://github.com/kai-scheduler/kai-g
 
 ## Community, discussion and support
 
-- **Questions and discussion** — the `#kai-scheduler` channel on the [CNCF Slack](https://communityinviter.com/apps/cloud-native/cncf).
+- **Questions and discussion** — the `#kai-scheduler` channel on the [CNCF Slack](https://slack.cncf.io).
 - **Bugs and feature requests** — [GitHub issues](https://github.com/kai-scheduler/kai-gpu-fractioning/issues). [SUPPORT.md](SUPPORT.md) lists what to include.
 - **Security vulnerabilities** — never a public issue; use the private channels in [SECURITY.md](SECURITY.md).
 - **Who maintains this** — [MAINTAINERS.md](MAINTAINERS.md), governed as described in [GOVERNANCE.md](GOVERNANCE.md).
