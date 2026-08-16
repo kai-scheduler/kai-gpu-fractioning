@@ -20,4 +20,4 @@ The same list drives review and merge permissions through [OWNERS](OWNERS) and
 
 - Public questions and bug reports: [GitHub issues](https://github.com/kai-scheduler/kai-gpu-fractioning/issues).
 - Security vulnerabilities: **do not open an issue** — use the private channels in [SECURITY.md](SECURITY.md).
-- Anything else: the `#kai-scheduler` channel on the [CNCF Slack](https://communityinviter.com/apps/cloud-native/cncf).
+- Anything else: the `#kai-scheduler` channel on the [CNCF Slack](https://slack.cncf.io).

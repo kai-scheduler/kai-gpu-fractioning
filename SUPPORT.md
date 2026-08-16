@@ -8,7 +8,7 @@ How to get help with **kai-gpu-fractioning**. It is community supported by its
 | I want to… | Go to |
 | --- | --- |
 | Understand what this does and how to install it | [README.md](README.md) |
-| Ask a question, or discuss an idea | The `#kai-scheduler` channel on the [CNCF Slack](https://communityinviter.com/apps/cloud-native/cncf), which the maintainers of this repository read |
+| Ask a question, or discuss an idea | The `#kai-scheduler` channel on the [CNCF Slack](https://slack.cncf.io), which the maintainers of this repository read |
 | Report a bug, or request a feature | [GitHub issues](https://github.com/kai-scheduler/kai-gpu-fractioning/issues) |
 | Report a security vulnerability | **Not an issue** — the private channels in [SECURITY.md](SECURITY.md) |
 | Contribute a change | [CONTRIBUTING.md](CONTRIBUTING.md) |
