@@ -4,7 +4,7 @@
 # Build on the native BUILDPLATFORM and cross-compile to the target arch. The
 # operator is CGO_ENABLED=0, so cross-compilation is pure Go (no emulation) —
 # much faster than running the whole build under qemu for a foreign --platform.
-FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.6 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -30,7 +30,7 @@ RUN cd operator && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-am
 # NVIDIA-approved distroless base pulled from NGC (OSRB requires an approved
 # NVIDIA base container; gcr.io/distroless is not one). Adds no OS packages of
 # our own — the image is the base plus the static manager binary.
-FROM nvcr.io/nvidia/distroless/go:v4.0.8
+FROM nvcr.io/nvidia/distroless/go:v4.0.9
 WORKDIR /
 COPY --from=builder /workspace/operator/manager .
 # Attribution for the third-party code statically linked into the binary.
