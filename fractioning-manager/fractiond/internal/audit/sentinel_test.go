@@ -13,7 +13,7 @@ import (
 )
 
 func newSentinel(stopper ContainerStopper) *Sentinel {
-	return NewSentinel(configuration.DefaultAnnotationPrefix, configuration.DefaultMPSPipeDirectory, stopper, nil)
+	return NewSentinel(configuration.DefaultAnnotationPrefix, configuration.DefaultMPSPipeDirectory, true, stopper, nil)
 }
 
 func TestAuditStopsOnlyViolations(t *testing.T) {

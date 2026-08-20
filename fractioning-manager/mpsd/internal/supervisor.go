@@ -30,10 +30,25 @@ const (
 	DefaultMPSControlPort = "3" // protocol version 3
 
 	DefaultMPSConfigPath = "/etc/nvidia-mps/mps-control.toml" // default path for the MPS config file
-	// Fixed MPS feature toggles. memacct is always on and context-share always off by design.
+	// Fixed MPS feature toggles. memacct and context-share are always on; only
+	// the audit-log flag is user-configurable.
 	DefaultMemacctEnabled      = true
-	DefaultContextShareEnabled = false
+	DefaultContextShareEnabled = true
 	DefaultMemacctAuditLog     = true // can be overridden by environment variable
+	// DefaultContextShareDefaultSocket disables implicit default-socket
+	// context sharing: fractiond explicitly opts a container into sm-sharing
+	// via its annotation, so there is no need for containers to share the
+	// default per-node socket unless routed to DefaultSharedServerName.
+	DefaultContextShareDefaultSocket = "off"
+	// DefaultSharedServerName is the parameterless MPS server fractiond
+	// routes sm-sharing containers to (see configuration.SharedMPSSocketPath).
+	DefaultSharedServerName = "shared"
+	// DefaultSupportSMSharing is the CLI flag default for the sm-sharing
+	// installation-time chicken bit (usually overridden by the operator via the
+	// SUPPORT_SM_SHARING env var, itself Helm-injected). When false, mpsd
+	// renders its MPS config with context-share disabled, exactly as it did
+	// before the sm-sharing feature existed.
+	DefaultSupportSMSharing = true
 )
 
 // SupervisorConfig holds all settings for the MPS daemon supervisor.
@@ -42,6 +57,7 @@ type SupervisorConfig struct {
 	ControlPort       string        // value for the -p flag; empty omits -p
 	ConfigPath        string        // MPS config file for the -a flag; empty omits -a
 	ConfigContent     string        // TOML written to ConfigPath at setup; empty skips writing
+	Multiuser         bool          // run the daemon multiuser (-m); required by the shared MPS server
 	PipeDir           string        // CUDA_MPS_PIPE_DIRECTORY — shared with containers
 	LogDir            string        // CUDA_MPS_LOG_DIRECTORY — daemon log output
 	Backoff           time.Duration // initial delay before restarting after an unexpected exit
@@ -189,14 +205,21 @@ func (s *Supervisor) removeStaleSocket() {
 }
 
 // buildMPSArgs builds the nvidia-cuda-mps-control argument list. The daemon is
-// always run in the foreground (-f) so we can supervise it. -p (control port)
-// and -a (config file) are included only when configured — a blank value acts
-// as an escape hatch to drop the flag without rebuilding. Order mirrors the
-// known-good production invocation: `-p <port> -f -a <config>`.
-func buildMPSArgs(controlPort, configPath string) []string {
-	args := make([]string, 0, 4)
+// always run in the foreground (-f) so we can supervise it. -m (multiuser, so
+// containers with differing UIDs can reach one MPS server) is required by the
+// shared server and therefore tracks the sm-sharing toggle: disabling the
+// feature must restore the pre-feature invocation, not just the pre-feature
+// config file. -p (control port) and -a (config file) are included only when
+// configured — a blank value acts as an escape hatch to drop the flag without
+// rebuilding. Order mirrors the known-good production invocation:
+// `-p <port> -m -f -a <config>`.
+func buildMPSArgs(controlPort, configPath string, multiuser bool) []string {
+	args := make([]string, 0, 5)
 	if controlPort != "" {
 		args = append(args, "-p", controlPort)
+	}
+	if multiuser {
+		args = append(args, "-m")
 	}
 	args = append(args, "-f")
 	if configPath != "" {
@@ -209,7 +232,7 @@ func buildMPSArgs(controlPort, configPath string) []string {
 // Configuration is applied via environment variables (CUDA_MPS_PIPE_DIRECTORY,
 // CUDA_MPS_LOG_DIRECTORY) set on the command, plus the -a config file.
 func (s *Supervisor) runMPS(ctx context.Context) error {
-	args := buildMPSArgs(s.cfg.ControlPort, s.cfg.ConfigPath)
+	args := buildMPSArgs(s.cfg.ControlPort, s.cfg.ConfigPath, s.cfg.Multiuser)
 	cmd := exec.CommandContext(ctx, s.cfg.MPSBinary, args...)
 	cmd.Env = append(os.Environ(),
 		"CUDA_MPS_PIPE_DIRECTORY="+s.cfg.PipeDir,

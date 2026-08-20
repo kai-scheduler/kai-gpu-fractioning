@@ -12,14 +12,34 @@ func TestMPSConfig_TOML(t *testing.T) {
 		want string
 	}{
 		{
-			name: "audit log enabled",
+			// This is also the shape cmd/main.go produces when the sm-sharing
+			// chicken bit is disabled: ContextShareDefaultSocket/SharedServerName
+			// stay at their zero value, so default_socket and [servers.shared] are
+			// both omitted below.
+			name: "audit log enabled, sm-sharing disabled (context-share off, no shared server)",
 			cfg:  MPSConfig{MemacctEnabled: true, MemacctAuditLog: true, ContextShareEnabled: false},
 			want: "[features.memacct]\nenabled=true\naudit_log=true\n\n[features.context-share]\nenabled=false\n",
 		},
 		{
-			name: "audit log disabled",
+			name: "audit log disabled, sm-sharing disabled (context-share off, no shared server)",
 			cfg:  MPSConfig{MemacctEnabled: true, MemacctAuditLog: false, ContextShareEnabled: false},
 			want: "[features.memacct]\nenabled=true\naudit_log=false\n\n[features.context-share]\nenabled=false\n",
+		},
+		{
+			name: "context-share with shared server (production shape)",
+			cfg: MPSConfig{
+				MemacctEnabled:            true,
+				MemacctAuditLog:           true,
+				ContextShareEnabled:       true,
+				ContextShareDefaultSocket: "off",
+				SharedServerName:          "shared",
+			},
+			want: "[features.memacct]\nenabled=true\naudit_log=true\n\n[features.context-share]\nenabled=true\ndefault_socket=\"off\"\n\n[servers.shared]\n",
+		},
+		{
+			name: "context-share enabled without default_socket or shared server",
+			cfg:  MPSConfig{MemacctEnabled: true, MemacctAuditLog: true, ContextShareEnabled: true},
+			want: "[features.memacct]\nenabled=true\naudit_log=true\n\n[features.context-share]\nenabled=true\n",
 		},
 	}
 

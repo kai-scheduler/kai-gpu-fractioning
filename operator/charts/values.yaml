@@ -31,11 +31,22 @@ fullnameOverride: ""
 # provides NVIDIA GPU/NVML access.
 runtimeClassName: "nvidia"
 
+# supportSmSharing is the installation-time toggle for the sm-sharing compute
+# mode: mpsd's shared MPS server (context-share, [servers.shared]) and
+# fractiond's routing of the gpu-compute.mode: sm-sharing annotation to it.
+# Disabling it is a kill switch (no code rollback needed) if the shared MPS
+# server misbehaves: mpsd falls back to its pre-sm-sharing config *and* daemon
+# invocation (no shared server, no multiuser mode), and fractiond rejects the
+# sm-sharing annotation like any other invalid value.
+supportSmSharing: true
+
 # mpsd configures the MPS daemon (mpsd) managed by the operator.
 mpsd:
   # auditLog toggles features.memacct.audit_log in the generated MPS
-  # control-daemon config (nvidia-cuda-mps-control -a). memacct itself is always
-  # enabled and context-share always disabled.
+  # control-daemon config (nvidia-cuda-mps-control -a). memacct and
+  # context-share are both always enabled; context-share backs the shared MPS
+  # server that containers opt into via the gpu-compute.mode: sm-sharing
+  # annotation.
   auditLog: true
 
 metricsAgent:

@@ -2,12 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package injection holds the "output" contract of the fractiond NRI plugin: the
-// environment variables the CreateContainer hook injects into GPU-fractioning
-// containers. It is the counterpart to the annotations package (the "input"
-// read from the pod) and exists so the injection side (internal/plugin.go
-// buildAdjustment) and the verification side (internal/audit) reference one
-// source of truth instead of duplicating the string literals.
+// environment variables and mounts the CreateContainer hook injects into
+// GPU-fractioning containers. It is the counterpart to the annotations package
+// (the "input" read from the pod) and exists so the injection side
+// (internal/plugin.go buildAdjustment) and the verification side
+// (internal/audit) reference one source of truth instead of duplicating the
+// string literals or the mount-path derivation logic.
 package injection
+
+import (
+	"path/filepath"
+
+	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/common/configuration"
+	"github.com/kai-scheduler/kai-gpu-fractioning/fractioning-manager/fractiond/internal/annotations"
+)
 
 // Injected env-var keys the create hook sets on a GPU-fractioning container.
 const (
@@ -36,4 +44,20 @@ var AllEnvKeys = []string{
 	EnvGPUMemoryLimits,
 	EnvMPSPipeDirectory,
 	EnvVisibleDevices,
+}
+
+// MPSPipeMount returns the MPS pipe bind-mount source (host path) and
+// destination (in-container path) for the given host pipe directory and
+// compute mode. Both the fractiond create hook (internal/plugin.go
+// buildAdjustment) and its audit detector (internal/audit) call this so the
+// expected mount can never drift between the two.
+func MPSPipeMount(mpsPipeDir string, mode annotations.ComputeMode) (source, destination string) {
+	if mode == annotations.ComputeModeSMSharing {
+		// sm-sharing routes the container to the shared MPS server's socket
+		// on the host, mounted at a fixed in-container path that is
+		// decoupled from that host-side server/namespace naming.
+		return filepath.Join(mpsPipeDir, configuration.SharedMPSSocketPath), configuration.ContainerMPSPipeDirectory
+	}
+	// time-slicing (the default): identity mount, unchanged from today.
+	return mpsPipeDir, mpsPipeDir
 }

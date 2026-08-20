@@ -44,14 +44,18 @@ const (
 )
 
 type daemon struct {
-	spec     *v1alpha1.MpsDaemonSpec
-	auditLog bool // set  level of the memacct audit log
+	spec             *v1alpha1.MpsDaemonSpec
+	auditLog         bool // set  level of the memacct audit log
+	supportSMSharing bool // Helm-injected sm-sharing chicken bit
 }
 
 // NewMpsdDaemon returns a ManagedDaemon for the MPS daemon supervisor.
-// auditLog is the Helm-injected MPS memacct audit-log default.
-func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog bool) daemonmgr.ManagedDaemon {
-	return &daemon{spec: spec, auditLog: auditLog}
+// auditLog is the Helm-injected MPS memacct audit-log default. supportSMSharing
+// is the Helm-injected sm-sharing chicken bit: when false, mpsd renders its MPS
+// config with the shared server (context-share) disabled, exactly as it did
+// before the sm-sharing feature existed.
+func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog, supportSMSharing bool) daemonmgr.ManagedDaemon {
+	return &daemon{spec: spec, auditLog: auditLog, supportSMSharing: supportSMSharing}
 }
 
 func (d *daemon) Name() string { return daemonName }
@@ -95,6 +99,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 		corev1.EnvVar{Name: envVisibleDevices, Value: "all"},
 		corev1.EnvVar{Name: envCapabilities, Value: "compute,utility"},
 		corev1.EnvVar{Name: "MPS_MEMACCT_AUDIT_LOG", Value: strconv.FormatBool(d.auditLog)},
+		corev1.EnvVar{Name: "MPS_SUPPORT_SM_SHARING", Value: strconv.FormatBool(d.supportSMSharing)},
 	)
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, container)
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)

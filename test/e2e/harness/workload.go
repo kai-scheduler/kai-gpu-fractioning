@@ -39,6 +39,23 @@ func (h *Harness) DevicesAnnotationKey(container string) string {
 	return fmt.Sprintf("%s%s.gpus.devices", AnnotationPrefix, container)
 }
 
+// ComputeModeAnnotationKey builds the per-container compute-mode annotation key
+// (…gpu-compute.mode) that selects which MPS socket fractiond mounts:
+// time-slicing (the default when absent) or sm-sharing.
+func (h *Harness) ComputeModeAnnotationKey(container string) string {
+	return fmt.Sprintf("%s%s.gpu-compute.mode", AnnotationPrefix, container)
+}
+
+// ComputeModeAnnotations returns the standard fractional-GPU annotations plus an
+// explicit compute mode. sm-sharing is only honored on a container that is
+// already GPU-fractioning (fractiond evaluates compute mode only once the
+// container has GPU-memory config), so the memory pair always comes along.
+func (h *Harness) ComputeModeAnnotations(mode string) map[string]string {
+	annotations := h.DefaultWorkloadAnnotations()
+	annotations[h.ComputeModeAnnotationKey(WorkloadContainer)] = mode
+	return annotations
+}
+
 // DefaultWorkloadAnnotations returns the standard request+limit fractional-GPU
 // annotations for the shared workload container and memory values — the pair a
 // well-formed fractional pod carries.

@@ -44,6 +44,13 @@ type Config struct {
 	// FailOpen skips a container on parse error instead of blocking it.
 	FailOpen bool
 
+	// SupportSMSharing is the cluster's installation-time sm-sharing chicken
+	// bit (Helm value -> operator -> --support-sm-sharing). When false, the
+	// gpu-compute.mode: sm-sharing annotation is rejected like any other
+	// invalid value, since mpsd's shared MPS server is disabled by the same
+	// toggle.
+	SupportSMSharing bool
+
 	// RetroactiveEnforcement enables the audit pass on NRI (re)connect: any
 	// GPU-fractioning container found running without the expected injection is
 	// stopped so kubelet recreates it through a healthy CreateContainer hook.
@@ -91,6 +98,7 @@ type Plugin struct {
 	AnnotationPrefix string
 	MPSPipeDirectory string
 	FailOpen         bool
+	SupportSMSharing bool
 	Log              *slog.Logger
 
 	events    *events.Processor
@@ -130,13 +138,14 @@ func NewPlugin(cfg Config, stopper audit.ContainerStopper) (*Plugin, error) {
 		if stopper == nil {
 			return nil, fmt.Errorf("retroactive enforcement enabled but no container stopper was provided")
 		}
-		sentinel = audit.NewSentinel(cfg.AnnotationPrefix, cfg.MPSPipeDirectory, stopper, log)
+		sentinel = audit.NewSentinel(cfg.AnnotationPrefix, cfg.MPSPipeDirectory, cfg.SupportSMSharing, stopper, log)
 	}
 
 	return &Plugin{
 		AnnotationPrefix: cfg.AnnotationPrefix,
 		MPSPipeDirectory: cfg.MPSPipeDirectory,
 		FailOpen:         cfg.FailOpen,
+		SupportSMSharing: cfg.SupportSMSharing,
 		Log:              log,
 		events:           proc,
 		adapter:          adapter{annotationPrefix: cfg.AnnotationPrefix, log: log},
@@ -219,7 +228,9 @@ func (p *Plugin) CreateContainer(_ context.Context, pod *api.PodSandbox, ctr *ap
 // adjustment when the container has no GPU memory annotations, and an error only
 // when annotation parsing fails while FailOpen is false. For a GPU-fractioning
 // container it additionally injects NVIDIA_VISIBLE_DEVICES from the container's
-// device-assignment annotation when present.
+// device-assignment annotation when present, and routes the MPS pipe mount to
+// either the default or the shared MPS server based on the container's
+// compute-mode annotation (see injection.MPSPipeMount).
 func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.ContainerAdjustment, error) {
 	gpuMemoryCfg, err := annotations.ParseGPUMemoryAnnotations(pod.Annotations, ctr.Name, p.AnnotationPrefix)
 	if err != nil {
@@ -244,6 +255,20 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	// always enforced and the request is always populated for metrics.
 	gpuMemoryCfg = gpuMemoryCfg.ApplyDefaults()
 
+	computeMode, err := annotations.ParseComputeMode(pod.Annotations, ctr.Name, p.AnnotationPrefix, p.SupportSMSharing)
+	if err != nil {
+		p.Log.Warn("failed to parse GPU compute mode annotation",
+			"container", ctr.Name,
+			"pod", pod.Name,
+			"error", err,
+		)
+		if !p.FailOpen {
+			return nil, fmt.Errorf("container %q in pod %q: %w", ctr.Name, pod.Name, err)
+		}
+		computeMode = annotations.ComputeModeTimeSlicing
+	}
+	pipeSource, pipeDestination := injection.MPSPipeMount(p.MPSPipeDirectory, computeMode)
+
 	adj := &api.ContainerAdjustment{}
 
 	if gpuMemoryCfg.Request != "" {
@@ -252,11 +277,11 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	if gpuMemoryCfg.Limit != "" {
 		adj.AddEnv(injection.EnvGPUMemoryLimits, gpuMemoryCfg.Limit)
 	}
-	adj.AddEnv(injection.EnvMPSPipeDirectory, p.MPSPipeDirectory)
+	adj.AddEnv(injection.EnvMPSPipeDirectory, pipeDestination)
 
 	adj.AddMount(&api.Mount{
-		Source:      p.MPSPipeDirectory,
-		Destination: p.MPSPipeDirectory,
+		Source:      pipeSource,
+		Destination: pipeDestination,
 		Type:        "bind",
 		Options:     []string{"bind", "rw"},
 	})
@@ -286,6 +311,7 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 		"request", gpuMemoryCfg.Request,
 		"limit", gpuMemoryCfg.Limit,
 		"visibleDevices", visibleDevices,
+		"computeMode", computeMode,
 	)
 
 	return adj, nil

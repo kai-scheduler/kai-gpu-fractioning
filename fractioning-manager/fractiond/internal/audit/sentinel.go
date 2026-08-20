@@ -26,11 +26,11 @@ type Sentinel struct {
 	wg         sync.WaitGroup
 }
 
-// NewSentinel builds a Sentinel. annotationPrefix and mpsPipeDirectory must
-// match the fractiond plugin's create-hook configuration so detection mirrors
-// injection exactly. stopper must be non-nil; log defaults to slog.Default()
-// when nil.
-func NewSentinel(annotationPrefix, mpsPipeDirectory string, stopper ContainerStopper, log *slog.Logger) *Sentinel {
+// NewSentinel builds a Sentinel. annotationPrefix, mpsPipeDirectory, and
+// smSharingEnabled must match the fractiond plugin's create-hook configuration
+// so detection mirrors injection exactly. stopper must be non-nil; log
+// defaults to slog.Default() when nil.
+func NewSentinel(annotationPrefix, mpsPipeDirectory string, smSharingEnabled bool, stopper ContainerStopper, log *slog.Logger) *Sentinel {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -38,6 +38,7 @@ func NewSentinel(annotationPrefix, mpsPipeDirectory string, stopper ContainerSto
 		detector: detector{
 			annotationPrefix: annotationPrefix,
 			mpsPipeDirectory: mpsPipeDirectory,
+			smSharingEnabled: smSharingEnabled,
 			log:              log,
 		},
 		remediator: remediator{

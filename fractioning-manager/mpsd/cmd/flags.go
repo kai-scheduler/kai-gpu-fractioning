@@ -21,6 +21,9 @@ type cliFlags struct {
 	configPath string
 	// memacctAuditLog enables features.memacct.audit_log in the generated config.
 	memacctAuditLog bool
+	// supportSMSharing is the sm-sharing installation-time chicken bit; when
+	// false, the generated config omits context-share/the shared server.
+	supportSMSharing bool
 	// pipeDir is CUDA_MPS_PIPE_DIRECTORY, shared with containers.
 	pipeDir string
 	// logDir is CUDA_MPS_LOG_DIRECTORY, the daemon log output.
@@ -51,6 +54,9 @@ func parseFlags() cliFlags {
 	flag.BoolVar(&f.memacctAuditLog, "memacct-audit-log",
 		env.Bool("MPS_MEMACCT_AUDIT_LOG", internal.DefaultMemacctAuditLog),
 		"enable features.memacct.audit_log in the generated MPS config")
+	flag.BoolVar(&f.supportSMSharing, "support-sm-sharing",
+		env.Bool("MPS_SUPPORT_SM_SHARING", internal.DefaultSupportSMSharing),
+		"enable the shared MPS server (context-share) that fractiond routes sm-sharing containers to")
 	flag.StringVar(&f.pipeDir, "pipe-dir",
 		env.String("CUDA_MPS_PIPE_DIRECTORY", configuration.DefaultMPSPipeDirectory),
 		"CUDA MPS pipe directory")

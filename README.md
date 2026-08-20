@@ -10,8 +10,8 @@ It is designed to run alongside [KAI Scheduler](https://github.com/kai-scheduler
 
 1. A cluster admin installs the operator and a `GpuFractioningConfig` custom resource is created (the Helm chart ships a default one).
 2. The **operator** (controller) reconciles the CR and rolls out the node-level components as DaemonSets to the selected GPU nodes.
-3. **mpsd** runs an NVIDIA MPS control daemon on each node with per-process GPU memory accounting (`memacct`) enabled and context-share disabled.
-4. **fractiond** registers as an NRI plugin with the container runtime. When a pod carrying GPU-memory annotations is created, fractiond injects `NVIDIA_GPU_MEMORY_REQUESTS` / `NVIDIA_GPU_MEMORY_LIMITS` (and the MPS pipe mount) into the container **before it starts**.
+3. **mpsd** runs an NVIDIA MPS control daemon on each node with per-process GPU memory accounting (`memacct`) enabled, plus a parameterless shared MPS server (`context-share`) that `sm-sharing` containers can opt into (see below) instead of the default per-node MPS socket.
+4. **fractiond** registers as an NRI plugin with the container runtime. When a pod carrying GPU-memory annotations is created, fractiond injects `NVIDIA_GPU_MEMORY_REQUESTS` / `NVIDIA_GPU_MEMORY_LIMITS` into the container **before it starts**, along with an MPS pipe mount — by default (`time-slicing`) to mpsd's default per-node socket, or, for a container annotated `gpu-compute.mode: sm-sharing`, to mpsd's shared MPS server instead, so its GPU **compute** (not just memory) is shared via MPS with other `sm-sharing` containers.
 5. The NVIDIA driver enforces `NVIDIA_GPU_MEMORY_LIMITS` as a hard cap, so a container cannot allocate beyond its share and impact its neighbors on the same GPU. A container that exceeds its limit is terminated (out-of-memory), the same way a container exceeding its Kubernetes memory limit is.
 6. **metricsd** (a sidecar alongside fractiond) exports per-pod GPU memory and utilization metrics for the shared GPUs.
 
@@ -95,6 +95,7 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 | Value | Default | Purpose |
 |-------|---------|---------|
 | `runtimeClassName` | `nvidia` | RuntimeClass for daemon pods that need NVIDIA GPU/NVML access; set `""` to use a node default runtime with NVIDIA GPU/NVML access |
+| `supportSmSharing` | `true` | installation-time toggle for the `sm-sharing` compute mode (mpsd's shared MPS server + fractiond's routing to it); a kill switch that requires no code rollback — disable it and the `gpu-compute.mode: sm-sharing` annotation is rejected like any other invalid value |
 | `metricsAgent.enabled` | `true` | run the metricsd metrics sidecar |
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
@@ -128,6 +129,20 @@ spec:
 - **limit** is the hard memory cap the driver enforces. **request** is the workload's declared share; the GPU fraction used to normalize SM-utilization metrics is derived from the limit, falling back to the request.
 - Values are Kubernetes quantities (`8Gi`, `512Mi`, `1G`, …) and must resolve to at least 1 MiB. fractiond normalizes them to the integer MiB values consumed by NVIDIA memory env vars (`1000Mi` -> `1000`, `1000M` -> `954`). A malformed value fails container creation unless fractiond is running fail-open.
 - The GPU **device assignment** (`nvidia.com/container.<name>.gpus.devices`) is set by the scheduler (KAI Scheduler); fractiond injects `NVIDIA_VISIBLE_DEVICES` from it.
+
+### Selecting a compute-sharing mode
+
+GPU **compute** can be shared two ways, selected per-container:
+
+```yaml
+annotations:
+  # nvidia.com/container.<container-name>.gpu-compute.mode: "time-slicing" | "sm-sharing"
+  nvidia.com/container.trainer.gpu-compute.mode: sm-sharing
+```
+
+- **`time-slicing`** (the default; same as omitting the annotation) — compute is shared via GPU time-slicing (the driver schedules processes in turns) against mpsd's default per-node MPS server. This is today's behavior.
+- **`sm-sharing`** — compute is shared via MPS itself (concurrent SM occupancy): fractiond routes the container to mpsd's shared MPS server instead. `sm-sharing` only makes sense alongside a GPU-memory annotation (above), since it changes how compute is shared, not memory.
+- Any other value fails container creation (or falls back to `time-slicing` if fractiond is running fail-open).
 
 ## `GpuFractioningConfig` reference
 

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -17,6 +18,11 @@ import (
 	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/waiter"
 	"github.com/kai-scheduler/kai-gpu-fractioning/test/e2e/workload"
 )
+
+// containerMpsd is the mpsd DaemonSet's container name, needed by the sm-sharing
+// case to reach the node's MPS pipe directory. The operator suite declares its
+// own copy; per harness/consts.go, container names stay suite-local.
+const containerMpsd = "mpsd"
 
 // InjectsMemoryEnv — fractiond injects the GPU-memory env vars and MPS
 // pipe dir into an annotated container (request/limit normalized to MiB).
@@ -47,6 +53,96 @@ func caseMountsMPSPipeDir(ctx context.Context, t *testing.T) {
 	}
 	if out != "yes" {
 		t.Errorf("MPS pipe dir %s not mounted into container", harness.MPSPipeDir)
+	}
+}
+
+// SMSharingRoutesToSharedServer — a container annotated
+// gpu-compute.mode: sm-sharing gets the *shared* MPS server's socket directory
+// instead of the node's default one: CUDA_MPS_PIPE_DIRECTORY moves to
+// /tmp/nvidia-mps, and what is mounted there is the host's
+// /run/nvidia-mps/shared/default.
+//
+// The routing claim is proved by identity, not by the path string: a sentinel
+// file created from the mpsd pod (whose /run/nvidia-mps is a hostPath mount of
+// the node's) must appear inside the workload container. Asserting only that
+// /tmp/nvidia-mps exists and holds a "control" socket would pass just as well if
+// fractiond had mounted the wrong server's directory.
+func caseSMSharingRoutesToSharedServer(ctx context.Context, t *testing.T) {
+	pod := h.ApplyRunningWorkload(ctx, t, "d7-sm-sharing",
+		h.ComputeModeAnnotations(harness.ComputeModeSMSharing))
+
+	env := h.GetPodEnv(ctx, t, pod, harness.WorkloadContainer)
+	if env[harness.EnvMPSPipeDir] != harness.ContainerMPSPipeDir {
+		t.Errorf("%s = %q, want %q", harness.EnvMPSPipeDir,
+			env[harness.EnvMPSPipeDir], harness.ContainerMPSPipeDir)
+	}
+
+	// mpsd on the *same* node: the workload is pinned to a GPU node, but the
+	// cluster has several, and only the co-located pod shares the directory.
+	mpsdPod, ok := h.PodOnNode(ctx, t, harness.ComponentMpsd, pod.Spec.NodeName)
+	if !ok {
+		t.Fatalf("no mpsd pod on node %s (cannot verify the mount source)", pod.Spec.NodeName)
+	}
+
+	sentinel := fmt.Sprintf("e2e-sm-sharing-%d", time.Now().UnixNano())
+	hostPath := harness.SharedMPSHostDir + "/" + sentinel
+	if _, err := h.Exec(ctx, mpsdPod, containerMpsd, "sh", "-c", "touch "+hostPath); err != nil {
+		t.Fatalf("create sentinel %s from mpsd: %v", hostPath, err)
+	}
+	t.Cleanup(func() {
+		_, _ = h.Exec(context.Background(), mpsdPod, containerMpsd, "sh", "-c", "rm -f "+hostPath)
+	})
+
+	inContainer := harness.ContainerMPSPipeDir + "/" + sentinel
+	out, err := h.Exec(ctx, pod, harness.WorkloadContainer, "sh", "-c",
+		fmt.Sprintf("test -e %s && echo yes || echo no", inContainer))
+	if err != nil {
+		t.Fatalf("exec sentinel check: %v", err)
+	}
+	if out != "yes" {
+		t.Errorf("%s is not the host's %s: sentinel %s created there is not visible in the container",
+			harness.ContainerMPSPipeDir, harness.SharedMPSHostDir, sentinel)
+	}
+}
+
+// TimeSlicingKeepsDefaultMount — an explicit gpu-compute.mode: time-slicing
+// container keeps today's identity mount of the node's default pipe directory.
+// SkipsUnannotatedContainer and InjectsMemoryEnv cover the *absent* annotation;
+// this pins the explicit value, so a future change to the default can't silently
+// reroute containers that asked for time-slicing by name.
+func caseTimeSlicingKeepsDefaultMount(ctx context.Context, t *testing.T) {
+	pod := h.ApplyRunningWorkload(ctx, t, "d8-time-slicing",
+		h.ComputeModeAnnotations(harness.ComputeModeTimeSlicing))
+
+	env := h.GetPodEnv(ctx, t, pod, harness.WorkloadContainer)
+	if env[harness.EnvMPSPipeDir] != harness.MPSPipeDir {
+		t.Errorf("%s = %q, want %q", harness.EnvMPSPipeDir, env[harness.EnvMPSPipeDir], harness.MPSPipeDir)
+	}
+	// The shared server's directory must not be what got mounted: its socket
+	// would be visible at the default path if the two were confused.
+	out, err := h.Exec(ctx, pod, harness.WorkloadContainer, "sh", "-c",
+		fmt.Sprintf("test -d %s && echo yes || echo no", harness.ContainerMPSPipeDir))
+	if err != nil {
+		t.Fatalf("exec dir check: %v", err)
+	}
+	if out == "yes" {
+		t.Errorf("time-slicing container has %s mounted; that path is sm-sharing only",
+			harness.ContainerMPSPipeDir)
+	}
+}
+
+// InvalidComputeModeBlocks — an unrecognized gpu-compute.mode value is a hard
+// error, not a silent fallback to time-slicing: fail-closed blocks the
+// container. A workload that asked for a mode it did not get would otherwise run
+// with different isolation than requested, with nothing to indicate it.
+func caseInvalidComputeModeBlocks(ctx context.Context, t *testing.T) {
+	name := "d9-bad-mode"
+	annotations := h.ComputeModeAnnotations("not-a-mode")
+	createBlockedWorkload(ctx, t, name, annotations)
+	if reason := waitContainerBlocked(ctx, t, name); reason == "" {
+		t.Errorf("pod %s: expected a container create error for an invalid compute mode, none observed", name)
+	} else {
+		t.Logf("pod %s blocked as expected: %s", name, reason)
 	}
 }
 

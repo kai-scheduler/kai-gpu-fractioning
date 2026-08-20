@@ -45,6 +45,7 @@ func main() {
 		AnnotationPrefix:       flags.annotationPrefix,
 		MPSPipeDirectory:       flags.mpsPipeDir,
 		FailOpen:               flags.failOpen,
+		SupportSMSharing:       flags.supportSMSharing,
 		RetroactiveEnforcement: flags.retroactiveEnforcement,
 		MapDir:                 flags.mapDir,
 		LogPodEvents:           flags.logPodEvents,

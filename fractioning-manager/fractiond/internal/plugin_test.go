@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -19,14 +20,16 @@ import (
 
 func TestCreateContainer(t *testing.T) {
 	tests := []struct {
-		name            string
-		annotations     map[string]string
-		containerName   string
-		expectedNil     bool
-		expectedErr     bool
-		expectedEnvKeys []string
-		expectedEnvVals map[string]string
-		expectedMount   bool
+		name                     string
+		annotations              map[string]string
+		containerName            string
+		expectedNil              bool
+		expectedErr              bool
+		expectedEnvKeys          []string
+		expectedEnvVals          map[string]string
+		expectedMount            bool
+		expectedMountSource      string // defaults to configuration.DefaultMPSPipeDirectory when empty
+		expectedMountDestination string // defaults to configuration.DefaultMPSPipeDirectory when empty
 	}{
 		{
 			name: "both request and limit",
@@ -118,6 +121,54 @@ func TestCreateContainer(t *testing.T) {
 			containerName: "main",
 			expectedErr:   true,
 		},
+		{
+			name: "absent compute-mode annotation mounts default socket unchanged",
+			annotations: map[string]string{
+				"nvidia.com/container.trainer.gpu-memory.limit": "4Gi",
+			},
+			containerName:   "trainer",
+			expectedNil:     false,
+			expectedEnvKeys: []string{injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvVals: map[string]string{injection.EnvMPSPipeDirectory: configuration.DefaultMPSPipeDirectory},
+			expectedMount:   true,
+		},
+		{
+			name: "explicit time-slicing mounts default socket unchanged",
+			annotations: map[string]string{
+				"nvidia.com/container.trainer.gpu-memory.limit": "4Gi",
+				"nvidia.com/container.trainer.gpu-compute.mode": "time-slicing",
+			},
+			containerName:   "trainer",
+			expectedNil:     false,
+			expectedEnvKeys: []string{injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvVals: map[string]string{injection.EnvMPSPipeDirectory: configuration.DefaultMPSPipeDirectory},
+			expectedMount:   true,
+		},
+		{
+			name: "sm-sharing routes to the shared server's default namespace",
+			annotations: map[string]string{
+				"nvidia.com/container.trainer.gpu-memory.limit": "4Gi",
+				"nvidia.com/container.trainer.gpu-compute.mode": "sm-sharing",
+			},
+			containerName:   "trainer",
+			expectedNil:     false,
+			expectedEnvKeys: []string{injection.EnvGPUMemoryLimits, injection.EnvMPSPipeDirectory},
+			expectedEnvVals: map[string]string{
+				injection.EnvMPSPipeDirectory: configuration.ContainerMPSPipeDirectory,
+			},
+			expectedMount:            true,
+			expectedMountSource:      filepath.Join(configuration.DefaultMPSPipeDirectory, configuration.SharedMPSSocketPath),
+			expectedMountDestination: configuration.ContainerMPSPipeDirectory,
+		},
+		{
+			name: "invalid compute mode value fails closed",
+			annotations: map[string]string{
+				"nvidia.com/container.main.gpu-memory.limit": "4Gi",
+				"nvidia.com/container.main.gpu-compute.mode": "mig",
+			},
+			containerName: "main",
+			expectedErr:   true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -170,15 +221,23 @@ func TestCreateContainer(t *testing.T) {
 			}
 
 			if tt.expectedMount {
+				wantSource := tt.expectedMountSource
+				if wantSource == "" {
+					wantSource = configuration.DefaultMPSPipeDirectory
+				}
+				wantDestination := tt.expectedMountDestination
+				if wantDestination == "" {
+					wantDestination = configuration.DefaultMPSPipeDirectory
+				}
 				if len(adj.Mounts) == 0 {
 					t.Error("expected mount in adjustment, got none")
 				} else {
 					m := adj.Mounts[0]
-					if m.Source != configuration.DefaultMPSPipeDirectory {
-						t.Errorf("mount source = %q, expected %q", m.Source, configuration.DefaultMPSPipeDirectory)
+					if m.Source != wantSource {
+						t.Errorf("mount source = %q, expected %q", m.Source, wantSource)
 					}
-					if m.Destination != configuration.DefaultMPSPipeDirectory {
-						t.Errorf("mount destination = %q, expected %q", m.Destination, configuration.DefaultMPSPipeDirectory)
+					if m.Destination != wantDestination {
+						t.Errorf("mount destination = %q, expected %q", m.Destination, wantDestination)
 					}
 				}
 			}
@@ -271,6 +330,113 @@ func TestCreateContainer_FailOpenLogsWarning(t *testing.T) {
 	}
 }
 
+func TestCreateContainer_FailOpenFallsBackToTimeSlicingOnInvalidComputeMode(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	p, err := NewPlugin(Config{
+		AnnotationPrefix: configuration.DefaultAnnotationPrefix,
+		MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
+		FailOpen:         true,
+		MapDir:           t.TempDir(),
+		Log:              log,
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewPlugin: %v", err)
+	}
+
+	pod := &api.PodSandbox{
+		Name: "test-pod",
+		Annotations: map[string]string{
+			"nvidia.com/container.main.gpu-memory.limit": "4Gi",
+			"nvidia.com/container.main.gpu-compute.mode": "mig",
+		},
+	}
+	ctr := &api.Container{Name: "main"}
+
+	// FailOpen must not block the container: an invalid compute-mode value
+	// falls back to time-slicing (the default socket) rather than failing.
+	adj, _, err := p.CreateContainer(context.Background(), pod, ctr)
+	if err != nil {
+		t.Fatalf("fail-open should not return error, got: %v", err)
+	}
+	if adj == nil {
+		t.Fatal("expected non-nil adjustment (memory annotation present), got nil")
+	}
+	if len(adj.Mounts) == 0 {
+		t.Fatal("expected mount in adjustment, got none")
+	}
+	if got := adj.Mounts[0].Destination; got != configuration.DefaultMPSPipeDirectory {
+		t.Errorf("mount destination = %q, expected fallback to default %q", got, configuration.DefaultMPSPipeDirectory)
+	}
+	if logBuf.Len() == 0 {
+		t.Error("expected warning log on compute-mode parse failure, got nothing")
+	}
+}
+
+// TestCreateContainer_SupportSMSharingDisabled verifies the sm-sharing
+// chicken bit: when disabled, the annotation is rejected like any other
+// invalid compute-mode value, both fail-closed (default) and fail-open
+// (falls back to time-slicing) — mirroring
+// TestCreateContainer_FailOpenFallsBackToTimeSlicingOnInvalidComputeMode.
+func TestCreateContainer_SupportSMSharingDisabled(t *testing.T) {
+	pod := &api.PodSandbox{
+		Name: "test-pod",
+		Annotations: map[string]string{
+			"nvidia.com/container.main.gpu-memory.limit": "4Gi",
+			"nvidia.com/container.main.gpu-compute.mode": "sm-sharing",
+		},
+	}
+	ctr := &api.Container{Name: "main"}
+
+	t.Run("fail-closed blocks the container", func(t *testing.T) {
+		log := slog.New(slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		p, err := NewPlugin(Config{
+			AnnotationPrefix: configuration.DefaultAnnotationPrefix,
+			MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
+			SupportSMSharing: false,
+			MapDir:           t.TempDir(),
+			Log:              log,
+		}, nil)
+		if err != nil {
+			t.Fatalf("NewPlugin: %v", err)
+		}
+
+		if _, _, err := p.CreateContainer(context.Background(), pod, ctr); err == nil {
+			t.Fatal("expected error blocking the container, got nil")
+		}
+	})
+
+	t.Run("fail-open falls back to time-slicing", func(t *testing.T) {
+		var logBuf bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		p, err := NewPlugin(Config{
+			AnnotationPrefix: configuration.DefaultAnnotationPrefix,
+			MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
+			FailOpen:         true,
+			SupportSMSharing: false,
+			MapDir:           t.TempDir(),
+			Log:              log,
+		}, nil)
+		if err != nil {
+			t.Fatalf("NewPlugin: %v", err)
+		}
+
+		adj, _, err := p.CreateContainer(context.Background(), pod, ctr)
+		if err != nil {
+			t.Fatalf("fail-open should not return error, got: %v", err)
+		}
+		if adj == nil || len(adj.Mounts) == 0 {
+			t.Fatalf("expected a mount falling back to time-slicing, got %+v", adj)
+		}
+		if got := adj.Mounts[0].Destination; got != configuration.DefaultMPSPipeDirectory {
+			t.Errorf("mount destination = %q, expected fallback to default %q", got, configuration.DefaultMPSPipeDirectory)
+		}
+		if logBuf.Len() == 0 {
+			t.Error("expected warning log on compute-mode parse failure, got nothing")
+		}
+	})
+}
+
 func newTestPlugin(t *testing.T) *Plugin {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -278,6 +444,7 @@ func newTestPlugin(t *testing.T) *Plugin {
 		AnnotationPrefix: configuration.DefaultAnnotationPrefix,
 		MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
 		FailOpen:         false,
+		SupportSMSharing: true,
 		MapDir:           t.TempDir(),
 		Log:              log,
 	}, nil)

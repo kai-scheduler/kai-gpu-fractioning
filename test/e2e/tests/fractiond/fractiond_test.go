@@ -24,6 +24,9 @@ func TestFractiond(t *testing.T) {
 	t.Run("Injection", func(t *testing.T) {
 		t.Run("InjectsMemoryEnv", func(t *testing.T) { caseInjectsMemoryEnv(ctx, t) })
 		t.Run("MountsMPSPipeDir", func(t *testing.T) { caseMountsMPSPipeDir(ctx, t) })
+		t.Run("SMSharingRoutesToSharedServer", func(t *testing.T) { caseSMSharingRoutesToSharedServer(ctx, t) })
+		t.Run("TimeSlicingKeepsDefaultMount", func(t *testing.T) { caseTimeSlicingKeepsDefaultMount(ctx, t) })
+		t.Run("InvalidComputeModeBlocks", func(t *testing.T) { caseInvalidComputeModeBlocks(ctx, t) })
 		t.Run("InjectsVisibleDevices", func(t *testing.T) { caseInjectsVisibleDevices(ctx, t) })
 		t.Run("MultiContainerInjection", func(t *testing.T) { caseMultiContainerInjection(ctx, t) })
 		t.Run("SkipsUnannotatedContainer", func(t *testing.T) { caseSkipsUnannotatedContainer(ctx, t) })

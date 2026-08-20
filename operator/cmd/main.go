@@ -116,6 +116,13 @@ func main() {
 	mpsdAuditLog := env.Bool("MPSD_AUDIT_LOG", true)
 	setupLog.Info("mpsd MPS memacct audit log", "enabled", mpsdAuditLog)
 
+	// ── sm-sharing chicken bit (Helm-injected; forwarded to mpsd and fractiond) ──
+	// A kill switch for the whole sm-sharing compute mode: disabling it turns
+	// off mpsd's shared MPS server and makes fractiond reject the
+	// gpu-compute.mode: sm-sharing annotation, without a code rollback.
+	supportSMSharing := env.Bool("SUPPORT_SM_SHARING", true)
+	setupLog.Info("sm-sharing compute mode support", "enabled", supportSMSharing)
+
 	// ── Daemon pod API identity (Helm-injected; used by mpsd startup labeling) ──
 	daemonServiceAccountName := env.String("DAEMON_SERVICE_ACCOUNT_NAME", "")
 	setupLog.Info("daemon service account", "serviceAccountName", daemonServiceAccountName)
@@ -135,6 +142,7 @@ func main() {
 		},
 		daemonServiceAccountName,
 		mpsdAuditLog,
+		supportSMSharing,
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpufractioningconfig")
 		os.Exit(1)

@@ -40,9 +40,14 @@ type detector struct {
 	// annotationPrefix is the leading GPU-fractioning annotation prefix, e.g.
 	// "nvidia.com/container." — must match the fractiond plugin's configured prefix.
 	annotationPrefix string
-	// mpsPipeDirectory is the expected CUDA_MPS_PIPE_DIRECTORY value and MPS bind
-	// mount destination — must match the fractiond plugin's configured value.
+	// mpsPipeDirectory is the base host-side MPS pipe directory — must match
+	// the fractiond plugin's configured value.
 	mpsPipeDirectory string
+	// smSharingEnabled is the cluster's installation-time sm-sharing chicken
+	// bit — must match the fractiond plugin's configured value, so a disabled
+	// feature can't produce a false violation for a container the plugin
+	// itself would have rejected/downgraded.
+	smSharingEnabled bool
 	// log is used for skip diagnostics; defaults to slog.Default().
 	log *slog.Logger
 }
@@ -106,8 +111,23 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 	// missing value defaulted from the other, so both env vars are expected.
 	cfg = cfg.ApplyDefaults()
 
+	// Mirror buildAdjustment: an unparseable compute-mode annotation would have
+	// blocked creation (fail-closed) or fallen back to time-slicing
+	// (fail-open), so a running container with a bad value is treated the same
+	// way here — skip rather than risk stopping a container we cannot reason
+	// about.
+	computeMode, err := annotations.ParseComputeMode(pod.GetAnnotations(), container.GetName(), d.annotationPrefix, d.smSharingEnabled)
+	if err != nil {
+		d.logger().Warn("audit: skipping container with unparseable GPU compute mode annotation",
+			"container", container.GetName(),
+			"pod", pod.GetName(),
+			"error", err,
+		)
+		return violator{}, false
+	}
+
 	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations(), container.GetName(), d.annotationPrefix)
-	missing := d.missingInjection(cfg, visibleDevices, container)
+	missing := d.missingInjection(cfg, visibleDevices, computeMode, container)
 	if len(missing) == 0 {
 		return violator{}, false
 	}
@@ -121,15 +141,17 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 	}, true
 }
 
-// missingInjection compares the expected injection (derived from cfg and the
-// pod's device assignment exactly as buildAdjustment would) against the live
-// container's env and mounts, returning the expected pieces that are absent.
-// Presence-based, not value-equality: a mis-set value is out of scope and would
-// risk false positives from formatting differences. visibleDevices is the pod's
-// GPU device assignment ("" when unassigned); NVIDIA_VISIBLE_DEVICES is expected
-// only when it is set, matching buildAdjustment's conditional injection.
-func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, visibleDevices string, container *api.Container) []string {
+// missingInjection compares the expected injection (derived from cfg, the
+// pod's device assignment, and its compute mode exactly as buildAdjustment
+// would) against the live container's env and mounts, returning the expected
+// pieces that are absent. Presence-based, not value-equality: a mis-set value
+// is out of scope and would risk false positives from formatting differences.
+// visibleDevices is the pod's GPU device assignment ("" when unassigned);
+// NVIDIA_VISIBLE_DEVICES is expected only when it is set, matching
+// buildAdjustment's conditional injection.
+func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, visibleDevices string, computeMode annotations.ComputeMode, container *api.Container) []string {
 	env := presentEnv(container.GetEnv())
+	expectedMountSource, expectedMountDestination := injection.MPSPipeMount(d.mpsPipeDirectory, computeMode)
 
 	var missing []string
 	// CUDA_MPS_PIPE_DIRECTORY is always injected for a fractioning container.
@@ -145,8 +167,8 @@ func (d detector) missingInjection(cfg annotations.GPUMemoryConfig, visibleDevic
 	if visibleDevices != "" && !env[injection.EnvVisibleDevices] {
 		missing = append(missing, "env:"+injection.EnvVisibleDevices)
 	}
-	if !hasMountDestination(container.GetMounts(), d.mpsPipeDirectory) {
-		missing = append(missing, "mount:"+d.mpsPipeDirectory)
+	if !hasMount(container.GetMounts(), expectedMountSource, expectedMountDestination) {
+		missing = append(missing, "mount:"+expectedMountSource+":"+expectedMountDestination)
 	}
 	return missing
 }
@@ -180,10 +202,12 @@ func presentEnv(env []string) map[string]bool {
 	return present
 }
 
-// hasMountDestination reports whether any mount targets the given destination.
-func hasMountDestination(mounts []*api.Mount, destination string) bool {
+// hasMount reports whether any mount has exactly the given source and
+// destination — mirroring buildAdjustment's mount exactly, rather than just
+// its in-container destination.
+func hasMount(mounts []*api.Mount, source, destination string) bool {
 	for _, m := range mounts {
-		if m.GetDestination() == destination {
+		if m.GetSource() == source && m.GetDestination() == destination {
 			return true
 		}
 	}
