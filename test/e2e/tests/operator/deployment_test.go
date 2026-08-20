@@ -186,10 +186,15 @@ func verifyFractiondPodSpec(ctx context.Context, t *testing.T) {
 	}
 }
 
-// MpsdPodSpec — mpsd pod spec: privileged, service-accounted for node labeling,
-// MPS pipe + log hostPath mounts, and a control-socket readiness probe.
+// MpsdPodSpec — mpsd pod spec: hostPID, privileged, service-accounted for node
+// labeling, MPS pipe + log hostPath mounts, and a control-socket readiness probe.
 func verifyMpsdPodSpec(ctx context.Context, t *testing.T) {
 	ds := h.GetDaemonSet(ctx, t, harness.ComponentMpsd)
+	// Without hostPID the MPS control daemon resolves every client's PID as 0,
+	// memacct registration fails, and GPU memory limits go unenforced.
+	if !ds.Spec.Template.Spec.HostPID {
+		t.Error("mpsd pod: hostPID = false, want true")
+	}
 	if ds.Spec.Template.Spec.ServiceAccountName == "" {
 		t.Error("mpsd pod: serviceAccountName is empty")
 	}

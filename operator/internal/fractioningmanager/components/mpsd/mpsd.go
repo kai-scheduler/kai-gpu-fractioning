@@ -69,6 +69,15 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
 	result.Spec.Template.Spec.ServiceAccountName = opts.ServiceAccountName
 	result.Spec.Template.Spec.RuntimeClassName = opts.RuntimeClassName
+	// HostPID is required for memacct to enforce GPU memory limits. The control
+	// daemon identifies each client by the PID in the connecting socket's peer
+	// credentials, and the kernel only translates a peer PID for a namespace it
+	// can see — its own or a descendant. In its own pod namespace the daemon
+	// therefore reads every workload container's PID as 0, memacct registration
+	// fails ("failed to register client pid 0"), and the limit is silently not
+	// applied. The host PID namespace is an ancestor of every container's, so
+	// PIDs (and their cgroups) resolve. Workloads need no change.
+	result.Spec.Template.Spec.HostPID = true
 	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
 	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
 	// 30s default, shorter than the graceful stop delay, defeating the graceful

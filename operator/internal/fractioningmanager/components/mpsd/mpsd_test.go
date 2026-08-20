@@ -44,9 +44,11 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 		t.Errorf("RuntimeClassName = %v, want nvidia", spec.RuntimeClassName)
 	}
 
-	// No HostPID (mpsd doesn't need it)
-	if spec.HostPID {
-		t.Error("expected HostPID=false for mpsd")
+	// HostPID is required: without it the MPS control daemon reads every client's
+	// PID as 0 from the socket's peer credentials, memacct registration fails,
+	// and GPU memory limits are silently unenforced.
+	if !spec.HostPID {
+		t.Error("expected HostPID=true for mpsd")
 	}
 
 	// Node selector
