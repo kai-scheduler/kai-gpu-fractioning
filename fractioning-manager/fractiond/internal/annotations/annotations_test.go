@@ -305,10 +305,18 @@ func TestParseComputeMode(t *testing.T) {
 			expected:         ComputeModeTimeSlicing,
 		},
 		{
-			name:             "blank annotation defaults to time-slicing",
+			// Absence means "no preference"; an empty value means the mode was
+			// set to nothing, which is not one of the two documented values.
+			name:             "empty annotation fails",
+			annotations:      map[string]string{computeModeTestKey: ""},
+			smSharingEnabled: true,
+			expectedErr:      true,
+		},
+		{
+			name:             "whitespace-only annotation fails",
 			annotations:      map[string]string{computeModeTestKey: "   "},
 			smSharingEnabled: true,
-			expected:         ComputeModeTimeSlicing,
+			expectedErr:      true,
 		},
 		{
 			name:             "explicit time-slicing",

@@ -138,7 +138,12 @@ func NewPlugin(cfg Config, stopper audit.ContainerStopper) (*Plugin, error) {
 		if stopper == nil {
 			return nil, fmt.Errorf("retroactive enforcement enabled but no container stopper was provided")
 		}
-		sentinel = audit.NewSentinel(cfg.AnnotationPrefix, cfg.MPSPipeDirectory, cfg.SupportSMSharing, stopper, log)
+		sentinel = audit.NewSentinel(audit.Config{
+			AnnotationPrefix: cfg.AnnotationPrefix,
+			MPSPipeDirectory: cfg.MPSPipeDirectory,
+			SMSharingEnabled: cfg.SupportSMSharing,
+			FailOpen:         cfg.FailOpen,
+		}, stopper, log)
 	}
 
 	return &Plugin{
@@ -246,7 +251,7 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 	}
 
 	if gpuMemoryCfg.IsEmpty() {
-		p.Log.Debug("no GPU memory annotations", "container", ctr.Name, "pod", pod.Name)
+		p.Log.Debug("no GPU memory annotations; gpu-compute.mode has no effect without them", "container", ctr.Name, "pod", pod.Name)
 		return nil, nil
 	}
 
@@ -265,6 +270,10 @@ func (p *Plugin) buildAdjustment(pod *api.PodSandbox, ctr *api.Container) (*api.
 		if !p.FailOpen {
 			return nil, fmt.Errorf("container %q in pod %q: %w", ctr.Name, pod.Name, err)
 		}
+		p.Log.Warn("defaulting to time-slicing compute mode (fail-open)",
+			"container", ctr.Name,
+			"pod", pod.Name,
+		)
 		computeMode = annotations.ComputeModeTimeSlicing
 	}
 	pipeSource, pipeDestination := injection.MPSPipeMount(p.MPSPipeDirectory, computeMode)

@@ -95,7 +95,7 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 | Value | Default | Purpose |
 |-------|---------|---------|
 | `runtimeClassName` | `nvidia` | RuntimeClass for daemon pods that need NVIDIA GPU/NVML access; set `""` to use a node default runtime with NVIDIA GPU/NVML access |
-| `supportSmSharing` | `true` | installation-time toggle for the `sm-sharing` compute mode (mpsd's shared MPS server + fractiond's routing to it); a kill switch that requires no code rollback — disable it and the `gpu-compute.mode: sm-sharing` annotation is rejected like any other invalid value |
+| `supportSmSharing` | `true` | installation-time toggle for the `sm-sharing` compute mode (mpsd's shared MPS server + fractiond's routing to it); disable it to revert to pre-feature behaviour without a code rollback, and the `gpu-compute.mode: sm-sharing` annotation is rejected like any other invalid value. Applies to containers created afterwards — stop sm-sharing workloads and drain the shared server before disabling |
 | `metricsAgent.enabled` | `true` | run the metricsd metrics sidecar |
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |

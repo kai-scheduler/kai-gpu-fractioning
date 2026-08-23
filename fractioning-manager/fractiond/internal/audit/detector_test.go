@@ -203,7 +203,7 @@ func TestDetectorViolations(t *testing.T) {
 			wantMissing: []string{sharedMountMissing},
 		},
 		{
-			name: "unparseable compute mode annotation is skipped, not stopped",
+			name: "unparseable compute mode annotation is skipped, not stopped (fail-closed)",
 			pod:  withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", ""), "trainer", "mig"),
 			ctr: &api.Container{
 				Id: "c", Name: "trainer", PodSandboxId: "p",
@@ -253,6 +253,54 @@ func TestDetectorSMSharingDisabledSkipsAnnotatedContainer(t *testing.T) {
 	got := newDetectorSMSharingDisabled().violators([]*api.PodSandbox{pod}, []*api.Container{ctr})
 	if len(got) != 0 {
 		t.Fatalf("expected no violator when sm-sharing is disabled cluster-wide, got %+v", got)
+	}
+}
+
+// TestDetectorFailOpenAuditsUnusableComputeMode covers the fail-open half of
+// the compute-mode policy. Creation under fail-open does not block a container
+// whose mode annotation cannot be honored; it falls back to time-slicing and
+// still injects the memory limit. The audit must reach the same conclusion,
+// otherwise a mode typo would be enough to hide a container that is holding a
+// GPU share with no memory limit at all — exactly what this audit is for.
+func TestDetectorFailOpenAuditsUnusableComputeMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		detector detector
+		mode     string
+	}{
+		{
+			name:     "invalid value",
+			detector: newDetectorFailOpen(),
+			mode:     "mig",
+		},
+		{
+			name:     "sm-sharing requested while disabled cluster-wide",
+			detector: newDetectorFailOpenSMSharingDisabled(),
+			mode:     "sm-sharing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", "2Gi"), "trainer", tt.mode)
+			ctr := &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State: api.ContainerState_CONTAINER_RUNNING,
+			}
+
+			got := tt.detector.violators([]*api.PodSandbox{pod}, []*api.Container{ctr})
+			if len(got) != 1 {
+				t.Fatalf("expected the container to be audited against the time-slicing default, got %d violators: %+v", len(got), got)
+			}
+			// The expectations are the time-slicing ones (default mount), proving
+			// the fallback rather than merely that something was reported.
+			assertSameSet(t, got[0].missing, []string{
+				"env:" + injection.EnvMPSPipeDirectory,
+				"env:" + injection.EnvGPUMemoryLimits,
+				"env:" + injection.EnvGPUMemoryRequests,
+				defaultMountMissing,
+			})
+		})
 	}
 }
 
@@ -403,16 +451,31 @@ func sharedSocketEqualEnv() []string {
 	}
 }
 
+// newDetector is the fail-closed detector: an unusable compute-mode annotation
+// means the container was never created by a healthy hook, so it is skipped.
 func newDetector() detector {
 	return detector{
 		annotationPrefix: configuration.DefaultAnnotationPrefix,
 		mpsPipeDirectory: configuration.DefaultMPSPipeDirectory,
 		smSharingEnabled: true,
+		failOpen:         false,
 	}
 }
 
 func newDetectorSMSharingDisabled() detector {
 	d := newDetector()
+	d.smSharingEnabled = false
+	return d
+}
+
+func newDetectorFailOpen() detector {
+	d := newDetector()
+	d.failOpen = true
+	return d
+}
+
+func newDetectorFailOpenSMSharingDisabled() detector {
+	d := newDetectorFailOpen()
 	d.smSharingEnabled = false
 	return d
 }

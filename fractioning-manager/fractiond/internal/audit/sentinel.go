@@ -26,19 +26,39 @@ type Sentinel struct {
 	wg         sync.WaitGroup
 }
 
-// NewSentinel builds a Sentinel. annotationPrefix, mpsPipeDirectory, and
-// smSharingEnabled must match the fractiond plugin's create-hook configuration
-// so detection mirrors injection exactly. stopper must be non-nil; log
-// defaults to slog.Default() when nil.
-func NewSentinel(annotationPrefix, mpsPipeDirectory string, smSharingEnabled bool, stopper ContainerStopper, log *slog.Logger) *Sentinel {
+// Config is the subset of the fractiond plugin's configuration that decides
+// what the create hook would have injected. Detection compares a running
+// container against exactly that, so every field must carry the same value the
+// hook was built with — a mismatch shows up as a false violation or a missed
+// one.
+type Config struct {
+	// AnnotationPrefix is the leading GPU-fractioning annotation prefix, e.g.
+	// "nvidia.com/container.".
+	AnnotationPrefix string
+	// MPSPipeDirectory is the base host-side MPS pipe directory.
+	MPSPipeDirectory string
+	// SMSharingEnabled is the cluster's installation-time sm-sharing chicken
+	// bit, so a disabled feature can't produce a false violation for a
+	// container the hook itself would have rejected or downgraded.
+	SMSharingEnabled bool
+	// FailOpen is the create hook's fail-open policy, which decides what an
+	// unusable compute-mode annotation means: skip the container, or audit it
+	// against the time-slicing default the hook fell back to.
+	FailOpen bool
+}
+
+// NewSentinel builds a Sentinel from the create hook's configuration. stopper
+// must be non-nil; log defaults to slog.Default() when nil.
+func NewSentinel(cfg Config, stopper ContainerStopper, log *slog.Logger) *Sentinel {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Sentinel{
 		detector: detector{
-			annotationPrefix: annotationPrefix,
-			mpsPipeDirectory: mpsPipeDirectory,
-			smSharingEnabled: smSharingEnabled,
+			annotationPrefix: cfg.AnnotationPrefix,
+			mpsPipeDirectory: cfg.MPSPipeDirectory,
+			smSharingEnabled: cfg.SMSharingEnabled,
+			failOpen:         cfg.FailOpen,
 			log:              log,
 		},
 		remediator: remediator{

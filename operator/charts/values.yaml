@@ -34,10 +34,17 @@ runtimeClassName: "nvidia"
 # supportSmSharing is the installation-time toggle for the sm-sharing compute
 # mode: mpsd's shared MPS server (context-share, [servers.shared]) and
 # fractiond's routing of the gpu-compute.mode: sm-sharing annotation to it.
-# Disabling it is a kill switch (no code rollback needed) if the shared MPS
-# server misbehaves: mpsd falls back to its pre-sm-sharing config *and* daemon
+# Disabling it reverts new workloads to the pre-sm-sharing behaviour without a
+# code rollback: mpsd falls back to its pre-sm-sharing config *and* daemon
 # invocation (no shared server, no multiuser mode), and fractiond rejects the
 # sm-sharing annotation like any other invalid value.
+#
+# It applies at install/upgrade time and only to containers created afterwards.
+# Flipping it does not migrate running containers: an sm-sharing container keeps
+# the shared-server socket it was started with, and mpsd restarting without that
+# server pulls the socket out from under it. Before disabling, stop or remove
+# sm-sharing workloads and confirm the shared server has no clients left
+# (nvidia-cuda-mps-control -p 3 client list, run in the mpsd pod).
 supportSmSharing: true
 
 # mpsd configures the MPS daemon (mpsd) managed by the operator.

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -296,6 +297,46 @@ func TestCreateContainerOverwritesExistingVisibleDevices(t *testing.T) {
 	}
 }
 
+// TestCreateContainer_ComputeModeWithoutMemoryAnnotation covers a container
+// that asks for a compute mode but never asks for GPU memory. It is not a
+// fractioning container, so it is left alone and the mode has no effect —
+// almost always a forgotten or misspelled memory annotation, so the skip log
+// points at the relationship rather than reporting the memory annotations
+// missing on their own.
+func TestCreateContainer_ComputeModeWithoutMemoryAnnotation(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	p, err := NewPlugin(Config{
+		AnnotationPrefix: configuration.DefaultAnnotationPrefix,
+		MPSPipeDirectory: configuration.DefaultMPSPipeDirectory,
+		SupportSMSharing: true,
+		MapDir:           t.TempDir(),
+		Log:              log,
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewPlugin: %v", err)
+	}
+
+	pod := &api.PodSandbox{
+		Name: "test-pod",
+		Annotations: map[string]string{
+			"nvidia.com/container.main.gpu-compute.mode": "sm-sharing",
+		},
+	}
+	ctr := &api.Container{Name: "main"}
+
+	adj, _, err := p.CreateContainer(context.Background(), pod, ctr)
+	if err != nil {
+		t.Fatalf("a container without memory annotations must not be blocked, got: %v", err)
+	}
+	if adj != nil {
+		t.Errorf("expected nil adjustment for a non-fractioning container, got %+v", adj)
+	}
+	if !strings.Contains(logBuf.String(), "gpu-compute.mode has no effect without them") {
+		t.Errorf("expected the skip log to explain that the compute mode is inert, got: %s", logBuf.String())
+	}
+}
+
 func TestCreateContainer_FailOpenLogsWarning(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -491,6 +532,26 @@ func enforcingPlugin(t *testing.T, stopper *fakeStopper) *Plugin {
 	return p
 }
 
+// enforcingFailOpenPlugin is enforcingPlugin with the create hook's fail-open
+// policy on, so the audit it drives inherits the same policy.
+func enforcingFailOpenPlugin(t *testing.T, stopper *fakeStopper) *Plugin {
+	t.Helper()
+	log := slog.New(slog.NewTextHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	p, err := NewPlugin(Config{
+		AnnotationPrefix:       configuration.DefaultAnnotationPrefix,
+		MPSPipeDirectory:       configuration.DefaultMPSPipeDirectory,
+		MapDir:                 t.TempDir(),
+		RetroactiveEnforcement: true,
+		FailOpen:               true,
+		SupportSMSharing:       true,
+		Log:                    log,
+	}, stopper)
+	if err != nil {
+		t.Fatalf("NewPlugin: %v", err)
+	}
+	return p
+}
+
 // syncSnapshot returns a pod plus a fully-injected container and an uninjected
 // container, both fractioning containers ("trainer") with a 4Gi limit annotation.
 func syncSnapshot() ([]*api.PodSandbox, []*api.Container) {
@@ -569,6 +630,36 @@ func TestSynchronizeEnforcesMissingVisibleDevices(t *testing.T) {
 
 	if got := fake.stoppedIDs(); !slices.Equal(got, []string{"c1"}) {
 		t.Fatalf("stopped = %v, want [c1]", got)
+	}
+}
+
+// TestSynchronizeFailOpenEnforcesBadComputeMode pins the two halves of the
+// fail-open policy together. Creation with an unusable compute mode does not
+// block the container; it falls back to time-slicing and still injects the
+// memory limit. So a container that came up while fractiond was down, carrying
+// valid memory annotations and a mode typo, is owed that injection and must be
+// stopped for recreation — not written off as unparseable.
+func TestSynchronizeFailOpenEnforcesBadComputeMode(t *testing.T) {
+	fake := &fakeStopper{}
+	p := enforcingFailOpenPlugin(t, fake)
+
+	pods := []*api.PodSandbox{
+		{Id: "p1", Name: "pod1", Namespace: "default", Annotations: map[string]string{
+			configuration.DefaultAnnotationPrefix + "trainer.gpu-memory.limit": "4Gi",
+			"nvidia.com/container.trainer.gpu-compute.mode":                    "mig",
+		}},
+	}
+	containers := []*api.Container{
+		{Id: "c1", Name: "trainer", PodSandboxId: "p1", State: api.ContainerState_CONTAINER_RUNNING},
+	}
+
+	if _, err := p.Synchronize(context.Background(), pods, containers); err != nil {
+		t.Fatalf("Synchronize returned error: %v", err)
+	}
+	p.Flush() // wait for async remediation
+
+	if got := fake.stoppedIDs(); !slices.Equal(got, []string{"c1"}) {
+		t.Fatalf("stopped = %v, want [c1]: an uninjected container must not escape enforcement because of a compute-mode typo", got)
 	}
 }
 

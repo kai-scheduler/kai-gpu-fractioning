@@ -48,6 +48,12 @@ type detector struct {
 	// feature can't produce a false violation for a container the plugin
 	// itself would have rejected/downgraded.
 	smSharingEnabled bool
+	// failOpen is the create hook's fail-open policy — must match the fractiond
+	// plugin's configured value. It decides what an unusable compute-mode
+	// annotation means here, exactly as it does at creation: under fail-open the
+	// container would have been created with the time-slicing default, so it is
+	// still owed its memory injection and must be inspected.
+	failOpen bool
 	// log is used for skip diagnostics; defaults to slog.Default().
 	log *slog.Logger
 }
@@ -111,19 +117,34 @@ func (d detector) check(pod *api.PodSandbox, container *api.Container) (violator
 	// missing value defaulted from the other, so both env vars are expected.
 	cfg = cfg.ApplyDefaults()
 
-	// Mirror buildAdjustment: an unparseable compute-mode annotation would have
-	// blocked creation (fail-closed) or fallen back to time-slicing
-	// (fail-open), so a running container with a bad value is treated the same
-	// way here — skip rather than risk stopping a container we cannot reason
-	// about.
+	// Mirror buildAdjustment, whose handling of an unusable compute-mode
+	// annotation depends on the same fail-open policy:
+	//
+	// fail-closed — creation was blocked, so a container running with this
+	// annotation was not injected by us and recreating it would hit the same
+	// parse error. Skip it.
+	//
+	// fail-open — creation continued with the time-slicing default, so the
+	// container is owed the full memory injection. Skipping here would let a
+	// mode typo suppress retroactive enforcement of valid memory annotations,
+	// which is the very case this audit exists for. Fall back to the same
+	// default and keep inspecting.
 	computeMode, err := annotations.ParseComputeMode(pod.GetAnnotations(), container.GetName(), d.annotationPrefix, d.smSharingEnabled)
 	if err != nil {
-		d.logger().Warn("audit: skipping container with unparseable GPU compute mode annotation",
+		if !d.failOpen {
+			d.logger().Warn("audit: skipping container with unparseable GPU compute mode annotation",
+				"container", container.GetName(),
+				"pod", pod.GetName(),
+				"error", err,
+			)
+			return violator{}, false
+		}
+		d.logger().Warn("audit: unparseable GPU compute mode annotation, auditing against the time-slicing default (fail-open)",
 			"container", container.GetName(),
 			"pod", pod.GetName(),
 			"error", err,
 		)
-		return violator{}, false
+		computeMode = annotations.ComputeModeTimeSlicing
 	}
 
 	visibleDevices := annotations.ParseVisibleDevices(pod.GetAnnotations(), container.GetName(), d.annotationPrefix)

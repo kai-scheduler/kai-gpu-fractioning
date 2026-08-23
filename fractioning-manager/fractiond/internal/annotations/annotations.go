@@ -190,10 +190,10 @@ func ParseVisibleDevices(annotations map[string]string, containerName, prefix st
 //
 //	nvidia.com/container.trainer.gpu-compute.mode
 //
-// Returns ComputeModeTimeSlicing when the annotation is absent or blank (the
-// default, matching today's only behavior), the parsed mode when the value is
-// exactly "time-slicing" or, when smSharingEnabled is true, "sm-sharing"; an
-// error for any other value.
+// Returns ComputeModeTimeSlicing when the annotation is absent (the default,
+// matching today's only behavior), the parsed mode when the value is exactly
+// "time-slicing" or, when smSharingEnabled is true, "sm-sharing"; an error for
+// any other value, including a present-but-blank one.
 //
 // smSharingEnabled is the cluster's installation-time sm-sharing chicken bit
 // (Helm value -> operator -> fractiond --support-sm-sharing flag). When false,
@@ -203,12 +203,15 @@ func ParseVisibleDevices(annotations map[string]string, containerName, prefix st
 // exist on the node.
 func ParseComputeMode(annotations map[string]string, containerName, prefix string, smSharingEnabled bool) (ComputeMode, error) {
 	key := containerComputeModeAnnotationKey(prefix, containerName)
-	val := strings.TrimSpace(annotations[key])
-	if val == "" {
+	raw, ok := annotations[key]
+	if !ok {
 		return ComputeModeTimeSlicing, nil
 	}
 
-	switch ComputeMode(val) {
+	// Present but blank is a value, not an absence: the caller asked for a mode
+	// and named none, so it falls through to the same error as any other
+	// unsupported value rather than quietly meaning the default.
+	switch val := strings.TrimSpace(raw); ComputeMode(val) {
 	case ComputeModeTimeSlicing:
 		return ComputeModeTimeSlicing, nil
 	case ComputeModeSMSharing:
