@@ -37,6 +37,10 @@ type cliFlags struct {
 	mpsPipeDir string
 	// failOpen skips a container on parse error instead of blocking it.
 	failOpen bool
+	// supportSMSharing is the sm-sharing installation-time chicken bit; when
+	// false, the gpu-compute.mode: sm-sharing annotation is rejected like any
+	// other invalid value.
+	supportSMSharing bool
 	// mapDir is the shared dir for the container->pod mapping handoff.
 	mapDir string
 	// logPodEvents logs each recorded/removed mapping event.
@@ -67,6 +71,7 @@ func parseFlags() cliFlags {
 	flag.StringVar(&f.annotationPrefix, "annotation-prefix", configuration.DefaultAnnotationPrefix, "annotation prefix for GPU memory config")
 	flag.StringVar(&f.mpsPipeDir, "pipe-dir", configuration.DefaultMPSPipeDirectory, "MPS pipe directory path")
 	flag.BoolVar(&f.failOpen, "fail-open", false, "if true, annotation parse errors skip the container instead of blocking it")
+	flag.BoolVar(&f.supportSMSharing, "support-sm-sharing", env.Bool("SUPPORT_SM_SHARING", true), "if false, the gpu-compute.mode: sm-sharing annotation is rejected like any other invalid value")
 	flag.StringVar(&f.mapDir, "map-dir", env.String("MAP_DIR", fsstore.DefaultMapDir), "shared directory for the container->pod mapping handoff read by the metrics sidecar")
 	flag.BoolVar(&f.logPodEvents, "log-pod-events", env.Bool("LOG_POD_EVENTS", false), "log each recorded/removed container->pod mapping event")
 	flag.StringVar(&f.logLevel, "log-level", "info", "log level (debug, info, warn, error)")

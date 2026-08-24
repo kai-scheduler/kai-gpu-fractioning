@@ -212,39 +212,60 @@ func TestBuildMPSArgs(t *testing.T) {
 		name        string
 		controlPort string
 		configPath  string
+		multiuser   bool
 		want        []string
 	}{
 		{
-			name:        "port and config (production invocation)",
+			name:        "port, config and multiuser (production invocation)",
 			controlPort: DefaultMPSControlPort,
 			configPath:  DefaultMPSConfigPath,
+			multiuser:   true,
+			want:        []string{"-p", "3", "-m", "-f", "-a", "/etc/nvidia-mps/mps-control.toml"},
+		},
+		{
+			// sm-sharing disabled: the shared server is gone, so -m must go
+			// with it, restoring the exact pre-feature invocation.
+			name:        "sm-sharing disabled omits -m",
+			controlPort: DefaultMPSControlPort,
+			configPath:  DefaultMPSConfigPath,
+			multiuser:   false,
 			want:        []string{"-p", "3", "-f", "-a", "/etc/nvidia-mps/mps-control.toml"},
 		},
 		{
 			name:        "empty port omits -p",
 			controlPort: "",
 			configPath:  DefaultMPSConfigPath,
-			want:        []string{"-f", "-a", "/etc/nvidia-mps/mps-control.toml"},
+			multiuser:   true,
+			want:        []string{"-m", "-f", "-a", "/etc/nvidia-mps/mps-control.toml"},
 		},
 		{
 			name:        "empty config omits -a",
 			controlPort: DefaultMPSControlPort,
 			configPath:  "",
-			want:        []string{"-p", "3", "-f"},
+			multiuser:   true,
+			want:        []string{"-p", "3", "-m", "-f"},
 		},
 		{
-			name:        "both empty leaves only -f",
+			name:        "both empty leaves only -m -f",
 			controlPort: "",
 			configPath:  "",
+			multiuser:   true,
+			want:        []string{"-m", "-f"},
+		},
+		{
+			name:        "everything off leaves only -f",
+			controlPort: "",
+			configPath:  "",
+			multiuser:   false,
 			want:        []string{"-f"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildMPSArgs(tt.controlPort, tt.configPath)
+			got := buildMPSArgs(tt.controlPort, tt.configPath, tt.multiuser)
 			if !slices.Equal(got, tt.want) {
-				t.Errorf("buildMPSArgs(%q, %q) = %v, want %v", tt.controlPort, tt.configPath, got, tt.want)
+				t.Errorf("buildMPSArgs(%q, %q, %t) = %v, want %v", tt.controlPort, tt.configPath, tt.multiuser, got, tt.want)
 			}
 		})
 	}

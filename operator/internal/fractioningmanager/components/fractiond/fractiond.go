@@ -62,14 +62,19 @@ const (
 // daemon implements daemonmgr.ManagedDaemon for the fractiond NRI plugin plus its
 // metricsd metrics sidecar. Both run in a single DaemonSet pod.
 type daemon struct {
-	fractioningSpec *v1alpha1.FractioningAgentSpec
-	metricsSpec     *v1alpha1.MetricsAgentSpec
+	fractioningSpec  *v1alpha1.FractioningAgentSpec
+	metricsSpec      *v1alpha1.MetricsAgentSpec
+	supportSMSharing bool // Helm-injected sm-sharing chicken bit
 }
 
 // NewFractiondDaemon returns a ManagedDaemon for the fractiond NRI plugin. The
 // metricsAgent spec (may be nil) configures the co-located metricsd sidecar.
-func NewFractiondDaemon(spec *v1alpha1.FractioningAgentSpec, metrics *v1alpha1.MetricsAgentSpec) daemonmgr.ManagedDaemon {
-	return &daemon{fractioningSpec: spec, metricsSpec: metrics}
+// supportSMSharing is the Helm-injected sm-sharing chicken bit: when false,
+// fractiond rejects the gpu-compute.mode: sm-sharing annotation like any other
+// invalid value, since the shared MPS server mpsd would back it with is also
+// disabled by the same toggle.
+func NewFractiondDaemon(spec *v1alpha1.FractioningAgentSpec, metrics *v1alpha1.MetricsAgentSpec, supportSMSharing bool) daemonmgr.ManagedDaemon {
+	return &daemon{fractioningSpec: spec, metricsSpec: metrics, supportSMSharing: supportSMSharing}
 }
 
 func (d *daemon) Name() string { return daemonName }
@@ -385,12 +390,14 @@ func (d *daemon) buildMetricsdArgs() []string {
 }
 
 func (d *daemon) buildArgs() []string {
+	// Always passed explicitly (independent of the fractioningAgent CRD spec
+	// below): it is a Helm-installation-time toggle, not a per-CR setting.
+	args := []string{"--support-sm-sharing=" + strconv.FormatBool(d.supportSMSharing)}
+
 	spec := d.fractioningSpec
 	if spec == nil {
-		return nil
+		return args
 	}
-
-	var args []string
 
 	// Pod annotation key prefix used to read per-container GPU memory requests.
 	if spec.AnnotationPrefix != "" {

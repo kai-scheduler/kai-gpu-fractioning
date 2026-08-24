@@ -282,6 +282,106 @@ func TestParseGPUMemoryAnnotations(t *testing.T) {
 	}
 }
 
+const computeModeTestKey = "nvidia.com/container.trainer.gpu-compute.mode"
+
+func TestParseComputeMode(t *testing.T) {
+	tests := []struct {
+		name             string
+		annotations      map[string]string
+		smSharingEnabled bool
+		expected         ComputeMode
+		expectedErr      bool
+	}{
+		{
+			name:             "absent annotation defaults to time-slicing",
+			annotations:      map[string]string{"other": "value"},
+			smSharingEnabled: true,
+			expected:         ComputeModeTimeSlicing,
+		},
+		{
+			name:             "nil annotations defaults to time-slicing",
+			annotations:      nil,
+			smSharingEnabled: true,
+			expected:         ComputeModeTimeSlicing,
+		},
+		{
+			// Absence means "no preference"; an empty value means the mode was
+			// set to nothing, which is not one of the two documented values.
+			name:             "empty annotation fails",
+			annotations:      map[string]string{computeModeTestKey: ""},
+			smSharingEnabled: true,
+			expectedErr:      true,
+		},
+		{
+			name:             "whitespace-only annotation fails",
+			annotations:      map[string]string{computeModeTestKey: "   "},
+			smSharingEnabled: true,
+			expectedErr:      true,
+		},
+		{
+			name:             "explicit time-slicing",
+			annotations:      map[string]string{computeModeTestKey: "time-slicing"},
+			smSharingEnabled: true,
+			expected:         ComputeModeTimeSlicing,
+		},
+		{
+			name:             "explicit time-slicing, sm-sharing disabled cluster-wide",
+			annotations:      map[string]string{computeModeTestKey: "time-slicing"},
+			smSharingEnabled: false,
+			expected:         ComputeModeTimeSlicing,
+		},
+		{
+			name:             "sm-sharing",
+			annotations:      map[string]string{computeModeTestKey: "sm-sharing"},
+			smSharingEnabled: true,
+			expected:         ComputeModeSMSharing,
+		},
+		{
+			name:             "surrounding whitespace trimmed",
+			annotations:      map[string]string{computeModeTestKey: "  sm-sharing  "},
+			smSharingEnabled: true,
+			expected:         ComputeModeSMSharing,
+		},
+		{
+			name:             "sm-sharing rejected when disabled cluster-wide",
+			annotations:      map[string]string{computeModeTestKey: "sm-sharing"},
+			smSharingEnabled: false,
+			expectedErr:      true,
+		},
+		{
+			name:             "invalid value fails",
+			annotations:      map[string]string{computeModeTestKey: "mig"},
+			smSharingEnabled: true,
+			expectedErr:      true,
+		},
+		{
+			name:             "case-sensitive: capitalized value fails",
+			annotations:      map[string]string{computeModeTestKey: "SM-Sharing"},
+			smSharingEnabled: true,
+			expectedErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseComputeMode(tt.annotations, "trainer", configuration.DefaultAnnotationPrefix, tt.smSharingEnabled)
+			if tt.expectedErr {
+				if err == nil {
+					t.Errorf("ParseComputeMode() = %q, expected error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ParseComputeMode() error = %v", err)
+				return
+			}
+			if got != tt.expected {
+				t.Errorf("ParseComputeMode() = %q, expected %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestApplyDefaults(t *testing.T) {
 	tests := []struct {
 		name        string

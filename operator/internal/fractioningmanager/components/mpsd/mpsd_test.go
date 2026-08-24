@@ -17,8 +17,17 @@ import (
 
 const testDaemonServiceAccountName = "gpu-fractioning-daemon"
 
+// Fixed args passed to NewMpsdDaemon in tests that don't exercise them
+// directly (see TestDaemon_BuildDaemonSet_AuditLogDisabled and
+// TestDaemon_BuildDaemonSet_SupportSMSharingDisabled for the dedicated
+// disabled-value coverage of each).
+const (
+	testMpsdAuditLogTrue     = true
+	testSupportSMSharingTrue = true
+)
+
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
-	d := NewMpsdDaemon(nil, true)
+	d := NewMpsdDaemon(nil, testMpsdAuditLogTrue, testSupportSMSharingTrue)
 
 	if got := d.Name(); got != "mpsd" {
 		t.Errorf("Name() = %q, want %q", got, "mpsd")
@@ -44,9 +53,10 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 		t.Errorf("RuntimeClassName = %v, want nvidia", spec.RuntimeClassName)
 	}
 
-	// No HostPID (mpsd doesn't need it)
-	if spec.HostPID {
-		t.Error("expected HostPID=false for mpsd")
+	// HostPID: without it the control daemon reads every client's PID as 0 and
+	// memacct can't register them, so GPU memory limits go unenforced.
+	if !spec.HostPID {
+		t.Error("expected HostPID=true for mpsd")
 	}
 
 	// Node selector
@@ -144,14 +154,26 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 	if got := envValue(ctr.Env, "NVIDIA_DRIVER_CAPABILITIES"); got != "compute,utility" {
 		t.Errorf("NVIDIA_DRIVER_CAPABILITIES env = %q, want %q", got, "compute,utility")
 	}
+	if got := envValue(ctr.Env, "MPS_SUPPORT_SM_SHARING"); got != "true" {
+		t.Errorf("MPS_SUPPORT_SM_SHARING env = %q, want %q", got, "true")
+	}
 }
 
 func TestDaemon_BuildDaemonSet_AuditLogDisabled(t *testing.T) {
-	ds := NewMpsdDaemon(nil, false).BuildDaemonSet(defaultOpts())
+	ds := NewMpsdDaemon(nil, false, testSupportSMSharingTrue).BuildDaemonSet(defaultOpts())
 	ctr := ds.Spec.Template.Spec.Containers[0]
 
 	if got := envValue(ctr.Env, "MPS_MEMACCT_AUDIT_LOG"); got != "false" {
 		t.Errorf("MPS_MEMACCT_AUDIT_LOG env = %q, want %q", got, "false")
+	}
+}
+
+func TestDaemon_BuildDaemonSet_SupportSMSharingDisabled(t *testing.T) {
+	ds := NewMpsdDaemon(nil, testMpsdAuditLogTrue, false).BuildDaemonSet(defaultOpts())
+	ctr := ds.Spec.Template.Spec.Containers[0]
+
+	if got := envValue(ctr.Env, "MPS_SUPPORT_SM_SHARING"); got != "false" {
+		t.Errorf("MPS_SUPPORT_SM_SHARING env = %q, want %q", got, "false")
 	}
 }
 
@@ -184,7 +206,7 @@ func TestDaemon_BuildDaemonSet_RuntimeClass(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := defaultOpts()
 			opts.RuntimeClassName = tt.runtimeClassName
-			spec := NewMpsdDaemon(nil, true).BuildDaemonSet(opts).Spec.Template.Spec
+			spec := NewMpsdDaemon(nil, testMpsdAuditLogTrue, testSupportSMSharingTrue).BuildDaemonSet(opts).Spec.Template.Spec
 			if tt.want == nil {
 				if spec.RuntimeClassName != nil {
 					t.Fatalf("RuntimeClassName = %q, want nil", *spec.RuntimeClassName)
@@ -223,7 +245,7 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		MaxRetries:        ptr.To(int32(5)),
 		StableThreshold:   &metav1.Duration{Duration: 10 * time.Minute},
 		GracefulStopDelay: &metav1.Duration{Duration: 30 * time.Second},
-	}, true)
+	}, testMpsdAuditLogTrue, testSupportSMSharingTrue)
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	args := ds.Spec.Template.Spec.Containers[0].Args
@@ -250,7 +272,7 @@ func TestDaemon_BuildDaemonSet_TerminationGrace(t *testing.T) {
 	// Default (no configured graceful-stop-delay): mpsd's 60s default + buffer,
 	// and always ≥ the graceful-stop-delay so kubelet can't SIGKILL mpsd before
 	// its MPS graceful-quit window completes (the driver-upgrade guarantee).
-	grace := NewMpsdDaemon(nil, false).BuildDaemonSet(defaultOpts()).Spec.Template.Spec.TerminationGracePeriodSeconds
+	grace := NewMpsdDaemon(nil, false, testSupportSMSharingTrue).BuildDaemonSet(defaultOpts()).Spec.Template.Spec.TerminationGracePeriodSeconds
 	if grace == nil {
 		t.Fatal("terminationGracePeriodSeconds is nil; mpsd inherits the 30s default and can be killed mid-quit")
 	}
@@ -264,7 +286,7 @@ func TestDaemon_BuildDaemonSet_TerminationGrace(t *testing.T) {
 	// A configured graceful-stop-delay is tracked (plus buffer), still ≥ it.
 	d := NewMpsdDaemon(&v1alpha1.MpsDaemonSpec{
 		GracefulStopDelay: &metav1.Duration{Duration: 90 * time.Second},
-	}, false)
+	}, false, testSupportSMSharingTrue)
 	grace = d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec.TerminationGracePeriodSeconds
 	if want := int64((90*time.Second + terminationGraceBuffer).Seconds()); grace == nil || *grace != want {
 		t.Fatalf("configured grace = %v, want %d", grace, want)

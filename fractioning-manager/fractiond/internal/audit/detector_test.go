@@ -4,6 +4,7 @@
 package audit
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestDetectorViolations(t *testing.T) {
 				State: api.ContainerState_CONTAINER_RUNNING,
 				Env:   injectedEqualEnv(),
 			},
-			wantMissing: []string{"mount:" + configuration.DefaultMPSPipeDirectory},
+			wantMissing: []string{defaultMountMissing},
 		},
 		{
 			name: "missing limit env (limit annotated) is a violator",
@@ -75,7 +76,7 @@ func TestDetectorViolations(t *testing.T) {
 				"env:" + injection.EnvMPSPipeDirectory,
 				"env:" + injection.EnvGPUMemoryLimits,
 				"env:" + injection.EnvGPUMemoryRequests,
-				"mount:" + configuration.DefaultMPSPipeDirectory,
+				defaultMountMissing,
 			},
 		},
 		{
@@ -132,7 +133,7 @@ func TestDetectorViolations(t *testing.T) {
 				"env:" + injection.EnvMPSPipeDirectory,
 				"env:" + injection.EnvGPUMemoryLimits,
 				"env:" + injection.EnvGPUMemoryRequests,
-				"mount:" + configuration.DefaultMPSPipeDirectory,
+				defaultMountMissing,
 			},
 		},
 		{
@@ -175,6 +176,40 @@ func TestDetectorViolations(t *testing.T) {
 				State: api.ContainerState_CONTAINER_RUNNING,
 			},
 		},
+		{
+			name: "sm-sharing container mounted on the shared socket is not a violator",
+			pod:  withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", ""), "trainer", "sm-sharing"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    sharedSocketEqualEnv(),
+				Mounts: []*api.Mount{sharedSocketMount()},
+			},
+		},
+		{
+			name: "sm-sharing container still on the default socket is a violator",
+			pod:  withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", ""), "trainer", "sm-sharing"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				// Injected as if time-slicing (the pre-upgrade/default shape):
+				// CUDA_MPS_PIPE_DIRECTORY is present (presence-based env check
+				// does not compare values), but the mount is still bound to the
+				// default socket (wrong source and wrong destination), not the
+				// shared one the sm-sharing annotation expects.
+				State:  api.ContainerState_CONTAINER_RUNNING,
+				Env:    injectedEqualEnv(),
+				Mounts: []*api.Mount{mpsMount()},
+			},
+			wantMissing: []string{sharedMountMissing},
+		},
+		{
+			name: "unparseable compute mode annotation is skipped, not stopped (fail-closed)",
+			pod:  withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", ""), "trainer", "mig"),
+			ctr: &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State: api.ContainerState_CONTAINER_RUNNING,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -199,6 +234,72 @@ func TestDetectorViolations(t *testing.T) {
 				t.Errorf("violator identity = %q/%q, want %q/%q", v.containerID, v.container, tt.ctr.GetId(), tt.ctr.GetName())
 			}
 			assertSameSet(t, v.missing, tt.wantMissing)
+		})
+	}
+}
+
+// TestDetectorSMSharingDisabledSkipsAnnotatedContainer verifies that when the
+// sm-sharing chicken bit is off, a container annotated sm-sharing is skipped
+// (unparseable, same as any other invalid compute-mode value) rather than
+// flagged as a violator — mirroring how the plugin itself would reject/
+// downgrade it, so a disabled feature can never produce a false violation.
+func TestDetectorSMSharingDisabledSkipsAnnotatedContainer(t *testing.T) {
+	pod := withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", ""), "trainer", "sm-sharing")
+	ctr := &api.Container{
+		Id: "c", Name: "trainer", PodSandboxId: "p",
+		State: api.ContainerState_CONTAINER_RUNNING,
+	}
+
+	got := newDetectorSMSharingDisabled().violators([]*api.PodSandbox{pod}, []*api.Container{ctr})
+	if len(got) != 0 {
+		t.Fatalf("expected no violator when sm-sharing is disabled cluster-wide, got %+v", got)
+	}
+}
+
+// TestDetectorFailOpenAuditsUnusableComputeMode covers the fail-open half of
+// the compute-mode policy. Creation under fail-open does not block a container
+// whose mode annotation cannot be honored; it falls back to time-slicing and
+// still injects the memory limit. The audit must reach the same conclusion,
+// otherwise a mode typo would be enough to hide a container that is holding a
+// GPU share with no memory limit at all — exactly what this audit is for.
+func TestDetectorFailOpenAuditsUnusableComputeMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		detector detector
+		mode     string
+	}{
+		{
+			name:     "invalid value",
+			detector: newDetectorFailOpen(),
+			mode:     "mig",
+		},
+		{
+			name:     "sm-sharing requested while disabled cluster-wide",
+			detector: newDetectorFailOpenSMSharingDisabled(),
+			mode:     "sm-sharing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := withComputeMode(fractioningPod("p", "pod", "trainer", "4Gi", "2Gi"), "trainer", tt.mode)
+			ctr := &api.Container{
+				Id: "c", Name: "trainer", PodSandboxId: "p",
+				State: api.ContainerState_CONTAINER_RUNNING,
+			}
+
+			got := tt.detector.violators([]*api.PodSandbox{pod}, []*api.Container{ctr})
+			if len(got) != 1 {
+				t.Fatalf("expected the container to be audited against the time-slicing default, got %d violators: %+v", len(got), got)
+			}
+			// The expectations are the time-slicing ones (default mount), proving
+			// the fallback rather than merely that something was reported.
+			assertSameSet(t, got[0].missing, []string{
+				"env:" + injection.EnvMPSPipeDirectory,
+				"env:" + injection.EnvGPUMemoryLimits,
+				"env:" + injection.EnvGPUMemoryRequests,
+				defaultMountMissing,
+			})
 		})
 	}
 }
@@ -272,6 +373,17 @@ func withVisibleDevices(pod *api.PodSandbox, containerName, value string) *api.P
 	return pod
 }
 
+// withComputeMode records a compute-mode annotation for the named container on
+// the pod, so the detector derives its expected mount from that mode instead
+// of defaulting to time-slicing.
+func withComputeMode(pod *api.PodSandbox, containerName, value string) *api.PodSandbox {
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[annotations.ComputeModeAnnotationKey(configuration.DefaultAnnotationPrefix, containerName)] = value
+	return pod
+}
+
 // injectedEnv returns the env keys buildAdjustment would add for the given
 // request/limit presence, so tests can construct a fully-injected container.
 func injectedEnv(limit, request bool) []string {
@@ -307,11 +419,65 @@ func mpsMount() *api.Mount {
 	}
 }
 
+// defaultMountMissing and sharedMountMissing are the "missing" entries
+// missingInjection reports for the time-slicing and sm-sharing mounts,
+// respectively — kept as the single source of truth for the "mount:<source>:
+// <destination>" format instead of duplicating it across test cases.
+var (
+	defaultMountMissing = "mount:" + configuration.DefaultMPSPipeDirectory + ":" + configuration.DefaultMPSPipeDirectory
+	sharedMountMissing  = "mount:" + filepath.Join(configuration.DefaultMPSPipeDirectory, configuration.SharedMPSSocketPath) + ":" + configuration.ContainerMPSPipeDirectory
+)
+
+// sharedSocketMount is the mount buildAdjustment produces for an sm-sharing
+// container: the shared server's default-namespace socket on the host, bound
+// to the fixed in-container MPS pipe path.
+func sharedSocketMount() *api.Mount {
+	return &api.Mount{
+		Source:      filepath.Join(configuration.DefaultMPSPipeDirectory, configuration.SharedMPSSocketPath),
+		Destination: configuration.ContainerMPSPipeDirectory,
+		Type:        "bind",
+		Options:     []string{"bind", "rw"},
+	}
+}
+
+// sharedSocketEqualEnv is the fully-injected env for an sm-sharing container
+// whose request and limit resolve to the same value (mirrors injectedEqualEnv
+// but with CUDA_MPS_PIPE_DIRECTORY pointed at the in-container sm-sharing path).
+func sharedSocketEqualEnv() []string {
+	return []string{
+		injection.EnvMPSPipeDirectory + "=" + configuration.ContainerMPSPipeDirectory,
+		injection.EnvGPUMemoryLimits + "=4096",
+		injection.EnvGPUMemoryRequests + "=4096",
+	}
+}
+
+// newDetector is the fail-closed detector: an unusable compute-mode annotation
+// means the container was never created by a healthy hook, so it is skipped.
 func newDetector() detector {
 	return detector{
 		annotationPrefix: configuration.DefaultAnnotationPrefix,
 		mpsPipeDirectory: configuration.DefaultMPSPipeDirectory,
+		smSharingEnabled: true,
+		failOpen:         false,
 	}
+}
+
+func newDetectorSMSharingDisabled() detector {
+	d := newDetector()
+	d.smSharingEnabled = false
+	return d
+}
+
+func newDetectorFailOpen() detector {
+	d := newDetector()
+	d.failOpen = true
+	return d
+}
+
+func newDetectorFailOpenSMSharingDisabled() detector {
+	d := newDetectorFailOpen()
+	d.smSharingEnabled = false
+	return d
 }
 
 func assertSameSet(t *testing.T, got, want []string) {

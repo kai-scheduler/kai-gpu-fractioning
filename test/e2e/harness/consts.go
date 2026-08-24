@@ -41,6 +41,18 @@ const (
 	// MPS pipe dir (configuration.DefaultMPSPipeDirectory).
 	MPSPipeDir = "/run/nvidia-mps"
 
+	// Where an sm-sharing container's MPS pipe dir is mounted, and the host
+	// directory it comes from — the shared MPS server's "default" namespace
+	// (configuration.ContainerMPSPipeDirectory, SharedMPSSocketPath). A
+	// time-slicing container instead gets MPSPipeDir mounted at itself.
+	ContainerMPSPipeDir = "/tmp/nvidia-mps"
+	SharedMPSHostDir    = MPSPipeDir + "/shared/default"
+
+	// Values of the per-container gpu-compute.mode annotation
+	// (annotations.ComputeMode*). Absent means TimeSlicing.
+	ComputeModeTimeSlicing = "time-slicing"
+	ComputeModeSMSharing   = "sm-sharing"
+
 	// Component label values (app.kubernetes.io/component) on each managed DS.
 	ComponentFractiond = "fractiond"
 	ComponentMpsd      = "mpsd"

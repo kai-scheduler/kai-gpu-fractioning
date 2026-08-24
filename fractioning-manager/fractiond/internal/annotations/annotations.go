@@ -30,11 +30,35 @@ const (
 	annotationSuffixRequest = "request"
 	annotationSuffixLimit   = "limit"
 
+	// computeModeSuffix builds the per-container compute-mode annotation key,
+	// e.g. "nvidia.com/container.trainer.gpu-compute.mode". Unlike memoryInfix
+	// (reused across the request/limit suffixes), compute mode has only one
+	// key shape, so infix and suffix collapse into a single constant here —
+	// matching the devicesSuffix pattern above.
+	computeModeSuffix = "gpu-compute.mode"
+
 	// bytesPerMiB is the number of bytes in one MiB.
 	bytesPerMiB = 1024 * 1024
 
 	// Minimum accepted annotation value, matching the documented minimum of 1 MiB.
 	minMemoryBytes = bytesPerMiB
+)
+
+// ComputeMode selects how a fractional GPU container shares the node's GPU
+// compute among neighbors, via the per-container
+// "<prefix><containerName>.gpu-compute.mode" annotation.
+type ComputeMode string
+
+const (
+	// ComputeModeTimeSlicing shares compute via GPU time-slicing (the default
+	// driver scheduling across processes) — today's only behavior, and the
+	// value ParseComputeMode returns when the annotation is absent.
+	ComputeModeTimeSlicing ComputeMode = "time-slicing"
+	// ComputeModeSMSharing shares compute via NVIDIA MPS context-sharing
+	// (concurrent SM occupancy), routing the container to the shared MPS
+	// server instead of the default one. Only meaningful for a container that
+	// also carries a GPU-memory annotation.
+	ComputeModeSMSharing ComputeMode = "sm-sharing"
 )
 
 // GPUMemoryConfig holds the parsed GPU memory request and limit for a container.
@@ -155,6 +179,53 @@ func ParseVisibleDevices(annotations map[string]string, containerName, prefix st
 	return strings.TrimSpace(annotations[containerDevicesAnnotationKey(prefix, containerName)])
 }
 
+// ParseComputeMode extracts the compute-mode selection for a specific
+// container from the pod's annotation map.
+//
+// Annotation format:
+//
+//	<prefix><containerName>.gpu-compute.mode = "time-slicing" | "sm-sharing"
+//
+// With the default prefix "nvidia.com/container.", a full key is:
+//
+//	nvidia.com/container.trainer.gpu-compute.mode
+//
+// Returns ComputeModeTimeSlicing when the annotation is absent (the default,
+// matching today's only behavior), the parsed mode when the value is exactly
+// "time-slicing" or, when smSharingEnabled is true, "sm-sharing"; an error for
+// any other value, including a present-but-blank one.
+//
+// smSharingEnabled is the cluster's installation-time sm-sharing chicken bit
+// (Helm value -> operator -> fractiond --support-sm-sharing flag). When false,
+// "sm-sharing" is rejected exactly like any other invalid value: the shared
+// MPS server backing it is disabled cluster-wide by the same toggle, so
+// honoring the annotation would route the container to a socket that does not
+// exist on the node.
+func ParseComputeMode(annotations map[string]string, containerName, prefix string, smSharingEnabled bool) (ComputeMode, error) {
+	key := containerComputeModeAnnotationKey(prefix, containerName)
+	raw, ok := annotations[key]
+	if !ok {
+		return ComputeModeTimeSlicing, nil
+	}
+
+	// Present but blank is a value, not an absence: the caller asked for a mode
+	// and named none, so it falls through to the same error as any other
+	// unsupported value rather than quietly meaning the default.
+	switch val := strings.TrimSpace(raw); ComputeMode(val) {
+	case ComputeModeTimeSlicing:
+		return ComputeModeTimeSlicing, nil
+	case ComputeModeSMSharing:
+		if !smSharingEnabled {
+			return "", fmt.Errorf("parsing annotation %q: value %q is not enabled on this cluster (sm-sharing support is disabled)",
+				key, val)
+		}
+		return ComputeModeSMSharing, nil
+	default:
+		return "", fmt.Errorf("parsing annotation %q: invalid value %q, expected %q or %q",
+			key, val, ComputeModeTimeSlicing, ComputeModeSMSharing)
+	}
+}
+
 // quantityToMemoryMiB converts a Kubernetes Quantity string to the integer MiB
 // value NVIDIA consumes from the injected memory environment variables.
 func quantityToMemoryMiB(value string) (int64, error) {
@@ -208,6 +279,15 @@ func containerDevicesAnnotationKey(prefix, containerName string) string {
 	return prefix + containerName + "." + devicesSuffix
 }
 
+// containerComputeModeAnnotationKey builds the per-container compute-mode
+// annotation key.
+// Example: containerComputeModeAnnotationKey("nvidia.com/container.", "trainer")
+//
+//	→ "nvidia.com/container.trainer.gpu-compute.mode"
+func containerComputeModeAnnotationKey(prefix, containerName string) string {
+	return prefix + containerName + "." + computeModeSuffix
+}
+
 // RequestAnnotationKey returns the annotation key fractiond looks up for a
 // container's GPU-memory request (e.g. for diagnostic logging).
 func RequestAnnotationKey(prefix, containerName string) string {
@@ -225,4 +305,10 @@ func DevicesAnnotationKey(prefix, containerName string) string {
 // non-fractioning container is missing).
 func LimitAnnotationKey(prefix, containerName string) string {
 	return containerMemoryAnnotationKey(prefix, containerName, annotationSuffixLimit)
+}
+
+// ComputeModeAnnotationKey returns the annotation key fractiond looks up for a
+// container's compute-mode selection (e.g. for diagnostic logging).
+func ComputeModeAnnotationKey(prefix, containerName string) string {
+	return containerComputeModeAnnotationKey(prefix, containerName)
 }

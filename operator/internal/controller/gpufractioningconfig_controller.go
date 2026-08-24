@@ -82,9 +82,14 @@ type GpuFractioningConfigReconciler struct {
 	// during startup.
 	DaemonServiceAccountName string
 
-	// DefaultMpsdAuditLog is the Helm-injected default for the mpsd MPS memacct
-	// audit log, forwarded to the mpsd container via env.
-	DefaultMpsdAuditLog bool
+	// MpsdAuditLog is the Helm-injected toggle for the mpsd MPS memacct audit
+	// log, forwarded to the mpsd container via env.
+	MpsdAuditLog bool
+
+	// SupportSMSharing is the Helm-injected installation-time toggle for the
+	// sm-sharing compute mode, forwarded to both the mpsd and fractiond
+	// containers. See buildDaemons.
+	SupportSMSharing bool
 
 	// GpuOperatorChecker checks NVIDIA GPU Operator dependency failures against
 	// the aggregate Ready condition. Version validation runs even when managed
@@ -107,7 +112,8 @@ func NewGpuFractioningConfigReconciler(
 	namespace string,
 	defaultImages map[string]daemonmgr.ImageSpec,
 	daemonServiceAccountName string,
-	defaultMpsdAuditLog bool,
+	mpsdAuditLog bool,
+	supportSMSharing bool,
 ) *GpuFractioningConfigReconciler {
 	return &GpuFractioningConfigReconciler{
 		Client:                   c,
@@ -117,7 +123,8 @@ func NewGpuFractioningConfigReconciler(
 		Namespace:                namespace,
 		DefaultImages:            defaultImages,
 		DaemonServiceAccountName: daemonServiceAccountName,
-		DefaultMpsdAuditLog:      defaultMpsdAuditLog,
+		MpsdAuditLog:             mpsdAuditLog,
+		SupportSMSharing:         supportSMSharing,
 		GpuOperatorChecker:       NewGpuOperatorDependencyChecker(apiReader),
 		GpuDriverChecker:         NewGpuDriverDependencyChecker(apiReader),
 	}
@@ -125,10 +132,10 @@ func NewGpuFractioningConfigReconciler(
 
 // buildDaemons constructs the managed daemons from the current CRD spec,
 // so each reconcile sees the latest configuration.
-func buildDaemons(spec *v1alpha1.GpuFractioningConfigSpec, mpsdAuditLog bool) []daemonmgr.ManagedDaemon {
+func buildDaemons(spec *v1alpha1.GpuFractioningConfigSpec, mpsdAuditLog, supportSMSharing bool) []daemonmgr.ManagedDaemon {
 	return []daemonmgr.ManagedDaemon{
-		fractiond.NewFractiondDaemon(spec.FractioningAgent, spec.MetricsAgent),
-		mpsd.NewMpsdDaemon(spec.MpsDaemon, mpsdAuditLog),
+		fractiond.NewFractiondDaemon(spec.FractioningAgent, spec.MetricsAgent, supportSMSharing),
+		mpsd.NewMpsdDaemon(spec.MpsDaemon, mpsdAuditLog, supportSMSharing),
 	}
 }
 
@@ -164,7 +171,7 @@ func (r *GpuFractioningConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Reconcile each managed daemon and collect health + conditions.
 	var needsRequeue bool
-	daemons := buildDaemons(&config.Spec, r.DefaultMpsdAuditLog)
+	daemons := buildDaemons(&config.Spec, r.MpsdAuditLog, r.SupportSMSharing)
 
 	opts := r.buildOptions(&config)
 	for _, daemon := range daemons {

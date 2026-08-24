@@ -44,14 +44,18 @@ const (
 )
 
 type daemon struct {
-	spec     *v1alpha1.MpsDaemonSpec
-	auditLog bool // set  level of the memacct audit log
+	spec             *v1alpha1.MpsDaemonSpec
+	auditLog         bool // set  level of the memacct audit log
+	supportSMSharing bool // Helm-injected sm-sharing chicken bit
 }
 
 // NewMpsdDaemon returns a ManagedDaemon for the MPS daemon supervisor.
-// auditLog is the Helm-injected MPS memacct audit-log default.
-func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog bool) daemonmgr.ManagedDaemon {
-	return &daemon{spec: spec, auditLog: auditLog}
+// auditLog is the Helm-injected MPS memacct audit-log default. supportSMSharing
+// is the Helm-injected sm-sharing chicken bit: when false, mpsd renders its MPS
+// config with the shared server (context-share) disabled, exactly as it did
+// before the sm-sharing feature existed.
+func NewMpsdDaemon(spec *v1alpha1.MpsDaemonSpec, auditLog, supportSMSharing bool) daemonmgr.ManagedDaemon {
+	return &daemon{spec: spec, auditLog: auditLog, supportSMSharing: supportSMSharing}
 }
 
 func (d *daemon) Name() string { return daemonName }
@@ -69,6 +73,15 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	result.Spec.Template.Spec.NodeSelector = opts.NodeSelector
 	result.Spec.Template.Spec.ServiceAccountName = opts.ServiceAccountName
 	result.Spec.Template.Spec.RuntimeClassName = opts.RuntimeClassName
+	// HostPID is required for memacct to enforce GPU memory limits. The control
+	// daemon identifies each client by the PID in the connecting socket's peer
+	// credentials, and the kernel only translates a peer PID for a namespace it
+	// can see — its own or a descendant. In its own pod namespace the daemon
+	// therefore reads every workload container's PID as 0, memacct registration
+	// fails ("failed to register client pid 0"), and the limit is silently not
+	// applied. The host PID namespace is an ancestor of every container's, so
+	// PIDs (and their cgroups) resolve. Workloads need no change.
+	result.Spec.Template.Spec.HostPID = true
 	// Give mpsd long enough to graceful-quit MPS before kubelet SIGKILLs it on
 	// eviction (e.g. a driver-upgrade drain). Without this the pod inherits the
 	// 30s default, shorter than the graceful stop delay, defeating the graceful
@@ -86,6 +99,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 		corev1.EnvVar{Name: envVisibleDevices, Value: "all"},
 		corev1.EnvVar{Name: envCapabilities, Value: "compute,utility"},
 		corev1.EnvVar{Name: "MPS_MEMACCT_AUDIT_LOG", Value: strconv.FormatBool(d.auditLog)},
+		corev1.EnvVar{Name: "MPS_SUPPORT_SM_SHARING", Value: strconv.FormatBool(d.supportSMSharing)},
 	)
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, container)
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)

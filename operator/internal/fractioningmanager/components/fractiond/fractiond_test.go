@@ -18,8 +18,13 @@ import (
 
 const testDaemonServiceAccountName = "gpu-fractioning-daemon"
 
+// testSupportSMSharingTrue is the sm-sharing chicken bit passed to NewFractiondDaemon
+// in tests that don't exercise it directly (see TestDaemon_BuildDaemonSet_SupportSMSharing
+// for the dedicated true/false coverage).
+const testSupportSMSharingTrue = true
+
 func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, testSupportSMSharingTrue)
 
 	if got := d.Name(); got != "fractiond" {
 		t.Errorf("Name() = %q, expected %q", got, "fractiond")
@@ -130,15 +135,16 @@ func TestDaemon_BuildDaemonSet_Basics(t *testing.T) {
 		t.Errorf("missing component label, got %v", labels)
 	}
 
-	// No args when spec is nil
+	// The sm-sharing chicken bit is always passed, even when spec is nil (it is
+	// an installation-time toggle, independent of the fractioningAgent CRD spec).
 	args := ctr.Args
-	if len(args) != 0 {
-		t.Errorf("expected no args when spec is nil, got %v", args)
+	if len(args) != 1 || args[0] != "--support-sm-sharing=true" {
+		t.Errorf("expected only --support-sm-sharing=true when spec is nil, got %v", args)
 	}
 }
 
 func TestDaemon_BuildDaemonSet_MetricsNVMLAccess(t *testing.T) {
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, testSupportSMSharingTrue)
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 
 	// Pod must opt into the RuntimeClass so the NVIDIA container runtime injects
@@ -173,7 +179,7 @@ func TestDaemon_BuildDaemonSet_MetricsExtraNVMLVolumesOnlyWhenMetricsEnabled(t *
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "nvml-config", MountPath: "/etc/nvml-mock", ReadOnly: true},
 		},
-	})
+	}, testSupportSMSharingTrue)
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 
 	var foundVolume bool
@@ -199,7 +205,7 @@ func TestDaemon_BuildDaemonSet_MetricsExtraNVMLVolumesOnlyWhenMetricsEnabled(t *
 				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 			},
 		},
-	})
+	}, testSupportSMSharingTrue)
 	spec = d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	for _, v := range spec.Volumes {
 		if v.Name == "nvml-config" {
@@ -215,7 +221,7 @@ func TestDaemon_BuildDaemonSet_MetricNamesArgs(t *testing.T) {
 			GPUMemoryUsedBytes:      "custom_gpu_memory_used_bytes",
 			GPUSMUtilizationPercent: "custom_gpu_utilization",
 		},
-	})
+	}, testSupportSMSharingTrue)
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	metricsd := containerByName(t, spec.Containers, "metricsd")
 
@@ -239,7 +245,7 @@ func TestDaemon_BuildDaemonSet_MetricsRuntimeClassOverride(t *testing.T) {
 	opts := defaultOpts()
 	opts.RuntimeClassName = &custom
 
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, testSupportSMSharingTrue)
 	spec := d.BuildDaemonSet(opts).Spec.Template.Spec
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "custom-nvidia" {
 		t.Errorf("runtimeClassName = %v, expected %q", spec.RuntimeClassName, custom)
@@ -250,7 +256,7 @@ func TestDaemon_BuildDaemonSet_MetricsRuntimeClassEmpty(t *testing.T) {
 	opts := defaultOpts()
 	opts.RuntimeClassName = nil
 
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true})
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, testSupportSMSharingTrue)
 	spec := d.BuildDaemonSet(opts).Spec.Template.Spec
 	if spec.RuntimeClassName != nil {
 		t.Errorf("runtimeClassName = %v, expected nil (node default)", spec.RuntimeClassName)
@@ -258,7 +264,7 @@ func TestDaemon_BuildDaemonSet_MetricsRuntimeClassEmpty(t *testing.T) {
 }
 
 func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
-	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false})
+	d := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: false}, testSupportSMSharingTrue)
 
 	spec := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	if len(spec.InitContainers) != 0 {
@@ -279,7 +285,7 @@ func TestDaemon_BuildDaemonSet_MetricsDisabled(t *testing.T) {
 // that never registers with NRI reports Ready=False (and the node condition
 // stays false) instead of a false-positive AllDaemonsReady.
 func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
-	d := NewFractiondDaemon(nil, nil)
+	d := NewFractiondDaemon(nil, nil, testSupportSMSharingTrue)
 	ds := d.BuildDaemonSet(defaultOpts())
 	ctr := ds.Spec.Template.Spec.Containers[0]
 
@@ -320,7 +326,7 @@ func TestDaemon_BuildDaemonSet_ReadinessProbe(t *testing.T) {
 // Liveness on fractiond is a TCP connect (not /readyz) so a fractiond still
 // retrying its NRI registration is not restart-looped; resources are always set.
 func TestDaemon_BuildDaemonSet_FractiondLivenessAndResources(t *testing.T) {
-	ctr := NewFractiondDaemon(nil, nil).BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
+	ctr := NewFractiondDaemon(nil, nil, testSupportSMSharingTrue).BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
 
 	if ctr.LivenessProbe == nil || ctr.LivenessProbe.TCPSocket == nil {
 		t.Fatalf("expected a TCPSocket liveness probe, got %+v", ctr.LivenessProbe)
@@ -334,7 +340,7 @@ func TestDaemon_BuildDaemonSet_FractiondLivenessAndResources(t *testing.T) {
 // metricsd exposes readiness (/readyz) and liveness (/healthz) on its metrics
 // port so a broken sidecar flips pod readiness / is restarted; resources are set.
 func TestDaemon_BuildDaemonSet_MetricsdProbesAndResources(t *testing.T) {
-	spec := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}).
+	spec := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, testSupportSMSharingTrue).
 		BuildDaemonSet(defaultOpts()).Spec.Template.Spec
 	metricsd := containerByName(t, spec.Containers, "metricsd")
 
@@ -379,7 +385,7 @@ func assertDaemonResources(t *testing.T, ctr corev1.Container, wantMemLimit stri
 func TestDaemon_BuildDaemonSet_ReadinessPortOverride(t *testing.T) {
 	d := NewFractiondDaemon(&v1alpha1.FractioningAgentSpec{
 		ReadinessPort: ptr.To(int32(9999)),
-	}, nil)
+	}, nil, testSupportSMSharingTrue)
 	ctr := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
 
 	if got := ctr.ReadinessProbe.HTTPGet.Port.IntValue(); got != 9999 {
@@ -411,12 +417,13 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 		MaxRetries:             ptr.To(int32(5)),
 		RetroactiveEnforcement: true,
 		CRISocketPath:          "/custom/cri.sock",
-	}, nil)
+	}, nil, testSupportSMSharingTrue)
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	args := ds.Spec.Template.Spec.Containers[0].Args
 
 	expected := []string{
+		"--support-sm-sharing=true",
 		"--annotation-prefix", "custom.prefix.",
 		"--fail-open",
 		"--socket-path", "/custom/nri.sock",
@@ -470,7 +477,7 @@ func TestDaemon_BuildDaemonSet_Args(t *testing.T) {
 func TestDaemon_BuildDaemonSet_EnforcementDisabled(t *testing.T) {
 	d := NewFractiondDaemon(&v1alpha1.FractioningAgentSpec{
 		RetroactiveEnforcement: false,
-	}, nil)
+	}, nil, testSupportSMSharingTrue)
 
 	ds := d.BuildDaemonSet(defaultOpts())
 	spec := ds.Spec.Template.Spec
@@ -500,6 +507,35 @@ func TestDaemon_BuildDaemonSet_EnforcementDisabled(t *testing.T) {
 	}
 	if !foundDisable {
 		t.Errorf("expected --retroactive-enforcement=false in args, got %v", ctr.Args)
+	}
+}
+
+// TestDaemon_BuildDaemonSet_SupportSMSharing verifies the Helm-injected
+// sm-sharing chicken bit is always passed as an explicit arg, independent of
+// whether a fractioningAgent spec is configured.
+func TestDaemon_BuildDaemonSet_SupportSMSharing(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		supportSMSharing bool
+		want             string
+	}{
+		{name: "enabled", supportSMSharing: true, want: "--support-sm-sharing=true"},
+		{name: "disabled", supportSMSharing: false, want: "--support-sm-sharing=false"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewFractiondDaemon(&v1alpha1.FractioningAgentSpec{}, nil, tt.supportSMSharing)
+			ctr := d.BuildDaemonSet(defaultOpts()).Spec.Template.Spec.Containers[0]
+
+			var found bool
+			for _, a := range ctr.Args {
+				if a == tt.want {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected %q in args, got %v", tt.want, ctr.Args)
+			}
+		})
 	}
 }
 
