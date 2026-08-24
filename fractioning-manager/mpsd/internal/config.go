@@ -17,6 +17,12 @@ type MPSConfig struct {
 	ContextShareEnabled bool
 	// ContextShareDefaultSocket sets [features.context-share].default_socket
 	// when non-empty (e.g. "off"); empty omits the line.
+	//
+	// "off" is scoped to context sharing: it keeps the default socket out of
+	// it, so only containers routed to SharedServerName share a context. It
+	// does not take the default socket away — time-slicing containers still
+	// attach there, and [features.memacct] still enforces their GPU-memory
+	// limits, since that is a separate feature section with its own defaults.
 	ContextShareDefaultSocket string
 	// SharedServerName renders a parameterless [servers.<name>] block when
 	// non-empty; empty omits the block entirely.
