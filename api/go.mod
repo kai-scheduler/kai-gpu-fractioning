@@ -3,8 +3,8 @@ module github.com/kai-scheduler/kai-gpu-fractioning/api
 go 1.26.4
 
 require (
-	k8s.io/api v0.36.3
-	k8s.io/apimachinery v0.36.3
+	k8s.io/api v0.36.4
+	k8s.io/apimachinery v0.36.4
 )
 
 require (
