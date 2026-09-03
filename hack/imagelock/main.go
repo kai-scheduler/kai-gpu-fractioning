@@ -1,10 +1,8 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 NVIDIA Corporation
 
-// Command imagelock renders the Karta Helm chart, resolves every container image
-// the install runs to its digest, and writes one ImageLock YAML per platform.
-// It lives in its own Go module so its registry client stays out of Karta's
-// shipped dependency and license graph.
+// Command imagelock renders the KAI GPU Fractioning Helm chart, resolves every
+// deployment image to its digest, and writes one ImageLock YAML per platform.
 package main
 
 import (
@@ -29,8 +27,11 @@ import (
 const (
 	lockAPIVersion = "artifacts.run.ai/v1alpha1"
 	lockKind       = "ImageLock"
-	lockName       = "karta"
+	lockName       = "kai-gpu-fractioning"
 	lockProfile    = "standard"
+
+	imageRepositoryPrefix = "ghcr.io/kai-scheduler/kai-gpu-fractioning/"
+	verifyVersion         = "v0.0.0-imagelock-verify"
 )
 
 const (
@@ -42,17 +43,18 @@ const (
 // required to agree, guarding against a tag that moves mid-run.
 const defaultStabilityReads = 10
 
-// knownImages maps each shippable repository to the short name it gets in the
-// lock. Classification is fail-closed: a repository missing here stops the
-// release, so every new image must be added on purpose before it can ship.
+// knownImages is the explicit inventory of every image shipped in a release.
+// Add every new release image here so it is included in the generated locks.
 var knownImages = map[string]string{
-	"ghcr.io/run-ai/karta/karta-operator": "operator",
-	"registry.k8s.io/kubectl":             "crd-upgrader",
+	imageRepositoryPrefix + "fractiond": "fractiond",
+	imageRepositoryPrefix + "metricsd":  "metricsd",
+	imageRepositoryPrefix + "mpsd":      "mpsd",
+	imageRepositoryPrefix + "operator":  "operator",
 }
 
 var sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
-var releaseVersion = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
+var releaseVersion = regexp.MustCompile(`^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 
 type platform struct {
 	OS           string `json:"os"`
@@ -72,7 +74,7 @@ func (c chartImage) reference() string { return c.repo + ":" + c.tag }
 
 type resolvedImage struct {
 	chartImage
-	indexDigest       string // empty for a single-arch image
+	indexDigest       string
 	digestPerPlatform map[platform]string
 }
 
@@ -100,10 +102,10 @@ func run(args []string) error {
 		return fmt.Errorf("render chart: %w", err)
 	}
 
-	images, err := imagesFromManifest(manifest)
-	if err != nil {
+	if err := validateManifestImages(manifest, opts.version); err != nil {
 		return err
 	}
+	images := releaseImages(opts.version)
 
 	if opts.verifyOnly {
 		log.Printf("ok: %d image(s) classified, all known", len(images))
@@ -132,8 +134,8 @@ type options struct {
 
 func parseFlags(args []string) (options, error) {
 	flags := flag.NewFlagSet("imagelock", flag.ContinueOnError)
-	chart := flags.String("chart", "../../charts/karta", "path to the Helm chart")
-	version := flags.String("version", "", "release version (with or without a leading v)")
+	chart := flags.String("chart", "../../operator/charts", "path to the Helm chart")
+	version := flags.String("version", "", "exact v-prefixed release version")
 	var platformArgs []string
 	flags.Func("platform", "os/arch to lock, repeatable (default linux/amd64, linux/arm64)", func(v string) error {
 		platformArgs = append(platformArgs, v)
@@ -157,7 +159,7 @@ func parseFlags(args []string) (options, error) {
 
 	opts := options{
 		chart:          *chart,
-		version:        strings.TrimPrefix(*version, "v"),
+		version:        *version,
 		platforms:      platforms,
 		outDir:         *outDir,
 		helmBin:        *helmBin,
@@ -167,17 +169,14 @@ func parseFlags(args []string) (options, error) {
 	if opts.stabilityReads < 1 {
 		return options{}, errors.New("--stability-reads must be at least 1")
 	}
-	if opts.verifyOnly {
-		return opts, nil
+	if opts.verifyOnly && opts.version == "" {
+		opts.version = verifyVersion
 	}
 	if opts.version == "" {
-		return options{}, errors.New("--version is required")
-	}
-	if opts.version == "latest" {
-		return options{}, errors.New(`--version must be a released version, not "latest"`)
+		return options{}, errors.New("--version is required unless --verify-only is set")
 	}
 	if !releaseVersion.MatchString(opts.version) {
-		return options{}, fmt.Errorf("--version %q is not a release version like X.Y.Z", opts.version)
+		return options{}, fmt.Errorf("--version %q is not a v-prefixed release version like vX.Y.Z", opts.version)
 	}
 	return opts, nil
 }
@@ -202,13 +201,12 @@ func parsePlatforms(entries []string) ([]platform, error) {
 // renderChart runs `helm template` with every optional toggle forced on, so an
 // image behind a default-off switch is never missed.
 func renderChart(opts options) ([]byte, error) {
-	args := []string{"template", "karta", opts.chart,
-		"--set", "operator.enabled=true",
-		"--set", "crdUpgrader.enabled=true",
-		"--set", "webhook.enabled=true",
-	}
-	if opts.version != "" {
-		args = append(args, "--set", "image.tag="+opts.version)
+	args := []string{"template", lockName, opts.chart,
+		"--set-string", "images.operator.tag=" + opts.version,
+		"--set-string", "images.fractiond.tag=" + opts.version,
+		"--set-string", "images.metricsd.tag=" + opts.version,
+		"--set-string", "images.mpsd.tag=" + opts.version,
+		"--set", "metricsAgent.enabled=true",
 	}
 
 	helm := exec.Command(opts.helmBin, args...)
@@ -221,31 +219,46 @@ func renderChart(opts options) ([]byte, error) {
 	return rendered, nil
 }
 
-func imagesFromManifest(manifest []byte) ([]chartImage, error) {
+func validateManifestImages(manifest []byte, expectedTag string) error {
 	refs, err := imageRefs(manifest)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	imageByName := map[string]chartImage{}
 	for _, ref := range refs {
-		repo := repoOf(ref)
+		repo, tag, err := splitTaggedReference(ref)
+		if err != nil {
+			return err
+		}
 		imageName, known := knownImages[repo]
 		if !known {
-			return nil, fmt.Errorf("unknown image %q (repo %q): add it to knownImages before releasing", ref, repo)
+			return fmt.Errorf("unknown image %q (repo %q): add it to knownImages before releasing", ref, repo)
 		}
-		tag := strings.TrimPrefix(ref, repo+":")
 		if existing, seen := imageByName[imageName]; seen && existing.tag != tag {
-			return nil, fmt.Errorf("image %q maps to two references: %s and %s", imageName, existing.reference(), ref)
+			return fmt.Errorf("image %q maps to two references: %s and %s", imageName, existing.reference(), ref)
 		}
 		imageByName[imageName] = chartImage{name: imageName, repo: repo, tag: tag}
 	}
 
-	images := make([]chartImage, 0, len(imageByName))
-	for _, image := range imageByName {
-		images = append(images, image)
+	for imageName, image := range imageByName {
+		if image.tag != expectedTag {
+			return fmt.Errorf("image %q uses tag %q, expected release tag %q", imageName, image.tag, expectedTag)
+		}
+	}
+	return nil
+}
+
+func releaseImages(version string) []chartImage {
+	images := make([]chartImage, 0, len(knownImages))
+	for repository, imageName := range knownImages {
+		images = append(images, chartImage{
+			name: imageName,
+			repo: repository,
+			tag:  version,
+		})
 	}
 	sort.Slice(images, func(i, j int) bool { return images[i].name < images[j].name })
-	return images, nil
+	return images
 }
 
 // yamlDocument matches a "---" line, the separator helm puts between rendered
@@ -262,7 +275,9 @@ func imageRefs(manifest []byte) ([]string, error) {
 		if err := yaml.Unmarshal([]byte(document), &doc); err != nil {
 			return nil, fmt.Errorf("parse rendered document: %w", err)
 		}
-		collectImageRefs(doc, refs)
+		if err := collectImageRefs(doc, refs); err != nil {
+			return nil, err
+		}
 	}
 
 	unique := make([]string, 0, len(refs))
@@ -273,23 +288,30 @@ func imageRefs(manifest []byte) ([]string, error) {
 	return unique, nil
 }
 
-func collectImageRefs(node any, refs map[string]struct{}) {
+func collectImageRefs(node any, refs map[string]struct{}) error {
 	if mapping, ok := node.(map[string]any); ok {
 		for key, child := range mapping {
 			if key == "image" {
-				if ref, ok := child.(string); ok && ref != "" {
-					refs[ref] = struct{}{}
+				ref, ok := child.(string)
+				if !ok || strings.TrimSpace(ref) == "" {
+					return fmt.Errorf("rendered image value must be a non-empty string, got %T", child)
 				}
+				refs[ref] = struct{}{}
 			}
-			collectImageRefs(child, refs)
+			if err := collectImageRefs(child, refs); err != nil {
+				return err
+			}
 		}
-		return
+		return nil
 	}
 	if sequence, ok := node.([]any); ok {
 		for _, child := range sequence {
-			collectImageRefs(child, refs)
+			if err := collectImageRefs(child, refs); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func repoOf(ref string) string {
@@ -302,6 +324,18 @@ func repoOf(ref string) string {
 		return ref[:colon]
 	}
 	return ref
+}
+
+func splitTaggedReference(ref string) (string, string, error) {
+	if ref == "" || strings.TrimSpace(ref) != ref || strings.Contains(ref, "@") {
+		return "", "", fmt.Errorf("image %q must be a repository:tag reference", ref)
+	}
+	repo := repoOf(ref)
+	prefix := repo + ":"
+	if repo == ref || !strings.HasPrefix(ref, prefix) || len(ref) == len(prefix) {
+		return "", "", fmt.Errorf("image %q must include a tag", ref)
+	}
+	return repo, strings.TrimPrefix(ref, prefix), nil
 }
 
 // --- resolve ---
@@ -327,7 +361,7 @@ func resolveImages(images []chartImage, platforms []platform, resolver digestRes
 }
 
 func validateDigests(indexDigest string, digestPerPlatform map[platform]string) error {
-	if indexDigest != "" && !sha256Digest.MatchString(indexDigest) {
+	if !sha256Digest.MatchString(indexDigest) {
 		return fmt.Errorf("bad index digest %q", indexDigest)
 	}
 	for p, digest := range digestPerPlatform {
@@ -354,11 +388,7 @@ func (r remoteResolver) resolve(ref string, platforms []platform) (string, map[p
 	}
 
 	if !descriptor.MediaType.IsIndex() {
-		digestPerPlatform, err := singleArchDigests(descriptor, platforms)
-		if err != nil {
-			return "", nil, err
-		}
-		return "", digestPerPlatform, nil
+		return "", nil, fmt.Errorf("source is %s, not a multi-platform image index", descriptor.MediaType)
 	}
 
 	digestPerPlatform, err := manifestDigestsPerPlatform(descriptor, platforms)
@@ -439,29 +469,6 @@ func manifestDigestsPerPlatform(descriptor *remote.Descriptor, platforms []platf
 	return digestPerPlatform, nil
 }
 
-// singleArchDigests maps every requested platform to a single-arch image's digest,
-// failing if the image's own platform is not among those requested.
-func singleArchDigests(descriptor *remote.Descriptor, platforms []platform) (map[platform]string, error) {
-	image, err := descriptor.Image()
-	if err != nil {
-		return nil, err
-	}
-	config, err := image.ConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	imagePlatform := platform{OS: config.OS, Architecture: config.Architecture}
-
-	digestPerPlatform := make(map[platform]string, len(platforms))
-	for _, p := range platforms {
-		if p != imagePlatform {
-			return nil, fmt.Errorf("image is %s only, cannot satisfy %s", imagePlatform, p)
-		}
-		digestPerPlatform[p] = descriptor.Digest.String()
-	}
-	return digestPerPlatform, nil
-}
-
 // --- write ---
 
 type imageLock struct {
@@ -485,23 +492,87 @@ type lockedImage struct {
 	IndexDigest string `json:"indexDigest,omitempty"`
 }
 
+type lockOutput struct {
+	path string
+	yaml []byte
+}
+
 func writeLocks(opts options, resolved []resolvedImage) error {
+	outputs, err := marshalLocks(opts, resolved)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(opts.outDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", opts.outDir, err)
 	}
-	for _, p := range opts.platforms {
-		if err := writeLock(opts.outDir, buildLock(opts.version, p, resolved)); err != nil {
-			return err
+
+	stagedPaths := make([]string, len(outputs))
+	cleanupStaged := func() {
+		for _, path := range stagedPaths {
+			if path != "" {
+				_ = os.Remove(path)
+			}
 		}
+	}
+	for index, output := range outputs {
+		staged, err := os.CreateTemp(opts.outDir, ".imagelock-*.tmp")
+		if err != nil {
+			cleanupStaged()
+			return fmt.Errorf("create staged lock: %w", err)
+		}
+		stagedPaths[index] = staged.Name()
+		if err := staged.Chmod(0o644); err != nil {
+			_ = staged.Close()
+			cleanupStaged()
+			return fmt.Errorf("set mode on %s: %w", staged.Name(), err)
+		}
+		if _, err := staged.Write(output.yaml); err != nil {
+			_ = staged.Close()
+			cleanupStaged()
+			return fmt.Errorf("write %s: %w", staged.Name(), err)
+		}
+		if err := staged.Close(); err != nil {
+			cleanupStaged()
+			return fmt.Errorf("close %s: %w", staged.Name(), err)
+		}
+	}
+
+	var publishedPaths []string
+	for index, output := range outputs {
+		if err := os.Rename(stagedPaths[index], output.path); err != nil {
+			for _, path := range publishedPaths {
+				_ = os.Remove(path)
+			}
+			cleanupStaged()
+			return fmt.Errorf("publish %s: %w", output.path, err)
+		}
+		stagedPaths[index] = ""
+		publishedPaths = append(publishedPaths, output.path)
 	}
 	log.Printf("wrote locks for %d platform(s) to %s", len(opts.platforms), opts.outDir)
 	return nil
 }
 
+func marshalLocks(opts options, resolved []resolvedImage) ([]lockOutput, error) {
+	outputs := make([]lockOutput, 0, len(opts.platforms))
+	for _, p := range opts.platforms {
+		lock := buildLock(opts.version, p, resolved)
+		yamlBytes, err := yaml.Marshal(lock)
+		if err != nil {
+			return nil, fmt.Errorf("marshal lock for %s: %w", p, err)
+		}
+		outputs = append(outputs, lockOutput{
+			path: filepath.Join(opts.outDir, lockFileName(lock)),
+			yaml: yamlBytes,
+		})
+	}
+	return outputs, nil
+}
+
 func buildLock(version string, p platform, resolved []resolvedImage) imageLock {
 	lock := imageLock{APIVersion: lockAPIVersion, Kind: lockKind}
 	lock.Metadata.Name = lockName
-	lock.Metadata.Version = ensureVPrefix(version)
+	lock.Metadata.Version = version
 	lock.Spec.Profile = lockProfile
 	lock.Spec.Platform = p
 
@@ -519,23 +590,7 @@ func buildLock(version string, p platform, resolved []resolvedImage) imageLock {
 	return lock
 }
 
-func writeLock(outDir string, lock imageLock) error {
-	fileName := fmt.Sprintf("imagelock-karta-%s-%s-%s.yaml",
+func lockFileName(lock imageLock) string {
+	return fmt.Sprintf("imagelock-kai-gpu-fractioning-%s-%s-%s.yaml",
 		lock.Metadata.Version, lock.Spec.Platform.OS, lock.Spec.Platform.Architecture)
-	yamlBytes, err := yaml.Marshal(lock)
-	if err != nil {
-		return fmt.Errorf("marshal lock: %w", err)
-	}
-	path := filepath.Join(outDir, fileName)
-	if err := os.WriteFile(path, yamlBytes, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
-}
-
-func ensureVPrefix(version string) string {
-	if strings.HasPrefix(version, "v") {
-		return version
-	}
-	return "v" + version
 }

@@ -1,11 +1,11 @@
+// Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 NVIDIA Corporation
 
 // This tool lives in its own module so its registry client (go-containerregistry)
-// never enters Karta's shipped dependency graph or its generated license list.
-module github.com/run-ai/karta/hack/imagelock
+// never enters the project's shipped dependency graph or generated license list.
+module github.com/kai-scheduler/kai-gpu-fractioning/hack/imagelock
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/google/go-containerregistry v0.20.6

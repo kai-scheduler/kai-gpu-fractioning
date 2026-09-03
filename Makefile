@@ -68,6 +68,32 @@ test-metricsd:
 	$(MAKE) -C fractioning-manager/metricsd test
 
 # -----------------------------------------------------------
+# Air-gap / ImageLock
+# -----------------------------------------------------------
+
+IMAGE_LOCK_OUT_DIR ?= $(CURDIR)/dist
+IMAGE_LOCK_PLATFORMS ?= linux/amd64 linux/arm64
+IMAGE_LOCK_PLATFORM_ARGS = $(foreach platform,$(IMAGE_LOCK_PLATFORMS),--platform $(platform))
+
+.PHONY: image-lock image-lock-verify image-lock-test
+
+image-lock:
+	@test -n "$(VERSION)" || { echo "VERSION is required (for example: make image-lock VERSION=v1.2.3)" >&2; exit 1; }
+	GOWORK=off go -C hack/imagelock run . \
+		--version "$(VERSION)" \
+		--chart "$(CURDIR)/operator/charts" \
+		--out-dir "$(IMAGE_LOCK_OUT_DIR)" \
+		$(IMAGE_LOCK_PLATFORM_ARGS)
+
+image-lock-verify:
+	GOWORK=off go -C hack/imagelock run . \
+		--verify-only \
+		--chart "$(CURDIR)/operator/charts"
+
+image-lock-test:
+	GOWORK=off go -C hack/imagelock test ./...
+
+# -----------------------------------------------------------
 # E2E — see test/e2e/e2e.mk (targets: e2e, e2e-cluster-up/down,
 # e2e-deploy/undeploy, test-e2e, test-e2e-metrics).
 # -----------------------------------------------------------
