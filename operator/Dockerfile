@@ -7,6 +7,10 @@
 FROM --platform=$BUILDPLATFORM golang:1.26.6 AS builder
 ARG TARGETOS
 ARG TARGETARCH
+# GOFIPS140 selects the Go Cryptographic Module version to link. "off" is the Go
+# default and produces a regular build; the FIPS image variant is built with a
+# pinned version (see the root Makefile's FIPS target).
+ARG GOFIPS140=off
 
 WORKDIR /workspace
 
@@ -25,7 +29,7 @@ RUN cd operator && go mod download
 COPY operator/cmd/       operator/cmd/
 COPY operator/internal/  operator/internal/
 
-RUN cd operator && CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o manager cmd/main.go
+RUN cd operator && GOFIPS140=${GOFIPS140} CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -o manager cmd/main.go
 
 # NVIDIA-approved distroless base pulled from NGC (OSRB requires an approved
 # NVIDIA base container; gcr.io/distroless is not one). Adds no OS packages of

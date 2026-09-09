@@ -11,6 +11,12 @@ DOCKER ?= docker
 # GO_TAGS selects optional build tags for `go build` and docker image builds.
 GO_TAGS ?=
 
+# GOFIPS140 selects the Go Cryptographic Module version to link. "off" (the
+# default) builds without FIPS; the root Makefile sets this to a pinned version
+# when invoked with FIPS=1. Exported so the plain `build` target honors it too.
+GOFIPS140 ?= off
+export GOFIPS140
+
 VERSION ?= $(TAG)
 COMMIT ?= $(shell git -C .. rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -70,6 +76,7 @@ docker-build:
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DATE=$(DATE) \
 		--build-arg GO_TAGS=$(GO_TAGS) \
+		--build-arg GOFIPS140=$(GOFIPS140) \
 		-t $(IMAGE):$(TAG) .
 
 docker-buildx:
@@ -79,4 +86,5 @@ docker-buildx:
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg DATE=$(DATE) \
 		--build-arg GO_TAGS=$(GO_TAGS) \
+		--build-arg GOFIPS140=$(GOFIPS140) \
 		-t $(IMAGE):$(TAG) .

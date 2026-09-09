@@ -11,6 +11,10 @@ GO ?= go
 CONTAINER_TOOL ?= docker
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 
+# Extra flags for `docker build`. The root Makefile uses this to pass
+# --build-arg GOFIPS140=... when building the FIPS image variant.
+DOCKER_BUILD_ARGS ?=
+
 # Local binary directory for tool installs
 LOCALBIN ?= $(shell pwd)/bin
 
@@ -118,7 +122,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} -f Dockerfile ..
+	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -t ${IMG} -f Dockerfile ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -129,7 +133,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name operator-builder
 	$(CONTAINER_TOOL) buildx use operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross ..
+	- $(CONTAINER_TOOL) buildx build --push $(DOCKER_BUILD_ARGS) --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross ..
 	- $(CONTAINER_TOOL) buildx rm operator-builder
 	rm Dockerfile.cross
 

@@ -9,6 +9,38 @@ DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/kai-gpu-fractioning
 # buildkit emulates (qemu) when the host arch differs.
 PLATFORM ?= linux/amd64
 
+# Escape hatch for extra flags on every image build, both `docker build` and
+# `docker buildx build`. FIPS=1 appends its --build-arg here.
+DOCKER_BUILD_ARGS ?=
+
+# -----------------------------------------------------------
+# FIPS
+#
+# FIPS=1 links every Go binary against the CMVP-validated Go Cryptographic
+# Module (https://go.dev/doc/security/fips140) and suffixes image tags with
+# "-fips", so FIPS variants sit alongside the regular images in the registry.
+#
+# GOFIPS140 is exported so the host `go build` targets and any sub-make inherit
+# it. The docker targets pass it as a build arg instead, because compilation
+# happens inside each Dockerfile's builder stage.
+#
+# v1.0.0 is pinned deliberately: it holds CMVP Certificate #5247, while newer
+# module versions are still under review. Do not switch this to the `certified`
+# alias — that would silently change what gets linked when a new validation
+# lands, which is exactly what a compliance build must not do.
+# -----------------------------------------------------------
+FIPS ?= 0
+GOFIPS140_VERSION ?= v1.0.0
+
+ifeq ($(FIPS),1)
+# Both overrides are required: make ignores a plain assignment or += to a
+# variable that came from the command line, and VERSION and DOCKER_BUILD_ARGS
+# are both things a caller may set that way.
+override VERSION := $(VERSION)-fips
+override DOCKER_BUILD_ARGS += --build-arg GOFIPS140=$(GOFIPS140_VERSION)
+export GOFIPS140 := $(GOFIPS140_VERSION)
+endif
+
 LOCALBIN ?= $(CURDIR)/bin
 ADDLICENSE ?= $(LOCALBIN)/addlicense
 ADDLICENSE_VERSION ?= v1.2.0
@@ -170,19 +202,19 @@ deploy:
 docker-build: docker-build-operator docker-build-mpsd docker-build-fractiond docker-build-metricsd
 
 docker-build-operator:
-	$(MAKE) -C operator docker-build IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION) PLATFORM=$(PLATFORM)
+	$(MAKE) -C operator docker-build IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION) PLATFORM=$(PLATFORM) DOCKER_BUILD_ARGS="$(DOCKER_BUILD_ARGS)"
 
 docker-build-mpsd:
-	docker build --platform $(PLATFORM) -f fractioning-manager/mpsd/build/Dockerfile -t $(DOCKER_REPO_BASE)/mpsd:$(VERSION) .
+	docker build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -f fractioning-manager/mpsd/build/Dockerfile -t $(DOCKER_REPO_BASE)/mpsd:$(VERSION) .
 
 docker-build-fractiond:
-	docker build --platform $(PLATFORM) -f fractioning-manager/fractiond/build/Dockerfile -t $(DOCKER_REPO_BASE)/fractiond:$(VERSION) .
+	docker build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -f fractioning-manager/fractiond/build/Dockerfile -t $(DOCKER_REPO_BASE)/fractiond:$(VERSION) .
 
 # metricsd links NVML (cgo) and is built from the repo root so its replace of the
 # shared fractiond module resolves. The build stage runs as the target platform so
 # cgo uses a native toolchain. GO_TAGS=e2e builds the fake-GPU test image.
 docker-build-metricsd:
-	docker build --platform $(PLATFORM) -f fractioning-manager/metricsd/Dockerfile -t $(DOCKER_REPO_BASE)/metricsd:$(VERSION) .
+	docker build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -f fractioning-manager/metricsd/Dockerfile -t $(DOCKER_REPO_BASE)/metricsd:$(VERSION) .
 
 docker-push: docker-push-operator docker-push-mpsd docker-push-fractiond docker-push-metricsd
 
@@ -222,8 +254,6 @@ docker-push-fractiond:
 DOCKER_BUILD_PLATFORM ?= linux/amd64
 # Passed to `docker buildx build`: --push to publish, --load for a local single-arch image.
 DOCKER_BUILDX_OUTPUT  ?= --push
-# Escape hatch for any extra `docker buildx build` flags.
-DOCKER_BUILDX_ARGS    ?=
 
 # Release metadata for images that bake it into the binary (currently metricsd only).
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -234,7 +264,7 @@ BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 # $(1)=Dockerfile path, $(2)=image name, $(3)=optional extra build args.
 # Build context is always the repo root.
 define buildx-image
-docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) $(DOCKER_BUILDX_ARGS) $(3) \
+docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) $(DOCKER_BUILD_ARGS) $(3) \
 	-f $(1) -t $(DOCKER_REPO_BASE)/$(2):$(VERSION) .
 endef
 
@@ -253,6 +283,12 @@ docker-buildx-fractiond:
 # in its Dockerfile), so pass them through — otherwise a release image reports version=dev.
 docker-buildx-metricsd:
 	$(call buildx-image,fractioning-manager/metricsd/Dockerfile,metricsd,--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(GIT_COMMIT) --build-arg DATE=$(BUILD_DATE))
+
+# Single source of truth for CI's FIPS verification step, so the pinned module
+# version can't drift between the build and the assertion that checks it.
+.PHONY: print-gofips140-version
+print-gofips140-version:
+	@echo $(GOFIPS140_VERSION)
 
 # -----------------------------------------------------------
 # Clean

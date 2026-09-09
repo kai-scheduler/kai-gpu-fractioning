@@ -29,6 +29,11 @@ ARG DATE=unknown
 # "e2e" to compile the fake-GPU detection used for testing on GPU-less clusters.
 # Never ship an e2e-tagged image to prod.
 ARG GO_TAGS=""
+# GOFIPS140 selects the Go Cryptographic Module version to link. "off" is the Go
+# default and produces a regular build; the FIPS image variant is built with a
+# pinned version (see the root Makefile's FIPS target). Compatible with
+# CGO_ENABLED=1 — the module swap is independent of cgo linkage.
+ARG GOFIPS140=off
 
 WORKDIR /workspace
 
@@ -41,7 +46,7 @@ COPY fractioning-manager/ fractioning-manager/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     cd fractioning-manager/metricsd && \
-    CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
+    GOFIPS140=${GOFIPS140} CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -trimpath -tags="${GO_TAGS}" \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /out/metricsd ./cmd
