@@ -9,6 +9,8 @@ name: Push Artifacts
 #   * push to main        → dev artifacts, single-arch (amd64), version 0.0.0-<short-sha>.
 #   * workflow_call(v...)  → release artifacts, multi-arch (amd64+arm64), version = tag,
 #                            plus FIPS image variants tagged <version>-fips.
+#   * workflow_dispatch    → the same as a release, under a throwaway version, so the
+#                            release path can be rehearsed without cutting a release.
 #
 # release.yaml calls this on `release: published`, passing the tag as `version`.
 on:
@@ -20,7 +22,20 @@ on:
         description: 'Release version, e.g. v0.1.0 (omit for a dev build off main)'
         required: false
         type: string
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      version:
+        # Non-empty on purpose: the FIPS job is gated on this input, so a blank
+        # default would let a manual run finish green with that job silently
+        # skipped. Defaulted, a manual run reaches the multi-arch FIPS build and
+        # the linkage check, which nothing else exercises before a real release.
+        description: >-
+          Version to publish. The default rehearses the full release path and can
+          be deleted from ghcr afterwards; pass a real tag only to re-publish a
+          release.
+        required: false
+        default: v0.0.0-fipstest
+        type: string
 
 permissions:
   contents: read
@@ -63,10 +78,11 @@ jobs:
           helm package operator/charts --version "$VERSION" --app-version "$VERSION" -d ./dist
           helm push "./dist/gpu-fractioning-$VERSION.tgz" "oci://${DOCKER_REPO_BASE}"
 
-  # FIPS variants are published for releases only. Doubling every image build on
-  # each push to main isn't worth the runner time — the consumers who need FIPS
-  # pull tagged releases. There is no separate FIPS chart: the chart selects the
-  # "-fips" tag at render time from a values setting.
+  # FIPS variants are built whenever a version is supplied, which means releases
+  # and manual runs but not pushes to main. Doubling every image build on each
+  # push isn't worth the runner time — the consumers who need FIPS pull tagged
+  # releases. There is no separate FIPS chart: the chart selects the "-fips" tag
+  # at render time from a values setting.
   #
   # Deliberately not chained to push-artifacts: it needs nothing that job
   # produces, so the two builds run in parallel — which matters because the arm64
