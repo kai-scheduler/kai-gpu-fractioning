@@ -19,6 +19,7 @@ permissions:
 
 env:
   KUBECONFORM_VERSION: "0.6.7"
+  HELM_UNITTEST_VERSION: "1.1.2"
 
 jobs:
   chart-validate:
@@ -31,6 +32,17 @@ jobs:
 
       - name: helm lint
         run: helm lint operator/charts
+
+      # Renders the chart against the cases in operator/charts/tests/. kubeconform
+      # below only checks that the output is valid Kubernetes; this checks that
+      # the output is the *intended* Kubernetes, which is what catches a values
+      # change silently not reaching a template.
+      - name: helm unittest
+        run: |
+          set -euo pipefail
+          helm plugin install https://github.com/helm-unittest/helm-unittest \
+            --version "v${HELM_UNITTEST_VERSION}"
+          make chart-test
 
       - name: Install kubeconform
         run: |

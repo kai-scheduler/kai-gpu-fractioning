@@ -1,0 +1,26 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Patterns to exclude from the packaged chart.
+
+# helm-unittest suites: they live inside the chart so the plugin can find them,
+# but they are development-only and must not ship to users.
+tests/
+
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.project
+.idea/
+*.tmproj
+.vscode/

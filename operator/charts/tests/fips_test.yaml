@@ -1,0 +1,117 @@
+# Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The operator's own image tag and the three daemon image tags it is handed via
+# env are resolved by the same helper, so these assert all four together: a
+# regression that reaches only the daemons would ship a FIPS operator managing
+# non-FIPS DaemonSets, which is exactly the half-configured state to catch.
+#
+# appVersion is pinned here so the expected tags do not change with every
+# release bump.
+suite: FIPS image tag selection
+templates:
+  - deployment.yaml
+chart:
+  version: 0.1.0
+  appVersion: 0.1.0
+tests:
+  - it: uses regular image tags by default
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kai-scheduler/kai-gpu-fractioning/operator:0.1.0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FRACTIOND_IMAGE_TAG
+            value: "0.1.0"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICSD_IMAGE_TAG
+            value: "0.1.0"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MPSD_IMAGE_TAG
+            value: "0.1.0"
+
+  - it: selects FIPS images when fipsMode is on
+    set:
+      global.fipsMode: "on"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kai-scheduler/kai-gpu-fractioning/operator:0.1.0-fips
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FRACTIOND_IMAGE_TAG
+            value: 0.1.0-fips
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICSD_IMAGE_TAG
+            value: 0.1.0-fips
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MPSD_IMAGE_TAG
+            value: 0.1.0-fips
+
+  # "only" adds runtime enforcement on top of "on" in a later change. It must
+  # already select the FIPS images, since enforcing FIPS mode on a binary that
+  # has no validated module linked would be meaningless.
+  - it: selects FIPS images when fipsMode is only
+    set:
+      global.fipsMode: only
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kai-scheduler/kai-gpu-fractioning/operator:0.1.0-fips
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MPSD_IMAGE_TAG
+            value: 0.1.0-fips
+
+  # FIPS selection has to compose with version pinning rather than override it,
+  # so an explicitly pinned tag still resolves to that tag's FIPS variant.
+  - it: appends -fips to an explicitly pinned tag
+    set:
+      global.fipsMode: "on"
+      images.operator.tag: v9.9.9
+      images.mpsd.tag: v8.8.8
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kai-scheduler/kai-gpu-fractioning/operator:v9.9.9-fips
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MPSD_IMAGE_TAG
+            value: v8.8.8-fips
+
+  - it: leaves an explicitly pinned tag alone when FIPS is off
+    set:
+      images.operator.tag: v9.9.9
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kai-scheduler/kai-gpu-fractioning/operator:v9.9.9
+
+  # An unrecognised value must stop the install rather than quietly fall back to
+  # the regular images: a FIPS deployment that is silently not FIPS is worse
+  # than one that fails to render.
+  - it: rejects an unrecognised fipsMode
+    set:
+      global.fipsMode: enabled
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.fipsMode must be "off", "on" or "only", got "enabled"'
+
+  - it: rejects fipsMode given as a boolean
+    set:
+      global.fipsMode: true
+    asserts:
+      - failedTemplate: {}

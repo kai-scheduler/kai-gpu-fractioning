@@ -1,6 +1,22 @@
 # Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Values shared with a parent chart. Helm merges an umbrella chart's `global`
+# block into every subchart, so an installation-wide setting can be given once
+# there instead of being repeated per subchart.
+global:
+  # fipsMode selects the FIPS-enabled image variants, which are built against a
+  # CMVP-validated Go cryptographic module and run with FIPS mode on by default.
+  # It appends "-fips" to every resolved image tag, whether that tag comes from
+  # images.<service>.tag or the chart's appVersion, so FIPS selection stays
+  # independent of version pinning.
+  #
+  #   off  - regular images (default)
+  #   on   - FIPS images
+  #   only - FIPS images, plus runtime enforcement that rejects any non-approved
+  #          algorithm. Not yet implemented; currently behaves like "on".
+  fipsMode: "off"
+
 replicaCount: 1
 leaderElect: true
 

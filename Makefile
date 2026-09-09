@@ -100,6 +100,22 @@ test-metricsd:
 	$(MAKE) -C fractioning-manager/metricsd test
 
 # -----------------------------------------------------------
+# Helm chart
+# -----------------------------------------------------------
+
+.PHONY: chart-test
+
+# Renders the chart against the cases in operator/charts/tests/. Requires the
+# helm-unittest plugin:
+#   helm plugin install https://github.com/helm-unittest/helm-unittest
+#
+# Deliberately not part of `test`: that runs on the Go toolchain every developer
+# already has, and this needs a Helm plugin they may not. CI runs it as part of
+# chart validation.
+chart-test:
+	helm unittest operator/charts
+
+# -----------------------------------------------------------
 # E2E — see test/e2e/e2e.mk (targets: e2e, e2e-cluster-up/down,
 # e2e-deploy/undeploy, test-e2e, test-e2e-metrics).
 # -----------------------------------------------------------
