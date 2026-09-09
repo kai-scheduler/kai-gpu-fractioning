@@ -100,6 +100,7 @@ Common chart values (see [`operator/charts/values.yaml`](operator/charts/values.
 | `metrics.enabled` / `metrics.port` | `true` / `8080` | controller metrics endpoint (plain HTTP) |
 | `prometheus.enabled` | `false` | install a `ServiceMonitor` + `PodMonitor` (also requires `metrics.enabled` and the Prometheus-Operator CRDs) |
 | `nodeSelector` | `{}` | scheduling constraint for the **controller** Deployment |
+| `global.fipsMode` | `off` | `on` deploys the FIPS 140-3 image variants (`<version>-fips`); `only` also enforces FIPS at runtime, for assessment rather than production. See [FIPS 140-3](docs/fips/README.md) |
 
 > The GPU **nodeSelector** for the DaemonSets is set on the `GpuFractioningConfig` CR (`spec.nodeSelector`), not the chart-level `nodeSelector`.
 
@@ -186,6 +187,7 @@ With the Prometheus Operator installed, set `prometheus.enabled=true` to have th
 │   ├── metricsd/      #   per-pod GPU metrics sidecar
 │   └── common/        #   shared packages
 ├── pkg/               # Shared libraries
+├── docs/              # Topic guides (e.g. FIPS 140-3)
 ├── hack/              # Build and dev scripts
 └── test/              # Cross-component / e2e tests
 ```
