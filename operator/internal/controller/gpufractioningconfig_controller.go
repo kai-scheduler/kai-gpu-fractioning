@@ -91,6 +91,11 @@ type GpuFractioningConfigReconciler struct {
 	// containers. See buildDaemons.
 	SupportSMSharing bool
 
+	// FIPSOnly is the Helm-injected installation-time toggle for FIPS-only
+	// enforcement, forwarded to every daemon container via BuildOptions.
+	// See daemonmgr.FIPSOnlyEnv.
+	FIPSOnly bool
+
 	// GpuOperatorChecker checks NVIDIA GPU Operator dependency failures against
 	// the aggregate Ready condition. Version validation runs even when managed
 	// daemons are healthy so a GPU Operator downgrade is reflected in status as
@@ -114,6 +119,7 @@ func NewGpuFractioningConfigReconciler(
 	daemonServiceAccountName string,
 	mpsdAuditLog bool,
 	supportSMSharing bool,
+	fipsOnly bool,
 ) *GpuFractioningConfigReconciler {
 	return &GpuFractioningConfigReconciler{
 		Client:                   c,
@@ -125,6 +131,7 @@ func NewGpuFractioningConfigReconciler(
 		DaemonServiceAccountName: daemonServiceAccountName,
 		MpsdAuditLog:             mpsdAuditLog,
 		SupportSMSharing:         supportSMSharing,
+		FIPSOnly:                 fipsOnly,
 		GpuOperatorChecker:       NewGpuOperatorDependencyChecker(apiReader),
 		GpuDriverChecker:         NewGpuDriverDependencyChecker(apiReader),
 	}
@@ -299,6 +306,7 @@ func (r *GpuFractioningConfigReconciler) buildOptions(config *v1alpha1.GpuFracti
 		ServiceAccountName: r.DaemonServiceAccountName,
 		RuntimeClassName:   daemonmgr.ResolveRuntimeClassName(config.Spec.RuntimeClassName),
 		DefaultImages:      r.DefaultImages,
+		FIPSOnly:           r.FIPSOnly,
 	}
 }
 

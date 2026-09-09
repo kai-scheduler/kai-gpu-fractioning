@@ -59,6 +59,15 @@ spec:
               value: {{ .Values.supportSmSharing | quote }}
             - name: DAEMON_SERVICE_ACCOUNT_NAME
               value: {{ include "gpu-fractioning.daemonServiceAccountName" . | quote }}
+            {{- /*
+              The operator forwards this to the DaemonSet containers it builds,
+              which the chart cannot reach directly. It carries the mode rather
+              than a derived boolean so the compliance posture of an install is
+              readable off the pod spec.
+            */}}
+            - name: FIPS_MODE
+              value: {{ include "gpu-fractioning.fipsMode" . | quote }}
+            {{- with include "gpu-fractioning.fipsOnlyEnv" . }}{{ . | nindent 12 }}{{- end }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect

@@ -12,9 +12,18 @@ global:
   # independent of version pinning.
   #
   #   off  - regular images (default)
-  #   on   - FIPS images
-  #   only - FIPS images, plus runtime enforcement that rejects any non-approved
-  #          algorithm. Not yet implemented; currently behaves like "on".
+  #   on   - FIPS images. This is the compliant production setting: the images
+  #          already run in FIPS mode, and TLS silently declines to negotiate
+  #          anything that is not approved.
+  #   only - FIPS images, plus GODEBUG=fips140=only on every container. A call
+  #          into a non-approved algorithm then errors or panics instead of
+  #          succeeding.
+  #
+  #          Upstream Go documents "only" as a best-effort mode for testing,
+  #          assessment and debugging, and explicitly not for production: it
+  #          introduces crashes by design and can report both false positives
+  #          and false negatives. It also reaches dependencies we do not
+  #          control. Use it to assess an installation, not to run one.
   fipsMode: "off"
 
 replicaCount: 1

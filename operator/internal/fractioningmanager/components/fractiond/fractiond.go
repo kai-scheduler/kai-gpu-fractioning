@@ -102,7 +102,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	podSpec.NodeSelector = opts.NodeSelector
 	podSpec.HostPID = true
 
-	fractiondContainer, fractiondVolumes := d.buildFractiondContainer(opts.DefaultImages[daemonName])
+	fractiondContainer, fractiondVolumes := d.buildFractiondContainer(opts)
 	podSpec.Volumes = append(podSpec.Volumes, fractiondVolumes...)
 
 	metricsOn := d.metricsEnabled()
@@ -116,7 +116,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 	// is added so the VolumeMount is included in the copy placed into the slice.
 	podSpec.Containers = append(podSpec.Containers, fractiondContainer)
 	if metricsOn {
-		d.applyMetricsSidecar(result, opts.DefaultImages)
+		d.applyMetricsSidecar(result, opts)
 	}
 
 	return result
@@ -151,11 +151,11 @@ func metricsSharedVolume() (corev1.Volume, corev1.VolumeMount) {
 
 // applyMetricsSidecar adds the metricsd container and Prometheus scrape
 // annotations to the DaemonSet.
-func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, defaultImages map[string]daemonmgr.ImageSpec) {
+func (d *daemon) applyMetricsSidecar(result *appsv1.DaemonSet, opts daemonmgr.BuildOptions) {
 	if d.metricsSpec != nil {
 		result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, d.metricsSpec.Volumes...)
 	}
-	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(defaultImages[metricsdName]))
+	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, d.buildMetricsdContainer(opts))
 
 	if result.Spec.Template.Annotations == nil {
 		result.Spec.Template.Annotations = map[string]string{}
@@ -200,7 +200,9 @@ func (d *daemon) metricsAnnotationPath() string {
 
 // buildFractiondContainer returns the main fractiond container and its required
 // host-path volumes. The map-dir mount is added by the caller when metricsd is enabled.
-func (d *daemon) buildFractiondContainer(image daemonmgr.ImageSpec) (corev1.Container, []corev1.Volume) {
+func (d *daemon) buildFractiondContainer(opts daemonmgr.BuildOptions) (corev1.Container, []corev1.Volume) {
+	image := opts.DefaultImages[daemonName]
+
 	// fractiond retries its NRI connection indefinitely by default, so the
 	// process stays Running even when it never registers with containerd. The
 	// binary serves /readyz on the readiness port, flipping to ready only once
@@ -243,6 +245,7 @@ func (d *daemon) buildFractiondContainer(image daemonmgr.ImageSpec) (corev1.Cont
 		ReadinessProbe:  readinessProbe,
 		LivenessProbe:   livenessProbe,
 		Resources:       daemonmgr.DaemonResources(fractiondCPURequest, fractiondMemRequest, fractiondMemLimit),
+		Env:             daemonmgr.FIPSOnlyEnv(opts.FIPSOnly),
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "readiness",
@@ -312,7 +315,8 @@ func (d *daemon) buildFractiondContainer(image daemonmgr.ImageSpec) (corev1.Cont
 // required so the NVIDIA container runtime mounts libnvidia-ml.so into the
 // container at create time (the "utility" capability is sufficient for
 // read-only NVML; "compute" is not needed).
-func (d *daemon) buildMetricsdContainer(image daemonmgr.ImageSpec) corev1.Container {
+func (d *daemon) buildMetricsdContainer(opts daemonmgr.BuildOptions) corev1.Container {
+	image := opts.DefaultImages[metricsdName]
 	port := d.metricsListenPort()
 
 	// Readiness gates pod readiness on the exporter answering; liveness restarts a
@@ -358,6 +362,9 @@ func (d *daemon) buildMetricsdContainer(image daemonmgr.ImageSpec) corev1.Contai
 	if d.metricsSpec != nil {
 		c.VolumeMounts = append(c.VolumeMounts, d.metricsSpec.VolumeMounts...)
 	}
+	// Appended, not assigned: the NVIDIA vars above are what get libnvidia-ml.so
+	// mounted into the container, so replacing the slice would break NVML.
+	c.Env = append(c.Env, daemonmgr.FIPSOnlyEnv(opts.FIPSOnly)...)
 	return c
 }
 

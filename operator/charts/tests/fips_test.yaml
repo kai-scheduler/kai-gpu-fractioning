@@ -8,7 +8,7 @@
 #
 # appVersion is pinned here so the expected tags do not change with every
 # release bump.
-suite: FIPS image tag selection
+suite: FIPS mode
 templates:
   - deployment.yaml
 chart:
@@ -115,3 +115,53 @@ tests:
       global.fipsMode: true
     asserts:
       - failedTemplate: {}
+
+  # The operator builds the daemon DaemonSets itself, so the chart cannot set
+  # GODEBUG on those containers and forwards the mode instead. These assert the
+  # chart's half of that contract; the operator's half is covered by its Go
+  # tests.
+  - it: forwards the resolved mode to the operator
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FIPS_MODE
+            value: "off"
+
+  - it: forwards fipsMode on without enforcing it
+    set:
+      global.fipsMode: "on"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FIPS_MODE
+            value: "on"
+      # "on" is the compliant production setting and must stay crash-free: the
+      # images already run in FIPS mode, so enforcement would add risk without
+      # adding compliance.
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="GODEBUG")]
+
+  - it: enforces FIPS-only on the operator container
+    set:
+      global.fipsMode: only
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FIPS_MODE
+            value: only
+      # tlsmlkem=0 is asserted as part of the exact value: without it every
+      # outbound TLS handshake fails under fips140=only, including the
+      # operator's to the API server.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only,tlsmlkem=0
+
+  - it: sets no GODEBUG by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env[?(@.name=="GODEBUG")]

@@ -81,6 +81,33 @@ func PrivilegedSecurityContext() *corev1.SecurityContext {
 	}
 }
 
+// fipsOnlyGODEBUG puts the Go runtime into FIPS-only mode, where a call into a
+// non-approved algorithm returns an error or panics instead of quietly
+// succeeding.
+//
+// tlsmlkem=0 is not optional here. crypto/tls prefers the X25519MLKEM768 hybrid
+// key exchange, and although that curve is FIPS-allowed, its implementation
+// calls the plain X25519 primitive, which is not approved. Under fips140=only
+// that turns every outbound TLS handshake into a failure, including the
+// operator's connection to the API server. See golang/go#78298.
+const fipsOnlyGODEBUG = "fips140=only,tlsmlkem=0"
+
+// FIPSOnlyEnv returns the env needed to run a daemon container under FIPS-only
+// enforcement, or nil when it is disabled. Returning nil rather than an empty
+// slice lets callers append unconditionally and leave a container's env
+// untouched in the default case.
+//
+// This is enforcement only. What makes a binary FIPS-compliant is the validated
+// module linked at build time, which is a property of the image; the chart
+// selects the FIPS images and sets this from the same value, so enforcement can
+// never be switched on against a binary that has no validated module.
+func FIPSOnlyEnv(fipsOnly bool) []corev1.EnvVar {
+	if !fipsOnly {
+		return nil
+	}
+	return []corev1.EnvVar{{Name: "GODEBUG", Value: fipsOnlyGODEBUG}}
+}
+
 // SetOwnerReference sets the GpuFractioningConfig CR as the owner of the DaemonSet
 // so that garbage collection cleans up DaemonSets when the CR is deleted.
 func SetOwnerReference(ds *appsv1.DaemonSet, owner metav1.Object, scheme *runtime.Scheme) error {
