@@ -345,7 +345,14 @@ def prewarm_images(config: ClusterConfig, images: list[str]) -> None:
             log(f"docker pull {img} (one-time; may be slow on a throttled network)...")
             sh.docker("pull", img, _fg=True)
         log(f"k3d image import {img} -> {config.cluster_name}...")
-        sh.k3d("image", "import", img, "-c", config.cluster_name, _fg=True)
+        try:
+            sh.k3d("image", "import", img, "-c", config.cluster_name, _fg=True)
+        except sh.ErrorReturnCode:
+            # Non-fatal by design: this whole function is a latency optimization,
+            # so a failed import must not fail cluster creation. A digest-pinned
+            # ref has no repo tag once saved, which k3d may refuse to import; the
+            # nodes then pull it themselves, which is the pre-pinning behaviour.
+            log(f"k3d image import failed for {img}; nodes will pull it directly.")
 
 
 def install_fake_gpu_operator(config: ClusterConfig) -> None:
