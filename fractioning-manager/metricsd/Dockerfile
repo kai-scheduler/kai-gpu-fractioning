@@ -14,7 +14,7 @@
 # Running the build stage as $TARGETPLATFORM uses a native toolchain (emulated by
 # buildx/qemu when host≠target), so cgo compiles cleanly. Select the target with
 # `docker buildx build --platform linux/amd64`.
-FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
+FROM --platform=$TARGETPLATFORM golang:1.27-bookworm AS build
 
 # TARGETOS/TARGETARCH are populated by BuildKit from --platform. Do NOT give them
 # defaults: a default value shadows BuildKit's built-in, so a linux/arm64 build
@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # CGO_ENABLED=1 and the NVML bindings dlopen libnvidia-ml.so at runtime; the
 # driver itself is injected by the NVIDIA container runtime. No OS packages are
 # added on top of the base.
-FROM nvcr.io/nvidia/distroless/go:v4.0.9
+FROM nvcr.io/nvidia/distroless/go:v4.1.2
 
 # Root, because reading per-process GPU state through NVML requires it. The base
 # image defaults to its non-root `nvs` user, so this has to be explicit.
