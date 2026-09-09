@@ -40,8 +40,22 @@ jobs:
       - name: helm unittest
         run: |
           set -euo pipefail
-          helm plugin install https://github.com/helm-unittest/helm-unittest \
-            --version "v${HELM_UNITTEST_VERSION}"
+          # Unpacked straight into Helm's plugin directory rather than fetched
+          # with `helm plugin install`, which as of Helm 3.19 verifies the
+          # plugin source and rejects this one outright. The published SHA-256
+          # is checked instead, so the download is still pinned and verified.
+          base="https://github.com/helm-unittest/helm-unittest/releases/download/v${HELM_UNITTEST_VERSION}"
+          asset="helm-unittest-linux-amd64-${HELM_UNITTEST_VERSION}.tgz"
+          curl -fsSL -o "/tmp/${asset}" "${base}/${asset}"
+          expected="$(curl -fsSL "${base}/helm-unittest-checksum.sha" \
+            | grep -F "${asset}" | awk '{print $1}')"
+          [ -n "${expected}" ] || { echo "no checksum published for ${asset}" >&2; exit 1; }
+          echo "${expected}  /tmp/${asset}" | sha256sum -c -
+          # The archive has no top-level directory, so it unpacks into one we
+          # create; the plugin name Helm registers comes from its plugin.yaml.
+          plugin_dir="$(helm env HELM_PLUGINS)/helm-unittest"
+          mkdir -p "${plugin_dir}"
+          tar -xzf "/tmp/${asset}" -C "${plugin_dir}"
           make chart-test
 
       - name: Install kubeconform
