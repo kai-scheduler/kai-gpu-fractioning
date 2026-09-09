@@ -11,6 +11,12 @@ GO ?= go
 CONTAINER_TOOL ?= docker
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 
+# Single target platform for `docker build`. The root Makefile passes this so
+# that one `make docker-build` produces a set of images that share an
+# architecture; without it the Dockerfile's TARGETARCH defaults to the host's
+# and the operator image silently differs from the other three.
+PLATFORM ?= linux/amd64
+
 # Extra flags for `docker build`. The root Makefile uses this to pass
 # --build-arg GOFIPS140=... when building the FIPS image variant.
 DOCKER_BUILD_ARGS ?=
@@ -122,7 +128,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -t ${IMG} -f Dockerfile ..
+	$(CONTAINER_TOOL) build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -t ${IMG} -f Dockerfile ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
