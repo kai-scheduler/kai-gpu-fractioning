@@ -149,7 +149,13 @@ spec:
         - operator: Exists
       containers:
         - name: nvml-mock
-          image: ghcr.io/nvidia/nvml-mock:latest
+          # Pinned by digest, not :latest. Upstream retags :latest in place, and
+          # the image published on 2026-09-09 no longer contains the entrypoint
+          # invoked below, so every e2e run crashlooped here with
+          # "stat /scripts/entrypoint.sh: no such file or directory" and the
+          # rollout wait timed out. This digest is the last one CI passed with.
+          # Bump it deliberately, together with the command paths below.
+          image: ghcr.io/nvidia/nvml-mock@sha256:2718efebb1695121f0d3f1a4325a22050a2e95362d98f4f3abe9f70dd7316e9c
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true

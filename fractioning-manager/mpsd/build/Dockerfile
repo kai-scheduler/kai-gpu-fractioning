@@ -9,6 +9,11 @@
 FROM --platform=$TARGETPLATFORM golang:1.27.0-bookworm AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
+# GOFIPS140 selects the Go Cryptographic Module version to link. "off" is the Go
+# default and produces a regular build; the FIPS image variant is built with a
+# pinned version (see the root Makefile's FIPS target). Compatible with
+# CGO_ENABLED=1 — the module swap is independent of cgo linkage.
+ARG GOFIPS140=off
 
 WORKDIR /workspace
 
@@ -21,7 +26,7 @@ COPY fractioning-manager/mpsd/ fractioning-manager/mpsd/
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+    GOFIPS140=${GOFIPS140} CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -trimpath -ldflags="-s -w" -o /mpsd ./fractioning-manager/mpsd/cmd
 
 # Runtime stage — nvidia/cuda base provides nvidia-cuda-mps-control which mpsd

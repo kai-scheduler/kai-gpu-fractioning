@@ -123,6 +123,16 @@ func main() {
 	supportSMSharing := env.Bool("SUPPORT_SM_SHARING", true)
 	setupLog.Info("sm-sharing compute mode support", "enabled", supportSMSharing)
 
+	// ── FIPS mode (Helm-injected; forwarded to every daemon container) ──
+	// Carried as the chart's own "off"/"on"/"only" vocabulary rather than a bool
+	// so the operator's pod spec states the installation's compliance posture
+	// plainly. Only "only" changes anything the operator does: what makes a
+	// binary FIPS-compliant is the validated module linked into the image, and
+	// the chart selects those images from this same value.
+	fipsMode := env.String("FIPS_MODE", "off")
+	fipsOnly := fipsMode == "only"
+	setupLog.Info("FIPS mode", "mode", fipsMode, "enforcement", fipsOnly)
+
 	// ── Daemon pod API identity (Helm-injected; used by mpsd startup labeling) ──
 	daemonServiceAccountName := env.String("DAEMON_SERVICE_ACCOUNT_NAME", "")
 	setupLog.Info("daemon service account", "serviceAccountName", daemonServiceAccountName)
@@ -143,6 +153,7 @@ func main() {
 		daemonServiceAccountName,
 		mpsdAuditLog,
 		supportSMSharing,
+		fipsOnly,
 	).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "gpufractioningconfig")
 		os.Exit(1)

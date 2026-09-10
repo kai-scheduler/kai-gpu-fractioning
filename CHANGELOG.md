@@ -25,6 +25,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - metricsd metric names are now configurable via Helm (`metricsAgent.metricNames.{gpuMemoryUsedBytes,gpuSmUtilizationPercent,gpuSmUtilizationPercentNormalized}`), and the per-pod metric labels are `namespace, pod, pod_uuid, gpu_uuid, gpu` (renamed from `pod_uid`/`gpu_index`) to integrate with external metric consumers.
 - New `sm-sharing` GPU compute-sharing mode, selected per-container via `nvidia.com/container.<container-name>.gpu-compute.mode: "time-slicing" | "sm-sharing"` (defaults to `time-slicing`, today's unchanged behavior). mpsd runs a second, parameterless MPS server (`context-share` enabled, with the default socket excluded from context sharing so only containers routed to the shared server share a context — time-slicing containers keep the default socket and their memacct-enforced memory limits) alongside the default one; fractiond routes a container annotated `sm-sharing` to that shared server's socket instead, so its GPU compute is shared via MPS (concurrent SM occupancy) rather than time-sliced. Any other annotation value — including a present-but-empty one — fails container creation (or falls back to `time-slicing` under fail-open). The whole feature is gated by a new installation-time Helm value, `supportSmSharing` (defaults to `true`); disabling it reverts to pre-feature behaviour without a code rollback — mpsd reverts to its pre-feature MPS config and daemon invocation (the shared server and its required multiuser mode both go away) and fractiond rejects the `sm-sharing` annotation like any other invalid value. The toggle applies to containers created afterwards and does not migrate running ones, so stop sm-sharing workloads and confirm the shared server has no clients before disabling it.
 
+- FIPS 140-3 support. Every release now publishes a second set of images, tagged
+  `<version>-fips`, whose Go binaries link the CMVP-validated Go Cryptographic
+  Module (pinned to `v1.0.0`, CMVP Certificate #5247) instead of the standard
+  library's own crypto; the release verifies the linked module in every binary
+  before the `-fips` tag exists — it builds under `<version>-unverified-fips`,
+  checks that, then promotes — so a `-fips` tag cannot ship ordinary crypto and
+  the staging tag is all that remains if the check fails. A new chart
+  value, `global.fipsMode`, selects between them: `off` (the default, entirely
+  unchanged behaviour), `on` (FIPS images — the compliant production setting,
+  needing no runtime flag because a module-linked binary already runs in FIPS
+  mode and `crypto/tls` already declines non-approved options gracefully), and
+  `only`, which additionally sets `GODEBUG=fips140=only,tlsmlkem=0` on the
+  operator and on every daemon it builds, making calls into non-approved
+  algorithms fail loudly. Per upstream Go, `only` is a best-effort mode for
+  testing and assessment that is crash-prone by design and not intended for
+  production; `tlsmlkem=0` accompanies it because `crypto/tls` otherwise
+  prefers a hybrid key exchange whose implementation calls an unapproved
+  primitive, which fails every outbound TLS handshake. The suffix is applied to
+  the resolved image tag, so FIPS selection composes with per-image version
+  pinning rather than overriding it, and any value other than the three above
+  fails the render instead of silently falling back to non-FIPS images. Locally,
+  `make docker-build FIPS=1` produces the same variants. See
+  [`docs/fips/README.md`](docs/fips/README.md) for scope — this covers the Go
+  cryptography in binaries built from this repository, not base-image OS crypto
+  or libraries loaded from the host driver stack.
+
 ### Changed
 - All four images now build from an NVIDIA-approved base container. `operator`,
   `fractiond` and `metricsd` move from `gcr.io/distroless/*` to

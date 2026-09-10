@@ -9,6 +9,38 @@ DOCKER_REPO_BASE ?= ghcr.io/kai-scheduler/kai-gpu-fractioning
 # buildkit emulates (qemu) when the host arch differs.
 PLATFORM ?= linux/amd64
 
+# Escape hatch for extra flags on every image build, both `docker build` and
+# `docker buildx build`. FIPS=1 appends its --build-arg here.
+DOCKER_BUILD_ARGS ?=
+
+# -----------------------------------------------------------
+# FIPS
+#
+# FIPS=1 links every Go binary against the CMVP-validated Go Cryptographic
+# Module (https://go.dev/doc/security/fips140) and suffixes image tags with
+# "-fips", so FIPS variants sit alongside the regular images in the registry.
+#
+# GOFIPS140 is exported so the host `go build` targets and any sub-make inherit
+# it. The docker targets pass it as a build arg instead, because compilation
+# happens inside each Dockerfile's builder stage.
+#
+# v1.0.0 is pinned deliberately: it holds CMVP Certificate #5247, while newer
+# module versions are still under review. Do not switch this to the `certified`
+# alias — that would silently change what gets linked when a new validation
+# lands, which is exactly what a compliance build must not do.
+# -----------------------------------------------------------
+FIPS ?= 0
+GOFIPS140_VERSION ?= v1.0.0
+
+ifeq ($(FIPS),1)
+# Both overrides are required: make ignores a plain assignment or += to a
+# variable that came from the command line, and VERSION and DOCKER_BUILD_ARGS
+# are both things a caller may set that way.
+override VERSION := $(VERSION)-fips
+override DOCKER_BUILD_ARGS += --build-arg GOFIPS140=$(GOFIPS140_VERSION)
+export GOFIPS140 := $(GOFIPS140_VERSION)
+endif
+
 LOCALBIN ?= $(CURDIR)/bin
 ADDLICENSE ?= $(LOCALBIN)/addlicense
 ADDLICENSE_VERSION ?= v1.2.0
@@ -66,6 +98,22 @@ test-fractioning-manager:
 # cgo/NVML build the metrics collector needs.
 test-metricsd:
 	$(MAKE) -C fractioning-manager/metricsd test
+
+# -----------------------------------------------------------
+# Helm chart
+# -----------------------------------------------------------
+
+.PHONY: chart-test
+
+# Renders the chart against the cases in operator/charts/tests/. Requires the
+# helm-unittest plugin:
+#   helm plugin install https://github.com/helm-unittest/helm-unittest
+#
+# Deliberately not part of `test`: that runs on the Go toolchain every developer
+# already has, and this needs a Helm plugin they may not. CI runs it as part of
+# chart validation.
+chart-test:
+	helm unittest operator/charts
 
 # -----------------------------------------------------------
 # E2E — see test/e2e/e2e.mk (targets: e2e, e2e-cluster-up/down,
@@ -164,27 +212,39 @@ deploy:
 # Docker
 # -----------------------------------------------------------
 
-.PHONY: docker-build docker-build-operator docker-build-mpsd docker-build-fractiond docker-build-metricsd
-.PHONY: docker-push docker-push-operator docker-push-mpsd docker-push-fractiond docker-push-metricsd
+# The shipped component images and the Dockerfile that builds each one. This is
+# the single source of truth: the aggregate targets expand from IMAGES, and both
+# FIPS verification scripts read these lists rather than repeating them. A
+# component added here without FIPS plumbing therefore fails a check instead of
+# being published as a "-fips" image built with ordinary crypto.
+IMAGES := operator mpsd fractiond metricsd
 
-docker-build: docker-build-operator docker-build-mpsd docker-build-fractiond docker-build-metricsd
+DOCKERFILE_operator  := operator/Dockerfile
+DOCKERFILE_mpsd      := fractioning-manager/mpsd/build/Dockerfile
+DOCKERFILE_fractiond := fractioning-manager/fractiond/build/Dockerfile
+DOCKERFILE_metricsd  := fractioning-manager/metricsd/Dockerfile
+
+.PHONY: docker-build $(addprefix docker-build-,$(IMAGES))
+.PHONY: docker-push $(addprefix docker-push-,$(IMAGES))
+
+docker-build: $(addprefix docker-build-,$(IMAGES))
 
 docker-build-operator:
-	$(MAKE) -C operator docker-build IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION) PLATFORM=$(PLATFORM)
+	$(MAKE) -C operator docker-build IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION) PLATFORM=$(PLATFORM) DOCKER_BUILD_ARGS="$(DOCKER_BUILD_ARGS)"
 
 docker-build-mpsd:
-	docker build --platform $(PLATFORM) -f fractioning-manager/mpsd/build/Dockerfile -t $(DOCKER_REPO_BASE)/mpsd:$(VERSION) .
+	docker build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -f $(DOCKERFILE_mpsd) -t $(DOCKER_REPO_BASE)/mpsd:$(VERSION) .
 
 docker-build-fractiond:
-	docker build --platform $(PLATFORM) -f fractioning-manager/fractiond/build/Dockerfile -t $(DOCKER_REPO_BASE)/fractiond:$(VERSION) .
+	docker build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -f $(DOCKERFILE_fractiond) -t $(DOCKER_REPO_BASE)/fractiond:$(VERSION) .
 
 # metricsd links NVML (cgo) and is built from the repo root so its replace of the
 # shared fractiond module resolves. The build stage runs as the target platform so
 # cgo uses a native toolchain. GO_TAGS=e2e builds the fake-GPU test image.
 docker-build-metricsd:
-	docker build --platform $(PLATFORM) -f fractioning-manager/metricsd/Dockerfile -t $(DOCKER_REPO_BASE)/metricsd:$(VERSION) .
+	docker build --platform $(PLATFORM) $(DOCKER_BUILD_ARGS) -f $(DOCKERFILE_metricsd) -t $(DOCKER_REPO_BASE)/metricsd:$(VERSION) .
 
-docker-push: docker-push-operator docker-push-mpsd docker-push-fractiond docker-push-metricsd
+docker-push: $(addprefix docker-push-,$(IMAGES))
 
 docker-push-operator:
 	$(MAKE) -C operator docker-push IMG=$(DOCKER_REPO_BASE)/operator:$(VERSION)
@@ -222,37 +282,65 @@ docker-push-fractiond:
 DOCKER_BUILD_PLATFORM ?= linux/amd64
 # Passed to `docker buildx build`: --push to publish, --load for a local single-arch image.
 DOCKER_BUILDX_OUTPUT  ?= --push
-# Escape hatch for any extra `docker buildx build` flags.
-DOCKER_BUILDX_ARGS    ?=
 
 # Release metadata for images that bake it into the binary (currently metricsd only).
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: docker-buildx docker-buildx-operator docker-buildx-mpsd docker-buildx-fractiond docker-buildx-metricsd
+.PHONY: docker-buildx $(addprefix docker-buildx-,$(IMAGES))
 
 # $(1)=Dockerfile path, $(2)=image name, $(3)=optional extra build args.
 # Build context is always the repo root.
 define buildx-image
-docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) $(DOCKER_BUILDX_ARGS) $(3) \
+docker buildx build --platform $(DOCKER_BUILD_PLATFORM) $(DOCKER_BUILDX_OUTPUT) $(DOCKER_BUILD_ARGS) $(3) \
 	-f $(1) -t $(DOCKER_REPO_BASE)/$(2):$(VERSION) .
 endef
 
-docker-buildx: docker-buildx-operator docker-buildx-mpsd docker-buildx-fractiond docker-buildx-metricsd
+docker-buildx: $(addprefix docker-buildx-,$(IMAGES))
 
 docker-buildx-operator:
-	$(call buildx-image,operator/Dockerfile,operator)
+	$(call buildx-image,$(DOCKERFILE_operator),operator)
 
 docker-buildx-mpsd:
-	$(call buildx-image,fractioning-manager/mpsd/build/Dockerfile,mpsd)
+	$(call buildx-image,$(DOCKERFILE_mpsd),mpsd)
 
 docker-buildx-fractiond:
-	$(call buildx-image,fractioning-manager/fractiond/build/Dockerfile,fractiond)
+	$(call buildx-image,$(DOCKERFILE_fractiond),fractiond)
 
 # metricsd bakes version metadata into the binary via ldflags (ARG VERSION/COMMIT/DATE
 # in its Dockerfile), so pass them through — otherwise a release image reports version=dev.
 docker-buildx-metricsd:
-	$(call buildx-image,fractioning-manager/metricsd/Dockerfile,metricsd,--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(GIT_COMMIT) --build-arg DATE=$(BUILD_DATE))
+	$(call buildx-image,$(DOCKERFILE_metricsd),metricsd,--build-arg VERSION=$(VERSION) --build-arg COMMIT=$(GIT_COMMIT) --build-arg DATE=$(BUILD_DATE))
+
+# Promotes an already-verified image from one tag to another. This is a
+# registry-side manifest copy, so it neither rebuilds nor re-pushes layers and
+# the multi-arch index is preserved. The release builds under a staging tag,
+# verifies that, and only then creates the tag consumers pull.
+#   make docker-promote FROM_TAG=v0.1.0-unverified-fips TO_TAG=v0.1.0-fips
+.PHONY: docker-promote
+docker-promote:
+	@test -n "$(FROM_TAG)" || { echo "FROM_TAG is required" >&2; exit 1; }
+	@test -n "$(TO_TAG)"   || { echo "TO_TAG is required" >&2; exit 1; }
+	$(foreach i,$(IMAGES),docker buildx imagetools create \
+		--tag $(DOCKER_REPO_BASE)/$(i):$(TO_TAG) \
+		$(DOCKER_REPO_BASE)/$(i):$(FROM_TAG) &&) true
+
+# Single source of truth for CI's FIPS verification step, so the pinned module
+# version can't drift between the build and the assertion that checks it.
+.PHONY: print-gofips140-version
+print-gofips140-version:
+	@echo $(GOFIPS140_VERSION)
+
+# Consumed by hack/verify-fips-images.sh and hack/verify-fips-build-args.sh so
+# that neither keeps its own copy of the component list. Adding a component to
+# IMAGES without wiring FIPS into its Dockerfile then fails a check.
+.PHONY: print-image-names
+print-image-names:
+	@echo $(IMAGES)
+
+.PHONY: print-image-dockerfiles
+print-image-dockerfiles:
+	@$(foreach i,$(IMAGES),echo "$(i) $(DOCKERFILE_$(i))";)
 
 # -----------------------------------------------------------
 # Clean

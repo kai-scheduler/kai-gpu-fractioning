@@ -65,6 +65,7 @@ type BuildOptions struct {
 	ServiceAccountName string               // service account for daemon pods that need API access
 	RuntimeClassName   *string              // resolved RuntimeClass for daemon pods that need NVIDIA GPU/NVML access
 	DefaultImages      map[string]ImageSpec // Helm-injected default images keyed by daemon name
+	FIPSOnly           bool                 // Helm-injected: run daemon containers with FIPS-only enforcement. See FIPSOnlyEnv.
 }
 
 // ResolveRuntimeClassName returns the RuntimeClass to set on daemon pods that

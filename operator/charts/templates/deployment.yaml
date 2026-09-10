@@ -28,7 +28,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: manager
-          image: "{{ .Values.images.operator.repository }}:{{ .Values.images.operator.tag | default .Chart.AppVersion }}"
+          image: "{{ .Values.images.operator.repository }}:{{ include "gpu-fractioning.imageTag" (dict "root" $ "tag" .Values.images.operator.tag) }}"
           imagePullPolicy: {{ .Values.images.operator.pullPolicy }}
           env:
             - name: POD_NAMESPACE
@@ -38,19 +38,19 @@ spec:
             - name: FRACTIOND_IMAGE_REPOSITORY
               value: {{ .Values.images.fractiond.repository | quote }}
             - name: FRACTIOND_IMAGE_TAG
-              value: {{ .Values.images.fractiond.tag | default .Chart.AppVersion | quote }}
+              value: {{ include "gpu-fractioning.imageTag" (dict "root" $ "tag" .Values.images.fractiond.tag) | quote }}
             - name: FRACTIOND_IMAGE_PULL_POLICY
               value: {{ .Values.images.fractiond.pullPolicy | quote }}
             - name: METRICSD_IMAGE_REPOSITORY
               value: {{ .Values.images.metricsd.repository | quote }}
             - name: METRICSD_IMAGE_TAG
-              value: {{ .Values.images.metricsd.tag | default .Chart.AppVersion | quote }}
+              value: {{ include "gpu-fractioning.imageTag" (dict "root" $ "tag" .Values.images.metricsd.tag) | quote }}
             - name: METRICSD_IMAGE_PULL_POLICY
               value: {{ .Values.images.metricsd.pullPolicy | quote }}
             - name: MPSD_IMAGE_REPOSITORY
               value: {{ .Values.images.mpsd.repository | quote }}
             - name: MPSD_IMAGE_TAG
-              value: {{ .Values.images.mpsd.tag | default .Chart.AppVersion | quote }}
+              value: {{ include "gpu-fractioning.imageTag" (dict "root" $ "tag" .Values.images.mpsd.tag) | quote }}
             - name: MPSD_IMAGE_PULL_POLICY
               value: {{ .Values.images.mpsd.pullPolicy | quote }}
             - name: MPSD_AUDIT_LOG
@@ -59,6 +59,15 @@ spec:
               value: {{ .Values.supportSmSharing | quote }}
             - name: DAEMON_SERVICE_ACCOUNT_NAME
               value: {{ include "gpu-fractioning.daemonServiceAccountName" . | quote }}
+            {{- /*
+              The operator forwards this to the DaemonSet containers it builds,
+              which the chart cannot reach directly. It carries the mode rather
+              than a derived boolean so the compliance posture of an install is
+              readable off the pod spec.
+            */}}
+            - name: FIPS_MODE
+              value: {{ include "gpu-fractioning.fipsMode" . | quote }}
+            {{- with include "gpu-fractioning.fipsOnlyEnv" . }}{{ . | nindent 12 }}{{- end }}
           args:
             {{- if .Values.leaderElect }}
             - --leader-elect

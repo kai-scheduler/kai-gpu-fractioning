@@ -134,6 +134,7 @@ func gpuOperatorCheckerWithClusterPolicyVersion(version string) GpuOperatorDepen
 const (
 	testMpsdAuditLogTrue     = true
 	testSupportSMSharingTrue = true
+	testFIPSOnlyDisabled     = false
 )
 
 var _ = Describe("GpuFractioningConfig Controller", func() {
@@ -176,7 +177,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			// deletion only completes after another reconcile releases it.
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -202,7 +203,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -214,7 +215,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		It("should check dependencies and not requeue after a healthy reconcile with a supported GPU Operator", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 			controllerReconciler.GpuOperatorChecker = gpuOperatorCheckerWithClusterPolicyVersion("v26.7.1")
 
@@ -235,7 +236,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		It("should mark Ready false when the GPU Operator is downgraded while daemons stay healthy", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 			controllerReconciler.GpuOperatorChecker = gpuOperatorCheckerWithClusterPolicyVersion("v26.7.1")
 
@@ -263,7 +264,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		It("should tolerate missing GPU Operator sources and retry sooner when daemon readiness is false", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", nil, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", nil, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 
 			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -284,7 +285,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		It("should update observedGeneration on reconcile", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -300,7 +301,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 		It("should handle not-found resources gracefully", func() {
 			controllerReconciler := NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(10),
-				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				"default", defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -412,7 +413,7 @@ var _ = Describe("GpuFractioningConfig Controller", func() {
 			}
 			reconciler = NewGpuFractioningConfigReconciler(
 				k8sClient, k8sClient, k8sClient.Scheme(), record.NewFakeRecorder(20),
-				namespace, defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue,
+				namespace, defaultImages, "gpu-fractioning-daemon", testMpsdAuditLogTrue, testSupportSMSharingTrue, testFIPSOnlyDisabled,
 			)
 			createdNodes = nil
 		})

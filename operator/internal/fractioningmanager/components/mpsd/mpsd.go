@@ -101,6 +101,7 @@ func (d *daemon) BuildDaemonSet(opts daemonmgr.BuildOptions) *appsv1.DaemonSet {
 		corev1.EnvVar{Name: "MPS_MEMACCT_AUDIT_LOG", Value: strconv.FormatBool(d.auditLog)},
 		corev1.EnvVar{Name: "MPS_SUPPORT_SM_SHARING", Value: strconv.FormatBool(d.supportSMSharing)},
 	)
+	container.Env = append(container.Env, daemonmgr.FIPSOnlyEnv(opts.FIPSOnly)...)
 	result.Spec.Template.Spec.Containers = append(result.Spec.Template.Spec.Containers, container)
 	result.Spec.Template.Spec.Volumes = append(result.Spec.Template.Spec.Volumes, volumes...)
 

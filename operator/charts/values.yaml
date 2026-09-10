@@ -1,6 +1,31 @@
 # Copyright 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# Values shared with a parent chart. Helm merges an umbrella chart's `global`
+# block into every subchart, so an installation-wide setting can be given once
+# there instead of being repeated per subchart.
+global:
+  # fipsMode selects the FIPS-enabled image variants, which are built against a
+  # CMVP-validated Go cryptographic module and run with FIPS mode on by default.
+  # It appends "-fips" to every resolved image tag, whether that tag comes from
+  # images.<service>.tag or the chart's appVersion, so FIPS selection stays
+  # independent of version pinning.
+  #
+  #   off  - regular images (default)
+  #   on   - FIPS images. This is the compliant production setting: the images
+  #          already run in FIPS mode, and TLS silently declines to negotiate
+  #          anything that is not approved.
+  #   only - FIPS images, plus GODEBUG=fips140=only on every container. A call
+  #          into a non-approved algorithm then errors or panics instead of
+  #          succeeding.
+  #
+  #          Upstream Go documents "only" as a best-effort mode for testing,
+  #          assessment and debugging, and explicitly not for production: it
+  #          introduces crashes by design and can report both false positives
+  #          and false negatives. It also reaches dependencies we do not
+  #          control. Use it to assess an installation, not to run one.
+  fipsMode: "off"
+
 replicaCount: 1
 leaderElect: true
 

@@ -177,6 +177,45 @@ func TestDaemon_BuildDaemonSet_SupportSMSharingDisabled(t *testing.T) {
 	}
 }
 
+func TestDaemon_BuildDaemonSet_FIPSOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		fipsOnly bool
+		// wantGODEBUG is the value expected on the container; empty means the
+		// var must be absent.
+		wantGODEBUG string
+	}{
+		{name: "disabled", fipsOnly: false, wantGODEBUG: ""},
+		{name: "enabled", fipsOnly: true, wantGODEBUG: "fips140=only,tlsmlkem=0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.FIPSOnly = tt.fipsOnly
+			ctr := NewMpsdDaemon(nil, testMpsdAuditLogTrue, testSupportSMSharingTrue).
+				BuildDaemonSet(opts).Spec.Template.Spec.Containers[0]
+
+			if got := envValue(ctr.Env, "GODEBUG"); got != tt.wantGODEBUG {
+				t.Errorf("GODEBUG env = %q, want %q", got, tt.wantGODEBUG)
+			}
+
+			// mpsd's own env must survive injection: the NVIDIA vars get the
+			// driver libraries mounted in, and NODE_NAME is how it labels its
+			// node at startup.
+			if got := envValue(ctr.Env, "NVIDIA_VISIBLE_DEVICES"); got != "all" {
+				t.Errorf("NVIDIA_VISIBLE_DEVICES env = %q, want %q; FIPS injection clobbered existing env", got, "all")
+			}
+			if got := envValue(ctr.Env, "MPS_MEMACCT_AUDIT_LOG"); got != "true" {
+				t.Errorf("MPS_MEMACCT_AUDIT_LOG env = %q, want %q; FIPS injection clobbered existing env", got, "true")
+			}
+			if got := envFieldRef(ctr.Env, "NODE_NAME"); got != "spec.nodeName" {
+				t.Errorf("NODE_NAME fieldRef = %q, want spec.nodeName; FIPS injection clobbered existing env", got)
+			}
+		})
+	}
+}
+
 func TestDaemon_BuildDaemonSet_RuntimeClass(t *testing.T) {
 	custom := "custom-nvidia"
 

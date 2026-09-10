@@ -539,6 +539,58 @@ func TestDaemon_BuildDaemonSet_SupportSMSharing(t *testing.T) {
 	}
 }
 
+// Both containers in this pod are asserted: fractiond and the metricsd sidecar
+// are separate injection sites, and a pod where only one of them enforces FIPS
+// is a half-configured install that nothing else would flag.
+func TestDaemon_BuildDaemonSet_FIPSOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		fipsOnly bool
+		// wantGODEBUG is the value expected on every container; empty means the
+		// var must be absent.
+		wantGODEBUG string
+	}{
+		{name: "disabled", fipsOnly: false, wantGODEBUG: ""},
+		{name: "enabled", fipsOnly: true, wantGODEBUG: "fips140=only,tlsmlkem=0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := defaultOpts()
+			opts.FIPSOnly = tt.fipsOnly
+			spec := NewFractiondDaemon(nil, &v1alpha1.MetricsAgentSpec{Enabled: true}, testSupportSMSharingTrue).
+				BuildDaemonSet(opts).Spec.Template.Spec
+
+			for _, name := range []string{"fractiond", "metricsd"} {
+				ctr := containerByName(t, spec.Containers, name)
+				if got := envValue(ctr.Env, "GODEBUG"); got != tt.wantGODEBUG {
+					t.Errorf("%s GODEBUG env = %q, want %q", name, got, tt.wantGODEBUG)
+				}
+			}
+
+			// metricsd is the only container here with pre-existing env, and
+			// these two vars are what get libnvidia-ml.so mounted in, so
+			// injection must append rather than replace.
+			metricsd := containerByName(t, spec.Containers, "metricsd")
+			if got := envValue(metricsd.Env, "NVIDIA_VISIBLE_DEVICES"); got != "all" {
+				t.Errorf("NVIDIA_VISIBLE_DEVICES env = %q, want %q; FIPS injection clobbered existing env", got, "all")
+			}
+			if got := envValue(metricsd.Env, "NVIDIA_DRIVER_CAPABILITIES"); got != "utility" {
+				t.Errorf("NVIDIA_DRIVER_CAPABILITIES env = %q, want %q; FIPS injection clobbered existing env", got, "utility")
+			}
+
+			// fractiond has no env of its own, so with enforcement off it must
+			// stay nil rather than gain an empty list, keeping the default
+			// DaemonSet spec unchanged.
+			if !tt.fipsOnly {
+				if ctr := containerByName(t, spec.Containers, "fractiond"); ctr.Env != nil {
+					t.Errorf("fractiond env = %v, want nil when FIPS-only is off", ctr.Env)
+				}
+			}
+		})
+	}
+}
+
 func defaultOpts() daemonmgr.BuildOptions {
 	return daemonmgr.BuildOptions{
 		Namespace:          "gpu-fractioning-system",
@@ -556,6 +608,15 @@ func defaultOpts() daemonmgr.BuildOptions {
 			},
 		},
 	}
+}
+
+func envValue(env []corev1.EnvVar, name string) string {
+	for _, e := range env {
+		if e.Name == name {
+			return e.Value
+		}
+	}
+	return ""
 }
 
 func containerByName(t *testing.T, containers []corev1.Container, name string) corev1.Container {

@@ -63,6 +63,16 @@ jobs:
       # regenerate it in the same PR.
       - run: make third-party-check
 
+  fips-build-args:
+    name: FIPS build args
+    runs-on: ubuntu-latest
+    # The published-image check can only run at release time, once the image
+    # exists. This reads the Dockerfiles, so it needs no registry and can gate
+    # the PR that adds a component without FIPS plumbing.
+    steps:
+      - uses: actions/checkout@v7
+      - run: hack/verify-fips-build-args.sh
+
   test:
     name: Test
     runs-on: ubuntu-latest
