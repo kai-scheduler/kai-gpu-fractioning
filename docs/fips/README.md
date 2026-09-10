@@ -169,6 +169,19 @@ version travels as a Docker build argument rather than an environment variable.
 That makes the plumbing per-Dockerfile, which is why the release verifies every
 published binary instead of trusting that each build passed the flag along.
 
+The same omission is also checked without a registry, so it fails on the pull
+request that introduces it rather than at the next release:
+
+```sh
+hack/verify-fips-build-args.sh
+```
+
+It reads the Dockerfiles listed by `make print-image-dockerfiles` and requires
+each to declare `ARG GOFIPS140=off` and pass it to `go build`. Both scripts take
+the component list from the Makefile's `IMAGES`, so adding a component there is
+enough for it to be checked — and a component that is built but unverifiable
+fails rather than being skipped.
+
 ## References
 
 - [Go FIPS 140-3 documentation](https://go.dev/doc/security/fips140)
