@@ -12,7 +12,7 @@
 # Build with repo root as context (same as the production Dockerfile):
 #   docker build -f fractioning-manager/metricsd/Dockerfile.e2e .
 
-FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
+FROM --platform=$TARGETPLATFORM golang:1.27-bookworm AS build
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64

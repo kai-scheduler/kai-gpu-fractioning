@@ -3,7 +3,7 @@
 
 # Build on the native BUILDPLATFORM and cross-compile: fractiond is CGO_ENABLED=0,
 # so this is pure-Go cross-compilation (no qemu emulation) to the target arch.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
 ARG TARGETARCH
 # GOFIPS140 selects the Go Cryptographic Module version to link. "off" is the Go
 # default and produces a regular build; the FIPS image variant is built with a
@@ -21,7 +21,7 @@ RUN GOFIPS140=${GOFIPS140} CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go buil
 # statically-linked Go binary with no GPU or OS-level dependencies — it only
 # communicates via the NRI Unix socket — so nothing from the base is needed
 # beyond a filesystem to run in, and no OS packages are added.
-FROM nvcr.io/nvidia/distroless/go:v4.0.9
+FROM nvcr.io/nvidia/distroless/go:v4.1.2
 COPY --from=builder /workspace/fractiond /fractiond
 # Attribution for the third-party code statically linked into the binary.
 COPY THIRD-PARTY.txt /THIRD-PARTY.txt
