@@ -138,8 +138,7 @@ build emits neither line, so their absence is what distinguishes it.
 The binary paths differ per image: `/manager`, `/fractiond`,
 `/usr/local/bin/mpsd`, `/usr/local/bin/metricsd`.
 
-Every release runs this check across all four images and both architectures, and
-fails if an image is not what its tag claims:
+Every release runs this check across all four images and both architectures:
 
 ```sh
 hack/verify-fips-images.sh \
@@ -148,6 +147,13 @@ hack/verify-fips-images.sh \
   --module "$(make -s print-gofips140-version)" \
   --platforms linux/amd64,linux/arm64
 ```
+
+It runs before the `-fips` tag exists, not after. A multi-arch build cannot be
+held locally, so the release publishes under `<VERSION>-unverified-fips`,
+verifies that, and only then creates `<VERSION>-fips` as a registry-side
+manifest copy. So the tag you pull exists only if the check passed, and a
+compliance failure is never published under it. The staging tag remains in the
+registry either way; when verification fails it is the artifact to investigate.
 
 ## Building FIPS images locally
 

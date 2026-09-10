@@ -102,12 +102,15 @@ jobs:
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       # FIPS=1 links the pinned Go Cryptographic Module and appends "-fips" to
-      # every image tag, so these land alongside the regular images.
-      - name: Build and push FIPS images
+      # every image tag. A multi-arch build cannot be held locally, so buildx
+      # publishes as it builds — which is why this publishes under a staging
+      # version. Verifying the "-fips" tag directly would mean the tag consumers
+      # pull had already gone public before anything confirmed it was compliant.
+      - name: Build and push FIPS images under a staging tag
         run: |
           make docker-buildx \
             FIPS=1 \
-            VERSION="${{ steps.setup.outputs.version }}" \
+            VERSION="${{ steps.setup.outputs.version }}-unverified" \
             DOCKER_BUILD_PLATFORM="${{ steps.setup.outputs.platforms }}" \
             DOCKER_BUILDX_OUTPUT="--push"
 
@@ -117,6 +120,16 @@ jobs:
         run: |
           hack/verify-fips-images.sh \
             --repo "${DOCKER_REPO_BASE}" \
-            --tag "${{ steps.setup.outputs.version }}-fips" \
+            --tag "${{ steps.setup.outputs.version }}-unverified-fips" \
             --module "$(make -s print-gofips140-version)" \
             --platforms "${{ steps.setup.outputs.platforms }}"
+
+      # A registry-side manifest copy of images that have just passed
+      # verification: no rebuild, the multi-arch index survives, and the "-fips"
+      # tag comes into existence only if the check succeeded. The staging tag is
+      # left behind deliberately — on failure it is the artifact to investigate.
+      - name: Promote verified images to the -fips tag
+        run: |
+          make docker-promote \
+            FROM_TAG="${{ steps.setup.outputs.version }}-unverified-fips" \
+            TO_TAG="${{ steps.setup.outputs.version }}-fips"

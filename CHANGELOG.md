@@ -28,8 +28,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - FIPS 140-3 support. Every release now publishes a second set of images, tagged
   `<version>-fips`, whose Go binaries link the CMVP-validated Go Cryptographic
   Module (pinned to `v1.0.0`, CMVP Certificate #5247) instead of the standard
-  library's own crypto; the release verifies the linked module in every
-  published binary, so a `-fips` tag cannot ship ordinary crypto. A new chart
+  library's own crypto; the release verifies the linked module in every binary
+  before the `-fips` tag exists — it builds under `<version>-unverified-fips`,
+  checks that, then promotes — so a `-fips` tag cannot ship ordinary crypto and
+  the staging tag is all that remains if the check fails. A new chart
   value, `global.fipsMode`, selects between them: `off` (the default, entirely
   unchanged behaviour), `on` (FIPS images — the compliant production setting,
   needing no runtime flag because a module-linked binary already runs in FIPS
